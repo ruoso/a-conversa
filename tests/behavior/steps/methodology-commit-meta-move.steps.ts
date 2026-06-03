@@ -30,8 +30,10 @@ import {
 } from '../../../apps/server/src/projection/index.js';
 import {
   nextSequence,
+  validateAction,
   type CommitAction,
   type ValidationResult,
+  type VoteAction,
 } from '../../../apps/server/src/methodology/index.js';
 import { computeFacetStatuses } from '../../../packages/shell/src/index.js';
 
@@ -327,6 +329,49 @@ When(
     }
     // Re-project the full log so the annotation is read back from the
     // round-tripped JSONB column (the schema-seam pin).
+    this.scratch['commitProjection'] = await projectFromDb(this);
+  },
+);
+
+When(
+  "a participant casts a facet-keyed dispute vote on the resulting annotation's substance and it is appended and replayed",
+  async function (this: AConversaWorld) {
+    // ADR 0038: a committed annotation's `substance` facet is disputable
+    // post-commit via a facet-keyed `entity_kind: 'annotation'` vote. Run
+    // the dispute through the real engine vote handler against the
+    // DB-projected session (exercising the annotation arm of
+    // `facetStateForTarget` + the committed-facet gate divergence), then
+    // round-trip the emitted event through pglite and re-project.
+    const annotationId = this.scratch['cmmAnnotationId'] as string;
+    const projection = this.scratch['commitProjection'] as Projection;
+    const action: VoteAction = {
+      kind: 'vote',
+      target: 'facet',
+      requester: CMM_DEBATER_A_ID,
+      sessionId: CMM_SESSION_ID,
+      eventId: evId(1330),
+      sequence: nextSequence(projection),
+      actor: CMM_DEBATER_A_ID,
+      createdAt: tsAt(30),
+      entityKind: 'annotation',
+      entityId: annotationId,
+      facet: 'substance',
+      vote: 'dispute',
+      votedAt: tsAt(30),
+    };
+    const result = validateAction(projection, action);
+    assert.ok(result.ok, `expected Valid annotation dispute vote, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.events.length, 1, 'expected exactly one vote event');
+    const ev = result.events[0]!;
+    await insertEventRow(this, CMM_SESSION_ID, {
+      id: ev.id,
+      sequence: ev.sequence,
+      kind: ev.kind,
+      actor: ev.actor,
+      payload: ev.payload,
+      createdAt: ev.createdAt,
+    });
     this.scratch['commitProjection'] = await projectFromDb(this);
   },
 );

@@ -751,9 +751,22 @@ describe('vote payload schema — facet-keyed arm', () => {
     expect(votePayloadSchema.parse(wire)).toEqual(shapeVote);
   });
 
-  it("rejects 'annotation' as entity_kind on the facet arm", () => {
-    const result = votePayloadSchema.safeParse({ ...valid, entity_kind: 'annotation' });
-    expect(result.success).toBe(false);
+  it("accepts 'annotation' as entity_kind on the facet arm (ADR 0038 §1)", () => {
+    // Per ADR 0038: a committed annotation's `substance` facet is
+    // disputable via a facet-keyed vote, so the *vote* payload accepts
+    // `entity_kind: 'annotation'`. (The commit / meta-disagreement /
+    // withdraw-agreement payloads still reject it — see their own
+    // describe blocks below.)
+    const annotationDispute = {
+      ...valid,
+      entity_kind: 'annotation' as const,
+      entity_id: ANNOTATION_ID,
+      facet: 'substance' as const,
+      choice: 'dispute' as const,
+    };
+    const parsed = votePayloadSchema.parse(annotationDispute);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(votePayloadSchema.parse(wire)).toEqual(annotationDispute);
   });
 
   it('rejects an unknown facet value', () => {

@@ -72,7 +72,7 @@ import type { EventToAppendEnvelope, ValidationResult, Validator, VoteAction } f
 // `(entityKind, entityId, facet)` triple. Returns `null` if the entity
 // or facet slot does not exist on the projection.
 interface FacetTarget {
-  entityKind: 'node' | 'edge';
+  entityKind: 'node' | 'edge' | 'annotation';
   entityId: string;
   facet: FacetName;
 }
@@ -89,16 +89,28 @@ function facetStateForTarget(
     if (target.facet === 'wording') return node.wordingFacet;
     return null;
   }
-  // entityKind === 'edge'
-  const edge = projection.getEdge(target.entityId);
-  if (!edge) return null;
-  if (target.facet === 'substance') return edge.substanceFacet;
-  // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: facet-keyed votes
-  // may target the edge's `shape` facet directly (no v1 proposal
-  // sub-kind produces a shape candidate via the proposal layer, but
-  // wire-level vote envelopes targeting `(edge, 'shape')` are now
-  // first-class and resolve to the edge's `shapeFacet`).
-  if (target.facet === 'shape') return edge.shapeFacet;
+  if (target.entityKind === 'edge') {
+    const edge = projection.getEdge(target.entityId);
+    if (!edge) return null;
+    if (target.facet === 'substance') return edge.substanceFacet;
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: facet-keyed votes
+    // may target the edge's `shape` facet directly (no v1 proposal
+    // sub-kind produces a shape candidate via the proposal layer, but
+    // wire-level vote envelopes targeting `(edge, 'shape')` are now
+    // first-class and resolve to the edge's `shapeFacet`).
+    if (target.facet === 'shape') return edge.shapeFacet;
+    return null;
+  }
+  // entityKind === 'annotation' — per ADR 0038 §4, only an annotation's
+  // `substance` facet is disputable (its `wording` *is* the content,
+  // inline-agreed at creation; `classification`/`shape` never apply to
+  // annotations). A vote naming any other facet on an annotation target
+  // resolves to `null` here → `target-entity-not-found`. Mirrors the
+  // annotation arm in `primitives.ts` / `commit.ts` (`getAnnotation`),
+  // narrowed to `substance`.
+  const annotation = projection.getAnnotation(target.entityId);
+  if (!annotation) return null;
+  if (target.facet === 'substance') return annotation.substanceFacet;
   return null;
 }
 
@@ -159,47 +171,72 @@ export const voteHandler: Validator<VoteAction> = (
       };
     }
 
-    const status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
+    // **Post-commit legality diverges for annotations (ADR 0038 §3).**
+    // An annotation's `substance` facet is commentary any participant may
+    // contest at any time: a `dispute` (or a later re-`agree`) is legal
+    // regardless of the facet's derived lifecycle status — that is the
+    // whole point of the disputable-annotation seam. node/edge facets, by
+    // contrast, reject votes once `committed` (re-opened only via the
+    // dedicated `withdraw-agreement` event, → `withdrawn`). The annotation
+    // substance facet carries no proposed *value* on the server projection
+    // (it is seeded `emptyFacet()` at `annotation-created` and is never
+    // marked committed server-side — the `disputed` rollup is computed
+    // client-side by the shell's `computeFacetStatuses`, Decision §7), so
+    // it derives to `'awaiting-proposal'` here; the node/edge lifecycle
+    // gate below would wrongly reject it. Skipping that gate for
+    // annotations is what lets a committed annotation reach `disputed`.
+    // Do NOT apply the node/edge committed-facet rejection to annotations
+    // — that is an ADR-0038-superseding change. The per-participant
+    // already-voted guard below still applies (no double-dispute /
+    // double-agree).
+    if (target.entityKind !== 'annotation') {
+      const status = deriveFacetStatus(
+        projection,
+        target.entityKind,
+        target.entityId,
+        target.facet,
+      );
 
-    // Per the refinement's Constraints / requirements: votable
-    // statuses are `'proposed' | 'disputed'`. Every other status is
-    // a refusal.
-    //
-    //   - 'committed'        — only `withdraw-agreement` is legal;
-    //                          handled by the dedicated event kind.
-    //   - 'agreed'           — unanimous; the moderator commits next;
-    //                          no further votes change the state.
-    //   - 'awaiting-proposal' — no candidate; "voting agrees with a
-    //                          candidate" — without one the gesture
-    //                          is ill-formed.
-    //   - 'meta-disagreement' — escape-hatch state; the path out is
-    //                          structural (decompose, axiom-mark),
-    //                          not a fresh vote.
-    //   - 'withdrawn'         — the facet is in a post-commit
-    //                          withdrawn limbo; a new candidate must
-    //                          land before votes resume.
-    if (status === 'committed') {
-      return {
-        ok: false,
-        reason: 'proposal-already-committed',
-        detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is committed; only 'withdraw-agreement' is legal on a committed facet`,
-      };
+      // Per the refinement's Constraints / requirements: votable
+      // statuses are `'proposed' | 'disputed'`. Every other status is
+      // a refusal.
+      //
+      //   - 'committed'        — only `withdraw-agreement` is legal;
+      //                          handled by the dedicated event kind.
+      //   - 'agreed'           — unanimous; the moderator commits next;
+      //                          no further votes change the state.
+      //   - 'awaiting-proposal' — no candidate; "voting agrees with a
+      //                          candidate" — without one the gesture
+      //                          is ill-formed.
+      //   - 'meta-disagreement' — escape-hatch state; the path out is
+      //                          structural (decompose, axiom-mark),
+      //                          not a fresh vote.
+      //   - 'withdrawn'         — the facet is in a post-commit
+      //                          withdrawn limbo; a new candidate must
+      //                          land before votes resume.
+      if (status === 'committed') {
+        return {
+          ok: false,
+          reason: 'proposal-already-committed',
+          detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is committed; only 'withdraw-agreement' is legal on a committed facet`,
+        };
+      }
+      if (status === 'meta-disagreement') {
+        return {
+          ok: false,
+          reason: 'proposal-already-meta-disagreement',
+          detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} has been marked as meta-disagreement; no votes are accepted on meta-disagreed facets`,
+        };
+      }
+      if (status === 'agreed' || status === 'awaiting-proposal' || status === 'withdrawn') {
+        return {
+          ok: false,
+          reason: 'illegal-state-transition',
+          detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is in status '${status}' which does not accept votes (votable statuses are 'proposed' | 'disputed')`,
+        };
+      }
+      // status ∈ {'proposed', 'disputed'} — votable.
     }
-    if (status === 'meta-disagreement') {
-      return {
-        ok: false,
-        reason: 'proposal-already-meta-disagreement',
-        detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} has been marked as meta-disagreement; no votes are accepted on meta-disagreed facets`,
-      };
-    }
-    if (status === 'agreed' || status === 'awaiting-proposal' || status === 'withdrawn') {
-      return {
-        ok: false,
-        reason: 'illegal-state-transition',
-        detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is in status '${status}' which does not accept votes (votable statuses are 'proposed' | 'disputed')`,
-      };
-    }
-    // status ∈ {'proposed', 'disputed'} — votable.
 
     // Per-participant prior-vote check against the FACET. The facet's
     // `perParticipant` map is the canonical record for facet-keyed

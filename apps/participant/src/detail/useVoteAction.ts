@@ -65,14 +65,16 @@ import type { FacetName } from '@a-conversa/shared-types';
 import { useWsStore } from '../ws/wsStore';
 
 /**
- * Vote-target entity kind. Narrows the broader `EntityKind` enum
- * (which includes `'annotation'` per R26 entity-included payloads) to
- * the two kinds the vote envelope addresses: nodes and edges. The
- * methodology engine has no per-facet vote surface against annotations
- * today; widening this when an annotation-facet vote lands is a
- * follow-up.
+ * Vote-target entity kind. Nodes and edges carry the per-facet
+ * agreement lifecycle; `'annotation'` is votable on its `substance`
+ * facet only — a committed annotation is disputable post-commit per
+ * ADR 0038 (the facet-keyed `dispute` vote that lights the rose
+ * `disputed` badge). The dispatch is kind-generic (`castVote`'s facet
+ * arm passes `entity_kind` straight through), so the only change here
+ * is the type widening; the participant dispute-annotation UI gesture
+ * is the downstream `mod_annotation_dispute_e2e` task.
  */
-export type VoteEntityKind = 'node' | 'edge';
+export type VoteEntityKind = 'node' | 'edge' | 'annotation';
 
 /**
  * The two wire arms a vote can carry. Mirrors the wire schema's

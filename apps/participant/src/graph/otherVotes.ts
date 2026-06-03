@@ -364,6 +364,11 @@ export function projectOtherVotes(
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
+        // Per ADR 0038 annotation facet votes ride this arm too, but the
+        // per-other-voter rollup is keyed on node/edge graph entities — an
+        // annotation dispute surfaces via the moderator's substance badge,
+        // not this per-entity index. Skip it.
+        if (event.payload.entity_kind === 'annotation') continue;
         // Per `pf_part_facet_name_widen_shape` the local `FacetName`
         // mirror is now 4-valued (matching the wire-level enum), so
         // shape-facet votes flow through this arm into the per-entity

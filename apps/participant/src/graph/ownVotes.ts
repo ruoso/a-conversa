@@ -227,6 +227,12 @@ export function projectOwnVotes(
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
+        // Per ADR 0038 annotation facet votes ride this arm too, but the
+        // own-vote rollup is keyed on node/edge graph entities — an
+        // annotation dispute surfaces via the moderator's substance badge
+        // (the shell's `computeFacetStatuses`), not this per-entity index.
+        // Skip it.
+        if (event.payload.entity_kind === 'annotation') continue;
         // Per `pf_part_facet_name_widen_shape` the local `FacetName`
         // mirror is now 4-valued (matching the wire-level enum), so
         // shape-facet votes flow through this arm into the per-entity
@@ -411,6 +417,10 @@ export function projectOwnFacetVotes(
       if (event.payload.participant !== currentParticipantId) continue;
       const arm: 'agree' | 'dispute' = event.payload.choice === 'agree' ? 'agree' : 'dispute';
       if (event.payload.target === 'facet') {
+        // Per ADR 0038 annotation facet votes ride this arm too; this
+        // index tracks node/edge facet affordances only (an annotation
+        // dispute surfaces via the moderator badge, not here). Skip it.
+        if (event.payload.entity_kind === 'annotation') continue;
         // Per `pf_part_facet_name_widen_shape`: the local `FacetName`
         // mirror is now 4-valued (matching the wire-level enum); the
         // per-row vote affordance reads shape-facet votes off this

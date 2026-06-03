@@ -710,6 +710,72 @@ describe('computeFacetStatuses — committed meta-move routes votes onto the ann
   });
 });
 
+describe('computeFacetStatuses — annotation substance facet is disputable post-commit (ADR 0038)', () => {
+  // A facet-keyed vote against an annotation's `substance` facet
+  // (`entity_kind: 'annotation'`). Folds directly onto the per-annotation
+  // accumulator (no proposal lookup), mirroring the wire/event payload
+  // the engine now emits for annotation disputes.
+  function annotationSubstanceVote(
+    seq: number,
+    annotationId: string,
+    participant: string,
+    choice: 'agree' | 'dispute',
+  ): Event {
+    return {
+      id: envId('av', seq),
+      sessionId: SESSION,
+      sequence: seq,
+      kind: 'vote',
+      actor: participant,
+      payload: {
+        target: 'facet' as const,
+        entity_kind: 'annotation' as const,
+        entity_id: annotationId,
+        facet: 'substance' as const,
+        participant,
+        choice,
+        voted_at: '2026-05-28T00:01:00.000Z',
+      },
+      createdAt: '2026-05-28T00:01:00.000Z',
+    };
+  }
+
+  it('(ad) a current participant disputing a committed annotation rolls its substance up to "disputed"', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      metaMoveProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      annotationCreatedEvent(6, ANNOTATION_M, NODE_X),
+      commitEvent(7, PROPOSAL_P),
+      annotationSubstanceVote(8, ANNOTATION_M, PARTICIPANT_A, 'dispute'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.annotations.get(ANNOTATION_M)).toEqual({ substance: 'disputed' });
+    // The dispute touches only the annotation bucket — node/edge buckets
+    // are unaffected.
+    expect(index.nodes.has(NODE_X)).toBe(false);
+    expect(index.edges.size).toBe(0);
+  });
+
+  it('(ae) the disputing participant re-agreeing rolls the substance back to "committed"', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      metaMoveProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      annotationCreatedEvent(6, ANNOTATION_M, NODE_X),
+      commitEvent(7, PROPOSAL_P),
+      annotationSubstanceVote(8, ANNOTATION_M, PARTICIPANT_A, 'dispute'),
+      annotationSubstanceVote(9, ANNOTATION_M, PARTICIPANT_A, 'agree'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.annotations.get(ANNOTATION_M)).toEqual({ substance: 'committed' });
+  });
+});
+
 describe('computeFacetStatuses — entities without proposals', () => {
   it('(q) a node with no proposals against any of its facets has no entry in the index', () => {
     const events: Event[] = [joinedEvent(1, PARTICIPANT_A, 'debater-A')];

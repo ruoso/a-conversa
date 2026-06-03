@@ -235,6 +235,11 @@ export function derivePersonalAgreements(
         candidateValue: string;
       } | null;
       if (event.payload.target === 'facet') {
+        // Per ADR 0038 annotation facet votes ride this arm too; personal-
+        // agreement rows are derived for node/edge facet proposals only
+        // (an annotation dispute carries no candidate value and surfaces
+        // via the moderator badge). Skip it.
+        if (event.payload.entity_kind === 'annotation') continue;
         // Facet-keyed arm — the target identity is on the payload, but
         // the candidate value is NOT. Resolve the value through the
         // most-recent proposal cached for the same facet. Map iteration

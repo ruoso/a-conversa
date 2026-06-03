@@ -93,7 +93,9 @@ export interface ProposeAction extends ActionEnvelopeBase {
 export interface VoteActionFacet extends ActionEnvelopeBase {
   kind: 'vote';
   target: 'facet';
-  entityKind: 'node' | 'edge';
+  // `'annotation'` per ADR 0038 §1: a committed annotation's `substance`
+  // facet is disputable post-commit via the facet-keyed vote arm.
+  entityKind: 'node' | 'edge' | 'annotation';
   entityId: string;
   facet: FacetName;
   vote: PerParticipantVote;

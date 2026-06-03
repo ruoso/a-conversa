@@ -76,6 +76,16 @@ const FACET_ARGS_OTHER_NODE: UseVoteActionArgs = {
   facet: 'classification',
 };
 
+const ANNOTATION_A_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+// Per ADR 0038: a committed annotation's `substance` facet is disputable
+// via the facet arm with `entity_kind: 'annotation'`.
+const FACET_ARGS_ANNOTATION_SUBSTANCE: UseVoteActionArgs = {
+  entity_kind: 'annotation',
+  entity_id: ANNOTATION_A_ID,
+  facet: 'substance',
+};
+
 const PROPOSAL_ARGS: UseVoteActionArgs = { proposal_id: PROPOSAL_ID };
 const PROPOSAL_ARGS_ALT: UseVoteActionArgs = { proposal_id: PROPOSAL_ID_ALT };
 
@@ -256,6 +266,33 @@ describe('useVoteAction — facet-arm successful vote', () => {
     expect(useVoteActionStore.getState().voting.has(`facet:node:${NODE_A_ID}:classification`)).toBe(
       false,
     );
+  });
+
+  it('dispatches an annotation substance dispute with entity_kind:"annotation" (ADR 0038)', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client, FACET_ARGS_ANNOTATION_SUBSTANCE);
+    let votePromise: Promise<void> | undefined;
+    act(() => {
+      votePromise = probe.result.castVote('dispute');
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_ID,
+      expectedSequence: 0,
+      target: 'facet',
+      entity_kind: 'annotation',
+      entity_id: ANNOTATION_A_ID,
+      facet: 'substance',
+      choice: 'dispute',
+    });
+    act(() => {
+      fake.resolveNext({ sequence: 1 });
+    });
+    await act(async () => {
+      await votePromise;
+    });
+    expect(probe.result.lastError).toBeUndefined();
   });
 
   it.each<VoteChoice>(['agree', 'dispute'])(

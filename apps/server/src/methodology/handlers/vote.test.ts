@@ -38,6 +38,8 @@ const DEBATER_B_ID = '55555555-5555-4555-8555-555555555555';
 const OUTSIDER_ID = '66666666-6666-4666-8666-666666666666';
 
 const NODE_ID_1 = '77777777-7777-4777-8777-777777777777';
+const ANNOTATION_ID = '88888888-8888-4888-8888-888888888888';
+const ANNOTATION_ID_UNKNOWN = '99999999-9999-4999-8999-999999999999';
 const PROPOSAL_ID_1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PROPOSAL_ID_UNKNOWN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const NEW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -519,5 +521,144 @@ describe('vote handler — withdraw arm', () => {
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('not-a-participant');
+  });
+});
+
+// ---------------------------------------------------------------
+// Annotation substance-facet votes (ADR 0038) — a committed
+// annotation is disputable post-commit via a facet-keyed
+// `entity_kind: 'annotation'` vote against its `substance` facet.
+// The committed-facet lifecycle gate that rejects node/edge votes
+// is deliberately bypassed for annotations (ADR 0038 §3); only the
+// per-participant already-voted guard applies.
+// ---------------------------------------------------------------
+
+// Materialize a committed annotation on the seeded projection. In
+// production a committed `meta-move` emits `annotation-created`; here we
+// apply that event directly — the annotation's `substanceFacet` is
+// seeded empty (server-side it never carries the routed meta-move votes,
+// per refinement Decision §7), which is exactly the state a post-commit
+// dispute targets.
+function applyAnnotationCreated(projection: ReturnType<typeof createEmptyProjection>): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'annotation-created', MODERATOR_ID, T9, {
+      annotation_id: ANNOTATION_ID,
+      kind: 'reframe',
+      content: 'the real question is the operational form',
+      target_node_id: NODE_ID_1,
+      target_edge_id: null,
+      created_by: MODERATOR_ID,
+      created_at: T9,
+    }),
+  );
+}
+
+// Apply a recorded annotation substance facet vote (read-side), so the
+// already-voted guard has a prior vote to consult.
+function applyAnnotationVote(
+  projection: ReturnType<typeof createEmptyProjection>,
+  participant: string,
+  vote: 'agree' | 'dispute',
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'vote', participant, T9, {
+      target: 'facet' as const,
+      entity_kind: 'annotation' as const,
+      entity_id: ANNOTATION_ID,
+      facet: 'substance' as const,
+      participant,
+      choice: vote,
+      voted_at: T9,
+    }),
+  );
+}
+
+function makeAnnotationVoteAction(
+  projection: ReturnType<typeof createEmptyProjection>,
+  requester: string,
+  vote: 'agree' | 'dispute',
+  facet: 'classification' | 'substance' | 'wording' | 'shape' = 'substance',
+  entityId: string = ANNOTATION_ID,
+): VoteAction {
+  return {
+    kind: 'vote' as const,
+    requester,
+    sessionId: SESSION_ID,
+    eventId: NEW_EVENT_ID,
+    sequence: nextSequence(projection),
+    actor: requester,
+    createdAt: T9,
+    vote,
+    votedAt: T9,
+    target: 'facet' as const,
+    entityKind: 'annotation' as const,
+    entityId,
+    facet,
+  };
+}
+
+describe('vote handler — annotation substance facet (ADR 0038)', () => {
+  it('accepts a dispute vote on a committed annotation and emits the facet-arm event', () => {
+    const p = seedSession();
+    applyAnnotationCreated(p);
+    const action = makeAnnotationVoteAction(p, DEBATER_A_ID, 'dispute');
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0]?.kind).toBe('vote');
+      expect(r.events[0]?.payload).toMatchObject({
+        target: 'facet',
+        entity_kind: 'annotation',
+        entity_id: ANNOTATION_ID,
+        facet: 'substance',
+        participant: DEBATER_A_ID,
+        choice: 'dispute',
+      });
+    }
+  });
+
+  it('accepts an agree vote on a committed annotation (re-agree path)', () => {
+    const p = seedSession();
+    applyAnnotationCreated(p);
+    const action = makeAnnotationVoteAction(p, DEBATER_A_ID, 'agree');
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a vote on a non-existent annotation with target-entity-not-found', () => {
+    const p = seedSession();
+    applyAnnotationCreated(p);
+    const action = makeAnnotationVoteAction(
+      p,
+      DEBATER_A_ID,
+      'dispute',
+      'substance',
+      ANNOTATION_ID_UNKNOWN,
+    );
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('target-entity-not-found');
+  });
+
+  it('rejects a second identical dispute by the same participant with already-voted', () => {
+    const p = seedSession();
+    applyAnnotationCreated(p);
+    applyAnnotationVote(p, DEBATER_A_ID, 'dispute');
+    const action = makeAnnotationVoteAction(p, DEBATER_A_ID, 'dispute');
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('already-voted');
+  });
+
+  it('rejects a vote naming a non-substance facet on an annotation target', () => {
+    const p = seedSession();
+    applyAnnotationCreated(p);
+    const action = makeAnnotationVoteAction(p, DEBATER_A_ID, 'dispute', 'wording');
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('target-entity-not-found');
   });
 });

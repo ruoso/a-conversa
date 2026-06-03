@@ -57,3 +57,23 @@ Feature: methodology engine — commit meta-move emits annotation-created agains
     And the result carries an annotation-created event of kind "reframe" on the node ahead of the commit event
     When the resulting meta-move events are appended to the session log and the projection is replayed
     Then the resulting annotation's substance facet rolls up to "committed" after replay
+
+  Scenario: a participant disputing a committed reframe annotation's substance rolls it up to disputed
+    # ADR 0038 (annotation_facet_vote_seam): a committed annotation's
+    # `substance` facet is disputable post-commit via a facet-keyed
+    # `entity_kind: 'annotation'` vote. This closes the seam the prior
+    # scenario flagged as deferred — exercising the full protocol + replay
+    # path: the engine vote handler accepts the dispute against the
+    # committed annotation (the committed-facet gate diverges for
+    # annotations, ADR 0038 §3), the event round-trips through pglite, and
+    # `computeFacetStatuses` rolls the substance facet up to `disputed`
+    # (Rule 5, which outranks `committed`).
+    Given a seeded session with three participants, a visible node, a pending reframe meta-move proposal, and three agree votes for commit-meta-move tests
+    When the moderator constructs a commit action against the meta-move proposal
+    And the methodology engine validates the commit action against the projected session
+    Then the validation result is Valid
+    And the result carries an annotation-created event of kind "reframe" on the node ahead of the commit event
+    When the resulting meta-move events are appended to the session log and the projection is replayed
+    Then the resulting annotation's substance facet rolls up to "committed" after replay
+    When a participant casts a facet-keyed dispute vote on the resulting annotation's substance and it is appended and replayed
+    Then the resulting annotation's substance facet rolls up to "disputed" after replay

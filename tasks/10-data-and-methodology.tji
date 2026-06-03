@@ -533,6 +533,7 @@ task data_and_methodology "Data and methodology" {
     task annotation_facet_vote_seam "Post-commit annotation-facet vote seam: widen VoteEntityKind to include annotation, add vote-handler arm, extend computeFacetStatuses to yield disputed annotation status" {
       effort 1d
       allocate team
+      complete 100
       depends !annotation_facet_status_logic
       note -8<-
         Source of debt: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md Decision §4 — the disputed annotation state is not reachable today because VoteEntityKind = 'node' | 'edge' (useVoteAction.ts:74–75) and the vote handler resolves no facet target for structural sub-kinds (replay.ts:711–722). This task builds the missing seam: widen VoteEntityKind to include 'annotation'; add a vote-handler arm in the server that resolves annotation-targeted facet votes; extend computeFacetStatuses annotation routing to fold in those direct votes so a committed annotation can reach 'disputed'. Unblocks mod_annotation_dispute_e2e.

@@ -436,6 +436,27 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // resolves to the facet via the proposal-id → target map. Both
       // arms write to the same per-facet `perParticipant` map.
       if (event.payload.target === 'facet') {
+        // Per ADR 0038: a facet-keyed vote may target an annotation's
+        // `substance` facet directly (`entity_kind: 'annotation'`). Route
+        // it onto the per-annotation accumulator rather than the node/edge
+        // maps — `getOrCreateFacetState` only knows node/edge — so a
+        // current participant's `dispute` rolls the substance facet up to
+        // `disputed` via Rule 5 (which outranks `committed`, lighting the
+        // rose badge). The accumulator is normally seeded `committed` by
+        // the meta-move commit arm below; if a direct vote ever precedes
+        // it, create it with `hasCandidate = true` so the derivation
+        // treats it as votable (Rule 2 would otherwise yield
+        // `awaiting-proposal`).
+        if (event.payload.entity_kind === 'annotation') {
+          let substance = annotationStates.get(event.payload.entity_id);
+          if (!substance) {
+            substance = emptyFacetState();
+            substance.hasCandidate = true;
+            annotationStates.set(event.payload.entity_id, substance);
+          }
+          substance.perParticipant.set(event.payload.participant, event.payload.choice);
+          continue;
+        }
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,

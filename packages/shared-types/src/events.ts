@@ -438,7 +438,13 @@ export type EntityIncludedPayload = z.infer<typeof entityIncludedPayloadSchema>;
 // `apps/server/src/events/validate.ts` and the methodology engine.
 export const facetVotePayloadSchema = z.object({
   target: z.literal('facet'),
-  entity_kind: z.enum(['node', 'edge']),
+  // Per ADR 0038 §1: the facet-*vote* payload accepts `'annotation'` so a
+  // committed annotation's `substance` facet is disputable post-commit.
+  // The widening is confined to the vote payload — `facetCommitPayloadSchema`,
+  // `facetMetaDisagreementPayloadSchema`, and `withdrawAgreementPayloadSchema`
+  // stay `['node', 'edge']` (annotations are disputable, not committable /
+  // meta-disagreeable / withdrawable through those arms).
+  entity_kind: z.enum(['node', 'edge', 'annotation']),
   entity_id: z.string().uuid(),
   facet: facetNameSchema,
   participant: z.string().uuid(),

@@ -477,7 +477,13 @@ export const wsVoteFacetPayloadSchema = z.object({
   sessionId: z.string().uuid(),
   expectedSequence: z.number().int().nonnegative(),
   target: z.literal('facet'),
-  entity_kind: z.enum(['node', 'edge']),
+  // Per ADR 0038 §1: the facet-*vote* wire message accepts `'annotation'`
+  // (kept in lockstep with `facetVotePayloadSchema.entity_kind` so a valid
+  // wire vote round-trips to a valid event). The facet-*commit* message
+  // (`wsCommitFacetPayloadSchema`) and withdraw-agreement message stay
+  // `['node', 'edge']` — annotations are disputable, not committable /
+  // withdrawable through those arms.
+  entity_kind: z.enum(['node', 'edge', 'annotation']),
   entity_id: z.string().uuid(),
   facet: z.enum(['classification', 'substance', 'wording', 'shape']),
   choice: z.enum(['agree', 'dispute']),
