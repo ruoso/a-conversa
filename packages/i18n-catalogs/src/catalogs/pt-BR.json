@@ -219,6 +219,33 @@
         }
       }
     },
+    "changeHistory": {
+      "paneAriaLabel": "Lista do histórico de mudanças",
+      "systemActor": "Sistema",
+      "loading": "Carregando o histórico de mudanças…",
+      "error": "Não foi possível carregar o histórico de mudanças.",
+      "retry": "Tentar novamente",
+      "emptyState": "Nenhum evento ainda",
+      "kind": {
+        "session-created": "Sessão criada",
+        "session-ended": "Sessão encerrada",
+        "participant-joined": "Participante entrou",
+        "participant-left": "Participante saiu",
+        "node-created": "Declaração criada",
+        "edge-created": "Conexão criada",
+        "annotation-created": "Anotação criada",
+        "entity-included": "Entidade incluída",
+        "proposal": "Proposta",
+        "vote": "Voto",
+        "commit": "Consolidação",
+        "meta-disagreement-marked": "Meta-desacordo marcado",
+        "snapshot-created": "Instantâneo criado",
+        "entity-removed": "Entidade removida",
+        "session-mode-changed": "Modo da sessão alterado",
+        "withdraw-agreement": "Concordância retirada",
+        "proposal-withdrawn": "Proposta retirada"
+      }
+    },
     "captureTextInput": {
       "label": "Texto da declaração",
       "placeholder": "Digite o texto da declaração aqui…",

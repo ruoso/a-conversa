@@ -98,6 +98,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: adding YAML parsing (and likely a parser dependency) into a smoke test is scope beyond a 0.5d config rotation; the dependency addition itself is an ADR-adjacent decision. Deliberately out of scope for v2 per Decision §6. Drift risk grows with each expansion.
 - **Suggested resolution**: if a third expansion is undertaken, add the cross-check as part of that leaf (or as a standalone hardening task). The test would live in `tests/smoke/`, parse `infra/authelia/users.yml` with a lightweight YAML parser, and assert `Object.keys(parsed.users).sort()` equals `[...DEV_USER_POOL].sort()`.
 
+### 2026-06-03 — Virtualization for change-history pane if event logs grow large
+
+- **Source**: closer for `moderator_ui.mod_change_history_pane.mod_history_scroller` (Decision D5).
+- **Question**: the change-history pane renders all events unvirtualized (matching `PendingProposalsPane`). Example-walkthrough logs are bounded (tens–low-hundreds of events), so the v1 decision is sound. If real sessions accumulate thousands of events, a windowed list (e.g. `@tanstack/virtual`) would be needed to avoid DOM size regressions.
+- **Why parked**: "re-evaluate if perf degrades" is a judgment call, not an agent-implementable deliverable. No evidence of a real performance problem yet.
+- **Suggested resolution**: if moderators report scroll jank or if logs routinely exceed ~500 events in practice, spec a `mod_history_scroller_virtualize` task covering virtual-list integration + scroll preservation.
+
 ### 2026-06-02 — Should annotations be disputable post-commit?
 
 - **Source**: closer for `data_and_methodology.methodology_engine.annotation_facet_status_logic` (refinement Open questions).

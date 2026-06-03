@@ -672,6 +672,8 @@ task moderator_ui "Moderator UI" {
     task mod_history_scroller "Reverse-chronological event scroller" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_history_scroller.md"
     }
     task mod_history_event_summary "Brief payload summary per entry" {
       effort 1d
@@ -864,7 +866,11 @@ task moderator_ui "Moderator UI" {
       task mod_pw_full_session_run "Playwright: full session run (recreate the example walkthrough scenario)" {
         effort 3d
         allocate team
-        note "Drives moderator + two participant tablets in parallel browser contexts; produces a complete debate."
+        note -8<-
+          Drives moderator + two participant tablets in parallel browser contexts; produces a complete debate.
+
+          Inherited scenario (from mod_history_scroller, 2026-06-03): REST-prefetch-from-live-server full-log content assertion — cold load of the change-history pane against a real backend with no WS seeding, asserting the pane renders the complete session event log in reverse-chronological order. Per refinement D6, the live-server path is naturally exercised by this walkthrough run and is not worth a separate thin spec.
+        ->8-
       }
       task playwright_f6_substance_precommit_full_chain "Extend seedWsStore to synthesize facet-vote/committed events; unskip full F6 step-4 e2e chain" {
         effort 1d

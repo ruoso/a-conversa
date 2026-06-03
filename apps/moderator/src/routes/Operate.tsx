@@ -92,6 +92,7 @@ import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { IsOughtPrompt } from '../layout/IsOughtPrompt';
 import { BlockingDiagnosticBanner } from '../layout/BlockingDiagnosticBanner';
+import { ChangeHistoryPane } from '../layout/ChangeHistoryPane';
 import { DiagnosticFlagPane } from '../layout/DiagnosticFlagPane';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
@@ -353,6 +354,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             <RightSidebar
               pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
               diagnosticFlagsSlot={<DiagnosticFlagPane sessionId={sessionId} />}
+              changeHistorySlot={<ChangeHistoryPane sessionId={sessionId} />}
             />
           </>
         }
