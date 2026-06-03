@@ -11,7 +11,7 @@
 
 import * as React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Event } from '@a-conversa/shared-types';
 
 import {
@@ -613,6 +613,37 @@ describe('EntityDetailPanel — annotations list', () => {
     expect(rows[0]?.textContent).toContain('alice');
     expect(rows[1]?.getAttribute('data-annotation-kind')).toBe('reframe');
     expect(rows[1]?.textContent).toContain('ben');
+  });
+
+  it('(h-bis) clicking an annotation row selects that annotation (the dispute-affordance reachability path)', () => {
+    const node = makeNode({ id: NODE_A_ID, hasAnnotation: true, annotationCount: 1 });
+    const annotations: readonly Annotation[] = [
+      {
+        id: 'ann-1',
+        kind: 'reframe',
+        content: 'Reframe the claim',
+        targetNodeId: NODE_A_ID,
+        targetEdgeId: null,
+        createdBy: ALICE_ID,
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
+    ];
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node],
+      nodeAnnotationIndex: new Map([[NODE_A_ID, annotations]]),
+      // The flat `annotations` prop must carry the row's annotation so the
+      // panel's `lookupEntity` resolves the new selection — otherwise the
+      // stale-entity auto-clear effect immediately nulls it back out.
+      annotations,
+    });
+    const row = screen.getByTestId('participant-detail-panel-annotation-row');
+    act(() => {
+      fireEvent.click(row.querySelector('button') as HTMLButtonElement);
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'annotation', id: 'ann-1' });
   });
 
   it('(i) omits the annotations section entirely when no annotations target the entity', () => {

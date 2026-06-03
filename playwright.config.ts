@@ -436,8 +436,14 @@ export default defineConfig({
       // locale en-US, ignoreHTTPSErrors for the OIDC self-signed cert,
       // bootstrap auth jar). Widening the testMatch keeps both specs
       // co-located instead of cloning the project block.
+      // `annotation-dispute-roundtrip.spec.ts` (mod_annotation_dispute_e2e)
+      // joins the same project — it drives the identical three-context
+      // shape to pin the post-commit annotation-dispute round-trip
+      // (moderator commits a reframe meta-move → debater disputes the
+      // resulting annotation → moderator badge gains
+      // `data-facet-status="disputed"` live over WS).
       testMatch:
-        /(cross-surface-lobby-start|methodology-full-flow|moderator-draw-edge|moderator-capture-targeted-by)\.spec\.ts$/,
+        /(cross-surface-lobby-start|methodology-full-flow|moderator-draw-edge|moderator-capture-targeted-by|annotation-dispute-roundtrip)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

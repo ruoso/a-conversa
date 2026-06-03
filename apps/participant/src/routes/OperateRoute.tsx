@@ -59,6 +59,7 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
+import { ParticipantAnnotationDisputeButton } from '../detail/ParticipantAnnotationDisputeButton';
 import {
   MyAgreementsPane,
   PendingProposalsPane,
@@ -376,9 +377,31 @@ function OperateRouteAuthenticatedBody({
           );
         })()
       : null;
+  // Annotation-dispute affordance — mounted in the same actionSlot when the
+  // selection is an annotation (`mod_annotation_dispute_e2e`). A committed
+  // annotation is disputable post-commit via a `substance`-facet vote
+  // (ADR 0038); the button drives the facet-keyed seam built by
+  // `annotation_facet_vote_seam`. We thread the annotation's resolved
+  // `substance` status so the affordance mirrors the moderator badge's
+  // settled state.
+  const annotationDisputeButton =
+    selected !== null && selected.kind === 'annotation'
+      ? (() => {
+          const substanceStatus = facetStatusIndex.annotations.get(selected.id)?.substance;
+          return (
+            <ParticipantAnnotationDisputeButton
+              annotationId={selected.id}
+              substanceStatus={substanceStatus}
+            />
+          );
+        })()
+      : null;
   const actionSlot =
-    axiomMarkButton !== null ? (
-      <div className="flex flex-col gap-3">{axiomMarkButton}</div>
+    axiomMarkButton !== null || annotationDisputeButton !== null ? (
+      <div className="flex flex-col gap-3">
+        {axiomMarkButton}
+        {annotationDisputeButton}
+      </div>
     ) : undefined;
 
   // Tab-seam introduced by `part_proposals_tab` (Decision §1: top-of-

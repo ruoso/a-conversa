@@ -781,6 +781,15 @@ function AxiomMarkAttributionSection(props: {
  * Annotations list — section 5. One row per annotation with kind label
  * + content text + author screen name. Suppressed when no annotations
  * target the entity.
+ *
+ * Each row is a clickable button that selects the annotation
+ * (`{ kind: 'annotation', id }`) so the panel re-renders into the
+ * annotation-detail branch — the reachable selection path the dispute
+ * affordance hangs off (`mod_annotation_dispute_e2e`, Constraints
+ * "Reachable selection path"). Mirrors the in-row navigation buttons
+ * `<AnnotationTargetSection>` / `<AnnotationContradictsSection>` already
+ * use; the `<li>` keeps the stable testid + data-attributes so the
+ * existing selectors keep biting.
  */
 function AnnotationsSection(props: {
   annotations: readonly Annotation[];
@@ -801,15 +810,23 @@ function AnnotationsSection(props: {
             data-testid="participant-detail-panel-annotation-row"
             data-annotation-id={annotation.id}
             data-annotation-kind={annotation.kind}
-            className="rounded border border-slate-200 p-2"
+            className="rounded border border-slate-200"
           >
-            <p className="text-[10px] uppercase tracking-wide text-amber-700">
-              {props.annotationKindLabel(annotation.kind)}
-            </p>
-            <p className="text-sm text-slate-800">{annotation.content}</p>
-            <p className="text-[10px] text-slate-500">
-              {screenNameFor(props.roster, annotation.createdBy)}
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                useSelectionStore.getState().select({ kind: 'annotation', id: annotation.id });
+              }}
+              className="flex w-full flex-col items-start gap-0.5 p-2 text-left hover:bg-slate-50"
+            >
+              <span className="text-[10px] uppercase tracking-wide text-amber-700">
+                {props.annotationKindLabel(annotation.kind)}
+              </span>
+              <span className="text-sm text-slate-800">{annotation.content}</span>
+              <span className="text-[10px] text-slate-500">
+                {screenNameFor(props.roster, annotation.createdBy)}
+              </span>
+            </button>
           </li>
         ))}
       </ul>

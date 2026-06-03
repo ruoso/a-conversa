@@ -131,6 +131,7 @@ import {
   EMPTY_VOTES_BY_FACET,
   buildAnnotationHostEdgeAnchorIndex,
   computeAnnotationsAsEndpoints,
+  enrichAnnotationsWithFacetStatuses,
   groupPendingAxiomMarksByNode,
   placeAnnotationHostMidpoints,
   projectAnnotationHostEdges,
@@ -646,7 +647,19 @@ export function projectNodes(
   // endpoints) are filtered out of the badge bucket here so the host
   // node's `data.annotations` excludes them — mutual exclusion between
   // badge and node.
-  const allAnnotations = projectModeratorAnnotations(events);
+  //
+  // Enrich each annotation with its per-facet `FacetStatus` from the
+  // events-derived `facetStatusIndex.annotations` bucket so the badge
+  // carrier lights the rose `data-facet-status="disputed"` marker once a
+  // post-commit substance dispute folds in (ADR 0038 /
+  // `mod_annotation_dispute_e2e`). The broadcast adapter carries no
+  // annotation facets, so this status MUST come from the event-log
+  // derivation — mirrors `selectAnnotations`'s enrichment seam. Empty
+  // index → the same array reference passes through unchanged.
+  const allAnnotations = enrichAnnotationsWithFacetStatuses(
+    projectModeratorAnnotations(events),
+    facetStatusIndex.annotations,
+  );
   const annotationsByNode = groupAnnotationsByEntityId(
     promotedAnnotationIds.size === 0
       ? allAnnotations
