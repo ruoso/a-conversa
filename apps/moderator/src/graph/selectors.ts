@@ -297,9 +297,18 @@ export function selectAnnotations(
 ): readonly AnnotationRenderData[] {
   const session = state.sessionState[sessionId];
   if (!session) return [];
+  // The engine's `.annotations` bucket is value-shape-identical to
+  // `AnnotationFacetStatusIndex`, so it drops straight into the join.
+  // When no annotation carries a routed status, fall back to the stable
+  // empty singleton so the memoization contract from
+  // `mod_meta_move_disputed_visibility` Decision §7 holds (no fresh `Map`
+  // identity on every selector tick).
+  const annotationFacetStatuses = computeFacetStatuses(session.events).annotations;
   return enrichAnnotationsWithFacetStatuses(
     projectAnnotations(session.events),
-    EMPTY_ANNOTATION_FACET_STATUS_INDEX,
+    annotationFacetStatuses.size === 0
+      ? EMPTY_ANNOTATION_FACET_STATUS_INDEX
+      : annotationFacetStatuses,
   );
 }
 

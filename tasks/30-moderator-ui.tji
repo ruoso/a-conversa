@@ -358,6 +358,15 @@ task moderator_ui "Moderator UI" {
         Surfaced via tech-debt registration policy in tasks/refinements/README.md (commit landing part_pw_multi_component_decompose_per_component_breakdown).
       ->8-
     }
+    task mod_annotation_dispute_e2e "Participant dispute-annotation affordance + moderator [data-facet-status=disputed] Playwright round-trip" {
+      effort 0.5d
+      allocate team
+      depends data_and_methodology.methodology_engine.annotation_facet_vote_seam
+      note -8<-
+        Source of debt: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md Decision §4 — the Playwright [data-facet-status="disputed"] round-trip deferred from annotation_facet_status_logic because the disputed surface is not reachable until annotation_facet_vote_seam builds the missing vote seam. Scope: add the participant affordance to dispute an annotation's substance facet; land the moderator Playwright spec asserting [data-facet-status="disputed"] on an annotation badge after a commit + participant-dispute round-trip.
+        Registered by closer 2026-06-02 (commit landing annotation_facet_status_logic).
+      ->8-
+    }
   }
 
   task mod_capture_flow "F1 — Capture a new statement" {

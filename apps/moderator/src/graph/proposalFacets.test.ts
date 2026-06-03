@@ -62,6 +62,7 @@ function votesIndexWith(
 const EMPTY_INDEX: FacetStatusIndex = {
   nodes: new Map(),
   edges: new Map(),
+  annotations: new Map(),
 };
 
 function indexWith(
@@ -75,11 +76,13 @@ function indexWith(
     return {
       nodes: new Map([[entityId, inner]]),
       edges: new Map(),
+      annotations: new Map(),
     };
   }
   return {
     nodes: new Map(),
     edges: new Map([[entityId, inner]]),
+    annotations: new Map(),
   };
 }
 
@@ -254,6 +257,7 @@ describe('derivePerProposalFacets — per-component fan-out (decompose + interpr
     const index: FacetStatusIndex = {
       nodes: new Map([[COMPONENT_2, { classification: 'committed' }]]),
       edges: new Map(),
+      annotations: new Map(),
     };
     const out = derivePerProposalFacets(proposal, index, EMPTY_VOTES_INDEX, PROPOSAL_DECOMPOSE);
     expect(out).toHaveLength(2);
@@ -279,6 +283,7 @@ describe('derivePerProposalFacets — per-component fan-out (decompose + interpr
         [COMPONENT_3, { classification: 'disputed' }],
       ]),
       edges: new Map(),
+      annotations: new Map(),
     };
     const out = derivePerProposalFacets(proposal, index, EMPTY_VOTES_INDEX, PROPOSAL_DECOMPOSE);
     expect(out).toHaveLength(3);

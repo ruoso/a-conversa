@@ -100,7 +100,15 @@ export function PendingProposalsPane({
       const existing = mergedEdges.get(id);
       mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
     }
-    return { nodes: mergedNodes, edges: mergedEdges };
+    // The broadcast carries no annotation facets
+    // (`buildFacetStatusIndexFromBroadcast` returns an empty `annotations`
+    // bucket), so the events-derived annotation statuses pass through the
+    // merge unchanged.
+    return {
+      nodes: mergedNodes,
+      edges: mergedEdges,
+      annotations: eventsBasedFacetStatusIndex.annotations,
+    };
   }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
   const votesByFacetIndex = useMemo(
     () => projectOtherVotesByFacet(events, currentParticipantId),

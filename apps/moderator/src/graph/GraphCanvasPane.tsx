@@ -594,6 +594,7 @@ export function focusCaptureTextarea(): void {
 const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = Object.freeze({
   nodes: new Map(),
   edges: new Map(),
+  annotations: new Map(),
 });
 
 /**
@@ -1245,7 +1246,15 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       const existing = mergedEdges.get(id);
       mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
     }
-    return { nodes: mergedNodes, edges: mergedEdges };
+    // The broadcast carries no annotation facets
+    // (`buildFacetStatusIndexFromBroadcast` returns an empty `annotations`
+    // bucket), so the events-derived annotation statuses pass through the
+    // merge unchanged.
+    return {
+      nodes: mergedNodes,
+      edges: mergedEdges,
+      annotations: eventsBasedFacetStatusIndex.annotations,
+    };
   }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
 
   // Compute the per-entity diagnostic-highlight index once per

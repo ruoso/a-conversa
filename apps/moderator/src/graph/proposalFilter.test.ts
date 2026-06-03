@@ -48,7 +48,11 @@ const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
 const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000c2';
 const PROPOSAL_P = '00000000-0000-4000-8000-0000000000ff';
 
-const EMPTY_INDEX: FacetStatusIndex = { nodes: new Map(), edges: new Map() };
+const EMPTY_INDEX: FacetStatusIndex = {
+  nodes: new Map(),
+  edges: new Map(),
+  annotations: new Map(),
+};
 const EMPTY_VOTES_INDEX: VotesByFacetIndex = new Map();
 const NO_PARTICIPANTS: ReadonlySet<string> = new Set<string>();
 
@@ -75,9 +79,9 @@ function indexWith(
 ): FacetStatusIndex {
   const inner: Partial<Record<FacetName, FacetStatus>> = { [facet]: status };
   if (entityKind === 'node') {
-    return { nodes: new Map([[entityId, inner]]), edges: new Map() };
+    return { nodes: new Map([[entityId, inner]]), edges: new Map(), annotations: new Map() };
   }
-  return { nodes: new Map(), edges: new Map([[entityId, inner]]) };
+  return { nodes: new Map(), edges: new Map([[entityId, inner]]), annotations: new Map() };
 }
 
 function votesIndexWith(

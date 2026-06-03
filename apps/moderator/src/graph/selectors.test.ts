@@ -861,6 +861,67 @@ function makeAnnotationCreated(opts: {
   };
 }
 
+// Local builders for the committed-meta-move → annotation-substance
+// wiring case (`annotation_facet_status_logic`). The meta-move's
+// per-participant votes route onto the resulting annotation's substance
+// facet via the [annotation-created, commit] adjacency.
+function makeJoined(sequence: number, userId: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xe00 + sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence,
+    kind: 'participant-joined',
+    actor: ACTOR,
+    payload: {
+      user_id: userId,
+      role: 'debater-A',
+      screen_name: 'Test',
+      joined_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeMetaMoveProposal(sequence: number, envelopeId: string, nodeId: string): Event {
+  return {
+    id: envelopeId,
+    sessionId: SESSION,
+    sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'meta-move',
+        meta_kind: 'reframe',
+        content: 'the real question is the operational form',
+        target_kind: 'node',
+        target_id: nodeId,
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeProposalVote(sequence: number, proposalId: string, participant: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xf00 + sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence,
+    kind: 'vote',
+    actor: participant,
+    payload: {
+      target: 'proposal',
+      proposal_id: proposalId,
+      participant,
+      choice: 'agree',
+      voted_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+const META_MOVE_PROPOSAL = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb001';
+
 describe('selectAnnotations', () => {
   it('returns [] for an unknown session id (wrapper null-safe lookup)', () => {
     const state = makeState([]);
@@ -870,6 +931,42 @@ describe('selectAnnotations', () => {
   it('returns [] for a known session with no events', () => {
     const state = makeState([]);
     expect(selectAnnotations(state, SESSION)).toEqual([]);
+  });
+
+  it('carries facetStatuses.substance for a committed-meta-move annotation', () => {
+    const state = makeState([
+      makeJoined(1, PARTICIPANT_A),
+      makeJoined(2, PARTICIPANT_B),
+      makeMetaMoveProposal(3, META_MOVE_PROPOSAL, NODE_X),
+      makeProposalVote(4, META_MOVE_PROPOSAL, PARTICIPANT_A),
+      makeProposalVote(5, META_MOVE_PROPOSAL, PARTICIPANT_B),
+      makeAnnotationCreated({
+        sequence: 6,
+        annotationId: 'anno-meta-move-1',
+        kind: 'reframe',
+        targetNodeId: NODE_X,
+        targetEdgeId: null,
+      }),
+      makeCommit({ sequence: 7, proposalEnvelopeId: META_MOVE_PROPOSAL }),
+    ]);
+    const annotations = selectAnnotations(state, SESSION);
+    const carrier = annotations.find((a) => a.id === 'anno-meta-move-1');
+    expect(carrier?.facetStatuses).toEqual({ substance: 'committed' });
+  });
+
+  it('empty-session path returns the stable empty-index path (no facetStatuses)', () => {
+    const state = makeState([
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: 'anno-node-1',
+        kind: 'note',
+        targetNodeId: 'node-x',
+        targetEdgeId: null,
+      }),
+    ]);
+    const annotations = selectAnnotations(state, SESSION);
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.facetStatuses).toBeUndefined();
   });
 
   it('delegates to projectAnnotations for a known session and returns the camelCased shape', () => {

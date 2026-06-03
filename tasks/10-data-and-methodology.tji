@@ -522,9 +522,21 @@ task data_and_methodology "Data and methodology" {
     task annotation_facet_status_logic "Route per-participant meta-move votes into per-annotation facet-status; wire enrichAnnotationsWithFacetStatuses; land Playwright e2e" {
       effort 1d
       allocate team
+      complete 100
       depends !meta_move_commit_logic
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_meta_move_disputed_visibility.md AC §11 — computeFacetStatuses does not route per-participant votes on meta-move proposals into per-facet status on the resulting annotation; the selector seam enrichAnnotationsWithFacetStatuses (apps/moderator/src/graph/selectors.ts) always receives an empty index. Scope: extend computeFacetStatuses (or projection layer) to populate AnnotationFacetStatusIndex: Map<annotationId, Partial<Record<FacetName, FacetStatus>>>; wire selectAnnotations to pass the populated index; land Playwright e2e in tests/e2e/moderator-capture.spec.ts asserting [data-facet-status="disputed"] on an annotation badge after a full F8 → commit → dispute round-trip. Registered by closer 2026-06-01.
+
+        Refinement: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md
+      ->8-
+    }
+    task annotation_facet_vote_seam "Post-commit annotation-facet vote seam: widen VoteEntityKind to include annotation, add vote-handler arm, extend computeFacetStatuses to yield disputed annotation status" {
+      effort 1d
+      allocate team
+      depends !annotation_facet_status_logic
+      note -8<-
+        Source of debt: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md Decision §4 — the disputed annotation state is not reachable today because VoteEntityKind = 'node' | 'edge' (useVoteAction.ts:74–75) and the vote handler resolves no facet target for structural sub-kinds (replay.ts:711–722). This task builds the missing seam: widen VoteEntityKind to include 'annotation'; add a vote-handler arm in the server that resolves annotation-targeted facet votes; extend computeFacetStatuses annotation routing to fold in those direct votes so a committed annotation can reach 'disputed'. Unblocks mod_annotation_dispute_e2e.
+        Registered by closer 2026-06-02 (commit landing annotation_facet_status_logic).
       ->8-
     }
   }

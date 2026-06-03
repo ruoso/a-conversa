@@ -59,6 +59,7 @@ function votesIndexWith(
 const EMPTY_INDEX: FacetStatusIndex = {
   nodes: new Map(),
   edges: new Map(),
+  annotations: new Map(),
 };
 
 function indexWith(
@@ -72,11 +73,13 @@ function indexWith(
     return {
       nodes: new Map([[entityId, inner]]),
       edges: new Map(),
+      annotations: new Map(),
     };
   }
   return {
     nodes: new Map(),
     edges: new Map([[entityId, inner]]),
+    annotations: new Map(),
   };
 }
 

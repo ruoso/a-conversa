@@ -129,10 +129,26 @@ type PerParticipantVote = 'agree' | 'dispute';
  * The output of `computeFacetStatuses`. Per entity kind, a Map of entity id
  * to a partial record of per-facet status. Facets with no events affecting
  * them are absent from the record.
+ *
+ * The `annotations` bucket carries per-annotation facet status for
+ * annotations materialized by a committed meta-move. Its value shape is
+ * identical to the node/edge buckets (and to the moderator's
+ * `AnnotationFacetStatusIndex`), so `selectAnnotations` consumes it
+ * directly. An annotation only ever carries a `substance` entry — the
+ * facet the data model reserves for "do we agree with this annotation's
+ * substance" (the annotation's `wording` is inline-agreed at creation; it
+ * *is* the meta-move `content`). Populated by routing the per-participant
+ * votes cast on the originating meta-move proposal through the same
+ * `derive` state machine, correlated to the annotation via the
+ * commit-batch adjacency the `meta_move_commit_logic` predecessor
+ * guarantees (the `annotation-created` event immediately precedes the
+ * meta-move's `commit`).
+ * Refinement: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md
  */
 export interface FacetStatusIndex {
   readonly nodes: ReadonlyMap<string, Readonly<Partial<Record<FacetName, FacetStatus>>>>;
   readonly edges: ReadonlyMap<string, Readonly<Partial<Record<FacetName, FacetStatus>>>>;
+  readonly annotations: ReadonlyMap<string, Readonly<Partial<Record<FacetName, FacetStatus>>>>;
 }
 
 /**
@@ -280,8 +296,19 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
   >();
   const nodeStates = new Map<string, Map<FacetName, InternalFacetState>>();
   const edgeStates = new Map<string, Map<FacetName, InternalFacetState>>();
+  // Per-annotation `substance` facet accumulators, keyed by annotation id.
+  // Populated when a committed meta-move's `commit` is paired with its
+  // preceding `annotation-created` (see the `commit` arm below).
+  const annotationStates = new Map<string, InternalFacetState>();
+  // Per-participant votes accumulated against an in-flight meta-move
+  // proposal, keyed by the proposal's event id. `targetOf` returns null
+  // for meta-move (it produces no node/edge facet update), so these votes
+  // are tracked here and routed onto the resulting annotation's
+  // `substance` facet at commit time. Refinement Decision §3.
+  const metaMoveProposalVotes = new Map<string, InternalFacetState>();
 
-  for (const event of events) {
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
     if (event.kind === 'participant-joined') {
       // Per `deriveCurrentParticipants` in `proposalFacets.ts` + the
       // methodology semantics in `docs/methodology.md` § "Voting":
@@ -380,6 +407,16 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         state.hasCandidate = true;
         state.candidateProposalEventId = event.id;
         state.perParticipant.clear();
+      } else if (event.payload.proposal.kind === 'meta-move') {
+        // A meta-move produces no per-entity (node/edge) facet update —
+        // its effect is on the *annotation* it materializes at commit.
+        // Track its whole-proposal `agree`/`dispute` votes here so they
+        // can be routed onto the resulting annotation's `substance`
+        // facet once the commit pairs it with its `annotation-created`.
+        // Refinement Decision §3; correlation via Decision §2.
+        const metaState = emptyFacetState();
+        metaState.hasCandidate = true;
+        metaMoveProposalVotes.set(event.id, metaState);
       }
       // Per-component decompose / interpretive-split classification
       // facet seeding was removed by
@@ -412,7 +449,15 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // target === 'proposal' — structural arm or legacy facet-valued
       // arm for any proposal-keyed votes still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
-      if (!target) continue;
+      if (!target) {
+        // Not a node/edge facet proposal — it may be a meta-move whose
+        // votes route onto the resulting annotation's substance facet.
+        const metaState = metaMoveProposalVotes.get(event.payload.proposal_id);
+        if (metaState) {
+          metaState.perParticipant.set(event.payload.participant, event.payload.choice);
+        }
+        continue;
+      }
       const state = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -447,7 +492,30 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // target === 'proposal' — structural arm or legacy facet-valued
       // arm for any proposal-keyed commits still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
-      if (!target) continue;
+      if (!target) {
+        // A committed meta-move: route its accumulated votes onto the
+        // resulting annotation's `substance` facet. The annotation is
+        // recovered from the `annotation-created` event immediately
+        // preceding this `commit` — the commit-batch adjacency the
+        // `meta_move_commit_logic` predecessor guarantees ([annotation-
+        // created, commit] in that order). Refinement Decisions §2/§3.
+        const metaState = metaMoveProposalVotes.get(event.payload.proposal_id);
+        const prev = i > 0 ? events[i - 1] : undefined;
+        if (metaState && prev && prev.kind === 'annotation-created') {
+          const annotationId = prev.payload.annotation_id;
+          let substance = annotationStates.get(annotationId);
+          if (!substance) {
+            substance = emptyFacetState();
+            annotationStates.set(annotationId, substance);
+          }
+          for (const [participant, choice] of metaState.perParticipant) {
+            substance.perParticipant.set(participant, choice);
+          }
+          substance.hasCandidate = true;
+          substance.committed = true;
+        }
+        continue;
+      }
       const state = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -513,8 +581,16 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
     }
     edges.set(entityId, out);
   }
+  // Annotations carry only a `substance` entry — the facet the routed
+  // meta-move votes feed (Refinement Decision §3). The same `derive`
+  // rules apply: a committed meta-move (necessarily unanimous `agree`
+  // per `checkUnanimousAgreeStructural`) rolls up to `committed`.
+  const annotations = new Map<string, Partial<Record<FacetName, FacetStatus>>>();
+  for (const [annotationId, state] of annotationStates) {
+    annotations.set(annotationId, { substance: derive(state, currentParticipants) });
+  }
 
-  return { nodes, edges };
+  return { nodes, edges, annotations };
 }
 
 /**
@@ -654,10 +730,10 @@ export function cardRollupStatus(
  * Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
  * D5 — a thin adapter so the existing `StatementNodeData` / chip-lookup
  * code paths stay untouched while the source-of-truth swap happens at
- * the selector boundary. Annotation-targeted cells are ignored today
- * (the moderator canvas doesn't render annotation facets per the
- * `EntityKind` partition in the canvas pane); a future task can lift
- * an `annotations` bucket onto `FacetStatusIndex` symmetrically.
+ * the selector boundary. The broadcast cell-map is keyed on node/edge
+ * facets only, so the `annotations` bucket (populated from the event
+ * log by `computeFacetStatuses`, not from this broadcast adapter) is
+ * returned empty here.
  */
 export function buildFacetStatusIndexFromBroadcast(
   cellMap: ReadonlyMap<string, FacetStatus>,
@@ -681,5 +757,5 @@ export function buildFacetStatusIndexFromBroadcast(
       bucket.set(entityId, { [facet]: status });
     }
   }
-  return { nodes, edges };
+  return { nodes, edges, annotations: new Map() };
 }

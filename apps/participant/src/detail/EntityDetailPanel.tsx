@@ -374,6 +374,7 @@ export interface EntityDetailPanelProps {
 const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = {
   nodes: new Map(),
   edges: new Map(),
+  annotations: new Map(),
 };
 
 /**

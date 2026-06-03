@@ -33,6 +33,7 @@ import {
   type CommitAction,
   type ValidationResult,
 } from '../../../apps/server/src/methodology/index.js';
+import { computeFacetStatuses } from '../../../packages/shell/src/index.js';
 
 // Distinct UUID prefix (`c3...`) to avoid scratch-state / SQL-row
 // collisions with the other methodology step files that share the
@@ -357,6 +358,25 @@ Then(
     }
     // Stash the minted annotation id for the replay assertion.
     this.scratch['cmmAnnotationId'] = annotationEvent.payload.annotation_id;
+  },
+);
+
+Then(
+  /^the resulting annotation's substance facet rolls up to "([^"]+)" after replay$/,
+  async function (this: AConversaWorld, expectedStatus: string) {
+    // The per-annotation facet status is a pure function of the event
+    // log: `computeFacetStatuses` routes the meta-move's per-participant
+    // votes onto the resulting annotation's substance facet (correlated
+    // by the [annotation-created, commit] adjacency). Re-derive it over
+    // the round-tripped DB log — the projection/replay seam.
+    // Refinement: tasks/refinements/data-and-methodology/annotation_facet_status_logic.md
+    const annotationId = this.scratch['cmmAnnotationId'] as string;
+    const rows = await selectEvents(this, CMM_SESSION_ID);
+    const events: Event[] = rows.map(rowToValidatedEvent);
+    const index = computeFacetStatuses(events);
+    const statuses = index.annotations.get(annotationId);
+    assert.ok(statuses, `expected annotation ${annotationId} in the facet-status index`);
+    assert.equal(statuses.substance, expectedStatus);
   },
 );
 

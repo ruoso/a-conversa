@@ -45,6 +45,7 @@ const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
 const EMPTY_INDEX: FacetStatusIndex = {
   nodes: new Map(),
   edges: new Map(),
+  annotations: new Map(),
 };
 
 function indexWith(
@@ -58,11 +59,13 @@ function indexWith(
     return {
       nodes: new Map([[entityId, inner]]),
       edges: new Map(),
+      annotations: new Map(),
     };
   }
   return {
     nodes: new Map(),
     edges: new Map([[entityId, inner]]),
+    annotations: new Map(),
   };
 }
 
@@ -434,6 +437,7 @@ describe('derivePerProposalFacets — per-component fan-out (decompose + interpr
     const index: FacetStatusIndex = {
       nodes: new Map([[COMPONENT_2, { classification: 'committed' }]]),
       edges: new Map(),
+      annotations: new Map(),
     };
     const out = derivePerProposalFacets(proposal, index, undefined, PROPOSAL_DECOMPOSE, undefined);
     expect(out).toHaveLength(2);

@@ -40,3 +40,20 @@ Feature: methodology engine — commit meta-move emits annotation-created agains
     And the result carries an annotation-created event of kind "scope-change" on the edge ahead of the commit event
     When the resulting meta-move events are appended to the session log and the projection is replayed
     Then the projection surfaces a "scope-change" annotation on the edge target
+
+  Scenario: a committed reframe meta-move's annotation carries a committed substance facet at the projection seam
+    # The per-annotation facet status (`annotation_facet_status_logic`):
+    # the shell's `computeFacetStatuses` routes the meta-move's
+    # per-participant agree votes onto the resulting annotation's
+    # `substance` facet, correlated to the annotation by the
+    # [annotation-created, commit] commit-batch adjacency. Because commit
+    # is gated on unanimous agreement, the reachable derived status is
+    # `committed`. (The `disputed` state is not producible end-to-end
+    # today — deferred to `annotation_facet_vote_seam`.)
+    Given a seeded session with three participants, a visible node, a pending reframe meta-move proposal, and three agree votes for commit-meta-move tests
+    When the moderator constructs a commit action against the meta-move proposal
+    And the methodology engine validates the commit action against the projected session
+    Then the validation result is Valid
+    And the result carries an annotation-created event of kind "reframe" on the node ahead of the commit event
+    When the resulting meta-move events are appended to the session log and the projection is replayed
+    Then the resulting annotation's substance facet rolls up to "committed" after replay

@@ -98,3 +98,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: adding YAML parsing (and likely a parser dependency) into a smoke test is scope beyond a 0.5d config rotation; the dependency addition itself is an ADR-adjacent decision. Deliberately out of scope for v2 per Decision §6. Drift risk grows with each expansion.
 - **Suggested resolution**: if a third expansion is undertaken, add the cross-check as part of that leaf (or as a standalone hardening task). The test would live in `tests/smoke/`, parse `infra/authelia/users.yml` with a lightweight YAML parser, and assert `Object.keys(parsed.users).sort()` equals `[...DEV_USER_POOL].sort()`.
 
+### 2026-06-02 — Should annotations be disputable post-commit?
+
+- **Source**: closer for `data_and_methodology.methodology_engine.annotation_facet_status_logic` (refinement Open questions).
+- **Question**: whether annotations should be disputable post-commit at all is a methodology product call. The data model implies it (`substanceFacet: FacetState<'agreed' | 'disputed'>` in projection types.ts:250–261) and the `annotation_facet_vote_seam` tech-debt task was registered to build the missing vote surface — but no ADR records whether the methodology *intends* a participant to dispute an annotation's substance after it has been committed. Building the seam to the type's incidental shape rather than the intended methodology would be a mistake.
+- **Why parked**: methodology owner decision — should annotations be append-only commentary (once committed, they stand) or first-class deliberation targets (post-commit disputes allowed)? Either answer is defensible; the implementer deferred to human confirmation.
+- **Suggested resolution**: confirm the intended behavior before `annotation_facet_vote_seam` is implemented. If disputable: proceed with the registered task. If append-only: descope `annotation_facet_vote_seam` and `mod_annotation_dispute_e2e` from the WBS and remove them from M7's `depends`; the `substanceFacet` type may also warrant narrowing to `'agreed'` only.
+

@@ -95,7 +95,7 @@ const ACTOR = '00000000-0000-4000-8000-0000000000aa';
  * writes to them — and downstream tests must not share Map references).
  */
 function emptyIndex(): FacetStatusIndex {
-  return { nodes: new Map(), edges: new Map() };
+  return { nodes: new Map(), edges: new Map(), annotations: new Map() };
 }
 
 /**
@@ -186,7 +186,7 @@ function indexFromLiterals(opts: {
   for (const [id, record] of Object.entries(opts.edges ?? {})) {
     edges.set(id, record);
   }
-  return { nodes, edges };
+  return { nodes, edges, annotations: new Map() };
 }
 
 function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: string }): Event {

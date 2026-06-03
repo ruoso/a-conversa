@@ -59,6 +59,7 @@ const NODE_Z = '00000000-0000-4000-8000-00000000000c';
 const EDGE_E = '00000000-0000-4000-8000-00000000000e';
 const PROPOSAL_P = '00000000-0000-4000-8000-0000000000ff';
 const PROPOSAL_Q = '00000000-0000-4000-8000-0000000000fe';
+const ANNOTATION_M = '00000000-0000-4000-8000-0000000000d1';
 
 function envId(prefix: string, seq: number): string {
   return `00000000-0000-4000-8000-${(prefix.charCodeAt(0) * 256 + seq).toString(16).padStart(12, '0')}`;
@@ -444,6 +445,35 @@ function facetCommitEvent(
   };
 }
 
+// The `annotation-created` a committed meta-move materializes. Per the
+// `meta_move_commit_logic` predecessor it is emitted immediately ahead
+// of the meta-move's `commit` (the commit-batch adjacency the
+// annotation-routing relies on).
+function annotationCreatedEvent(
+  seq: number,
+  annotationId: string,
+  targetNodeId: string,
+  kind: 'note' | 'reframe' | 'scope-change' | 'stance' = 'reframe',
+): Event {
+  return {
+    id: envId('A', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'annotation-created',
+    actor: ACTOR,
+    payload: {
+      annotation_id: annotationId,
+      kind,
+      content: 'the real question is the operational form',
+      target_node_id: targetNodeId,
+      target_edge_id: null,
+      created_by: ACTOR,
+      created_at: '2026-05-28T00:00:20.000Z',
+    },
+    createdAt: '2026-05-28T00:00:20.000Z',
+  };
+}
+
 describe('computeFacetStatuses — empty input', () => {
   it('(a) returns empty maps for an empty event log', () => {
     const index = computeFacetStatuses([]);
@@ -627,6 +657,56 @@ describe('computeFacetStatuses — out-of-scope proposal sub-kinds', () => {
     const index = computeFacetStatuses(events);
     expect(index.nodes.size).toBe(0);
     expect(index.edges.size).toBe(0);
+  });
+});
+
+describe('computeFacetStatuses — committed meta-move routes votes onto the annotation substance facet', () => {
+  it('(aa) a unanimously-agreed committed meta-move surfaces its annotation with substance="committed"', () => {
+    // [annotation-created, commit] are emitted adjacently by the
+    // predecessor; the projector pairs the annotation to the meta-move's
+    // votes via that adjacency and routes them onto the substance facet.
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      metaMoveProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      annotationCreatedEvent(6, ANNOTATION_M, NODE_X),
+      commitEvent(7, PROPOSAL_P),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.annotations.get(ANNOTATION_M)).toEqual({ substance: 'committed' });
+    // The meta-move targets a node/edge but produces no per-*entity*
+    // facet update — only the annotation bucket is touched.
+    expect(index.nodes.has(NODE_X)).toBe(false);
+    expect(index.edges.size).toBe(0);
+  });
+
+  it('(ab) a pending, never-committed meta-move contributes no annotation entry', () => {
+    // No annotation exists yet (commit gates the annotation-created), so
+    // the annotations bucket stays empty even though votes were cast.
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      metaMoveProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.annotations.size).toBe(0);
+  });
+
+  it('(ac) a committed facet-targeting proposal leaves the annotations bucket empty (no meta-move)', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      classifyProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      commitEvent(6, PROPOSAL_P),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('committed');
+    expect(index.annotations.size).toBe(0);
   });
 });
 
