@@ -442,8 +442,14 @@ export default defineConfig({
       // (moderator commits a reframe meta-move → debater disputes the
       // resulting annotation → moderator badge gains
       // `data-facet-status="disputed"` live over WS).
+      // `full-session-walkthrough.spec.ts` (mod_pw_full_session_run) joins
+      // the same project — it drives the identical three-context shape
+      // (maria mod + alice/ben debaters) to recreate the canonical
+      // `docs/example-walkthrough.md` "Should zoos exist?" debate end-to-end
+      // against the real backend (the M7 acceptance gate). Decision D5:
+      // extend the existing cross-surface project rather than clone it.
       testMatch:
-        /(cross-surface-lobby-start|methodology-full-flow|moderator-draw-edge|moderator-capture-targeted-by|annotation-dispute-roundtrip)\.spec\.ts$/,
+        /(cross-surface-lobby-start|methodology-full-flow|moderator-draw-edge|moderator-capture-targeted-by|annotation-dispute-roundtrip|full-session-walkthrough)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

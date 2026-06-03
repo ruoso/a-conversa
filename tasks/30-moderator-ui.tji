@@ -869,6 +869,7 @@ task moderator_ui "Moderator UI" {
       task mod_pw_full_session_run "Playwright: full session run (recreate the example walkthrough scenario)" {
         effort 3d
         allocate team
+        complete 100
         note -8<-
           Drives moderator + two participant tablets in parallel browser contexts; produces a complete debate.
 
