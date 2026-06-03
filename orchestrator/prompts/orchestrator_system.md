@@ -152,6 +152,9 @@ that another task's e2e or refinement explicitly depends on.
 
 Heuristics, in rough order of weight:
 
+0. As M7 was completed, let's prioritize m_public_landing: M8-landing before
+   the other epics.
+
 1. **Close existing debt before creating new debt.** If a leaf is already
    named as deferred-debt in another refinement's Status block — or is itself
    a tech-debt leaf added under the registration policy — picking it pays
