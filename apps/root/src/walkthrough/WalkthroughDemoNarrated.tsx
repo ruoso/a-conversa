@@ -11,25 +11,73 @@
 // ADRs:        0026 (root-app micro-frontend), 0024 (react-i18next + ICU).
 //
 // Scope: desktop-first layout — the caption sits beside the graph (a
-// two-column grid at `lg`, stacked below it otherwise). The full
-// cross-breakpoint treatment is `landing_demo_mobile_fallback` /
-// `landing_responsive_a11y`; this is the desktop-first scaffold they
-// compose around.
+// two-column grid at `lg`, stacked below it otherwise). This wrapper also
+// owns the **small-viewport variant gate** (`landing_demo_mobile_fallback`,
+// Decision §D5): below Tailwind `md` (a phone) it mounts the lighter
+// `WalkthroughDemoCompact` instead of the full interactive stepper, passing
+// the **same** `onPositionChange` to whichever variant renders so the
+// caption + position seam behave identically. Selection is a runtime
+// `matchMedia` gate (JS, not a CSS toggle) so exactly one variant — hence
+// exactly one Cytoscape core — is ever instantiated (constraint 1). The
+// whole-page cross-breakpoint / a11y polish is the sibling
+// `landing_responsive_a11y`.
 
-import { useCallback, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
 import { WalkthroughDemo, DEFAULT_INITIAL_POSITION } from './WalkthroughDemo';
+import { WalkthroughDemoCompact } from './WalkthroughDemoCompact';
 import { WalkthroughCaption } from './WalkthroughCaption';
 import { activeBeatFor } from './narration';
 
+/**
+ * Small-viewport breakpoint (Decision §D6): below Tailwind `md` (768px) a
+ * visitor is treated as a phone and gets the compact variant. `767.98px`
+ * is the conventional just-below-`md` bound. The exact value is a
+ * documented call, not a deep invariant — `landing_responsive_a11y` may
+ * retune the page's breakpoints around it, and because the gate is a single
+ * mockable hook the threshold is trivially adjustable and testable.
+ */
+const SMALL_VIEWPORT_QUERY = '(max-width: 767.98px)';
+
+/**
+ * Tracks whether the viewport is below the small-screen breakpoint, so the
+ * wrapper can mount **exactly one** of the full or compact demo (constraint
+ * 1 / Decision §D5). Reads its initial value synchronously at mount
+ * (apps/root is a client-rendered SPA — no SSR/hydration mismatch concern)
+ * and updates on the media-query `change` event, mirroring the existing
+ * `usePrefersReducedMotion()` idiom (`WalkthroughDemo.tsx`).
+ */
+function useIsSmallViewport(): boolean {
+  const [isSmall, setIsSmall] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+    return window.matchMedia(SMALL_VIEWPORT_QUERY).matches;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+    const query = window.matchMedia(SMALL_VIEWPORT_QUERY);
+    const onChange = (): void => setIsSmall(query.matches);
+    onChange();
+    query.addEventListener?.('change', onChange);
+    return () => query.removeEventListener?.('change', onChange);
+  }, []);
+  return isSmall;
+}
+
 export function WalkthroughDemoNarrated(): ReactElement {
   // Seed with the stepper's default so the caption is correct on the first
-  // paint; the demo also fires `onPositionChange` synchronously on mount
-  // (`WalkthroughDemo.tsx`), so the two stay in lock-step thereafter.
+  // paint; both variants fire `onPositionChange` synchronously on mount, so
+  // the position + caption stay in lock-step thereafter regardless of which
+  // one is mounted. The default (6) is the first beat anchor, so the
+  // compact variant's coarse stepping starts exactly on its first stop.
   const [position, setPosition] = useState<number>(DEFAULT_INITIAL_POSITION);
+  const isSmallViewport = useIsSmallViewport();
 
-  // Stable callback (stepper's narration effect depends on its identity, so
-  // a fresh closure each render would re-fire it needlessly).
+  // Stable callback (the variants' narration effect depends on its
+  // identity, so a fresh closure each render would re-fire it needlessly).
   const handlePositionChange = useCallback((next: number): void => {
     setPosition(next);
   }, []);
@@ -41,7 +89,11 @@ export function WalkthroughDemoNarrated(): ReactElement {
       data-testid="walkthrough-demo-narrated"
       className="grid h-full w-full gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
     >
-      <WalkthroughDemo onPositionChange={handlePositionChange} />
+      {isSmallViewport ? (
+        <WalkthroughDemoCompact onPositionChange={handlePositionChange} />
+      ) : (
+        <WalkthroughDemo onPositionChange={handlePositionChange} />
+      )}
       <WalkthroughCaption beat={beat} />
     </div>
   );

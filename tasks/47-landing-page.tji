@@ -148,6 +148,7 @@ task landing_page "Public landing page" {
   task landing_demo_mobile_fallback "Reduced demo mode for small screens" {
     effort 1d
     allocate team
+    complete 100
     depends !walkthrough_demo_stepper
     note -8<-
       Interactive Cytoscape on a phone is heavy. Define a reduced/fallback

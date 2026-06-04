@@ -90,6 +90,85 @@ test.describe('landing walkthrough demo', () => {
     }
   });
 
+  // Mobile-viewport coverage for `landing_demo_mobile_fallback`. The
+  // compact variant is reachable today: an anonymous visit to `/` at a
+  // phone-width viewport mounts it in place of the heavy interactive
+  // stepper (the `matchMedia` gate in `WalkthroughDemoNarrated`). These
+  // scenarios pin (5) that the compact demo renders with its renderer +
+  // segment buttons + step-status and that the scrubber is *not* present
+  // (proving the heavy variant was never instantiated), and (6) that
+  // next-segment advances the step-status by a beat jump (6 → 27) and is
+  // keyboard-operable. They assert on the step-status DOM + affordance
+  // state, not on `<canvas>` contents (no DOM node-count seam; no `window`
+  // cy hook by design — ADR 0039 / stepper Decision §8). The fuller
+  // through-to-final-state + matching-caption journey stays owned by
+  // `landing_e2e`.
+  const PHONE_VIEWPORT = { width: 390, height: 844 } as const;
+
+  test('anonymous / at a phone viewport renders the compact demo without the scrubber', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: PHONE_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+
+      // The compact variant mounts: the shared renderer's container, the
+      // segment buttons, and the step-status paint.
+      await expect(page.getByTestId('walkthrough-demo-compact')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-prev')).toBeVisible();
+      await expect(page.getByTestId('walkthrough-next')).toBeVisible();
+      await expect(page.getByTestId('walkthrough-step-status')).toBeVisible();
+
+      // The heavy interactive variant was NOT mounted: no scrubber, no
+      // play-toggle, and not the full demo's section.
+      await expect(page.getByTestId('walkthrough-scrubber')).toHaveCount(0);
+      await expect(page.getByTestId('walkthrough-play-toggle')).toHaveCount(0);
+      await expect(page.getByTestId('walkthrough-demo')).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('next-segment advances the step-status by a beat jump and is keyboard-operable', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: PHONE_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      const status = page.getByTestId('walkthrough-step-status');
+      await expect(status).toBeVisible({ timeout: 15_000 });
+
+      // The compact variant opens on the first beat anchor (position 6).
+      await expect(status).toHaveAttribute('data-position', '6', { timeout: 5_000 });
+
+      // Pointer activation jumps a whole beat (6 → 27), not +1.
+      await page.getByTestId('walkthrough-next').click();
+      await expect(status).toHaveAttribute('data-position', '27', { timeout: 5_000 });
+
+      // Keyboard operability: focus the native button and activate with the
+      // keyboard (Enter), which advances to the next beat anchor (27 → 42).
+      const next = page.getByTestId('walkthrough-next');
+      await next.focus();
+      await expect(next).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(status).toHaveAttribute('data-position', '42', { timeout: 5_000 });
+    } finally {
+      await context.close();
+    }
+  });
+
   // Thin narrative-section assertion for `landing_hero_and_method`. The
   // three methodology sections (hero, "how it works", "what it surfaces")
   // render in `LandingRoute`'s unauthenticated branch and are reachable

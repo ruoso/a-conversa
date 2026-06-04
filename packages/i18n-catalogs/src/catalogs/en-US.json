@@ -17,6 +17,9 @@
       "pause": "Pause",
       "scrubberLabel": "Walkthrough position",
       "stepStatus": "Step {position} of {total}",
+      "compactRegionLabel": "Debate walkthrough (compact)",
+      "previousSegment": "Previous section",
+      "nextSegment": "Next section",
       "caption": {
         "opening": {
           "eyebrow": "One shared graph",

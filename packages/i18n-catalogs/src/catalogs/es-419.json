@@ -17,6 +17,9 @@
       "pause": "Pausar",
       "scrubberLabel": "Posición del recorrido",
       "stepStatus": "Paso {position} de {total}",
+      "compactRegionLabel": "Recorrido del debate (compacto)",
+      "previousSegment": "Sección anterior",
+      "nextSegment": "Sección siguiente",
       "caption": {
         "opening": {
           "eyebrow": "Un grafo compartido",
