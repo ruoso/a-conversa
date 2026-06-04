@@ -73,6 +73,7 @@ task landing_page "Public landing page" {
   task landing_hero_and_method "Hero + 'how it works' + 'what it surfaces' narrative sections" {
     effort 2d
     allocate team
+    complete 100
     depends !split_public_and_home_routes
     note -8<-
       The methodology pitch, localized (en-US / pt-BR / es-419 per the i18n

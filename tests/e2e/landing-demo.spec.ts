@@ -90,6 +90,34 @@ test.describe('landing walkthrough demo', () => {
     }
   });
 
+  // Thin narrative-section assertion for `landing_hero_and_method`. The
+  // three methodology sections (hero, "how it works", "what it surfaces")
+  // render in `LandingRoute`'s unauthenticated branch and are reachable
+  // today on the anonymous `/`. This pins that they compose around — and do
+  // not displace — the walkthrough demo. The fuller stepped journey stays
+  // owned by the terminal `landing_e2e` leaf.
+  test('anonymous / renders the narrative sections alongside the walkthrough demo', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+
+      // The three methodology narrative sections.
+      await expect(page.getByTestId('landing-hero')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('landing-how-it-works')).toBeVisible();
+      await expect(page.getByTestId('landing-what-it-surfaces')).toBeVisible();
+
+      // ...composed around the demo, which is still present.
+      await expect(page.getByTestId('landing-walkthrough')).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await context.close();
+    }
+  });
+
   // Thin caption assertion for `walkthrough_demo_narration`. Proves the
   // per-step caption is reachable on the anonymous `/` and tracks position
   // end-to-end through the real renderer (not just jsdom). The fuller

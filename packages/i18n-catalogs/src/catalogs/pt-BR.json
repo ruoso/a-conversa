@@ -64,6 +64,45 @@
           "body": "O que está acordado, o que ainda é contestado e os axiomas por baixo — uma estrutura compartilhada, não a transcrição de duas pessoas falando sem se entender."
         }
       }
+    },
+    "hero": {
+      "eyebrow": "a-conversa",
+      "title": "Veja exatamente onde está, de fato, uma discordância.",
+      "hypothesis": "A maioria das discordâncias não é realmente sobre aquilo que se está discutindo. Ou alguém está silenciosamente se contradizendo, ou os dois lados tratam a mesma afirmação como um tipo diferente de afirmação — um fato, um valor, uma previsão — e acabam falando sem se entender. O a-conversa torna essa estrutura visível, para que a verdadeira discordância não tenha onde se esconder."
+    },
+    "howItWorks": {
+      "title": "Como funciona",
+      "items": {
+        "participants": {
+          "title": "Dois debatedores, um moderador",
+          "body": "Duas pessoas defendem lados de uma única questão enquanto um moderador conduz a estrutura, não o veredito. Todos trabalham no mesmo problema ao mesmo tempo."
+        },
+        "sharedGraph": {
+          "title": "Um único grafo compartilhado e vivo",
+          "body": "Cada afirmação, objeção e conexão entra em um único mapa que cresce conforme o debate avança — não em duas transcrições separadas. Aquilo a que cada lado está respondendo permanece plenamente visível."
+        },
+        "consensus": {
+          "title": "Nada se firma até que todos concordem",
+          "body": "Uma afirmação ou uma ligação só passa a integrar a estrutura acordada quando os dois debatedores e o moderador a aceitam. A estrutura é conquistada, nunca apenas afirmada."
+        }
+      }
+    },
+    "surfaces": {
+      "title": "O que ele revela",
+      "items": {
+        "contradictions": {
+          "title": "Contradições internas",
+          "body": "Quando duas afirmações que um lado aceitou não podem ser ambas verdadeiras, o grafo mostra exatamente onde elas colidem — em vez de deixar o conflito enterrado."
+        },
+        "categories": {
+          "title": "Incompatibilidades de categoria",
+          "body": "Isto é um fato, um valor ou uma previsão? Marcar o tipo de cada afirmação expõe a forma mais comum de um debate descarrilar: tratar um tipo de declaração como outro."
+        },
+        "axioms": {
+          "title": "Axiomas fundamentais",
+          "body": "Siga cada \"porquê\" até ele parar. Algumas afirmações não podem ser argumentadas além — é onde uma visão de mundo se apoia. O mapa marca esses pontos em vez de fingir que a lacuna é sobre evidências."
+        }
+      }
     }
   },
   "auth": {

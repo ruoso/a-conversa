@@ -25,6 +25,8 @@ export interface LocaleExpectations {
   readonly locale: SupportedLocale;
   /** `auth.login.title` — the login route's H1. */
   readonly loginTitle: string;
+  /** `landing.hero.title` — the public `/` marketing hero's H1. */
+  readonly landingHeroTitle: string;
   /** `auth.login.button` — the "Sign in with SSO" affordance label. */
   readonly loginButton: string;
   /** `auth.screenName.title` — the screen-name route's H1. */
@@ -62,6 +64,7 @@ export const LOCALE_EXPECTATIONS: readonly LocaleExpectations[] = SUPPORTED_LOCA
   (locale) => ({
     locale,
     loginTitle: lookup(CATALOGS[locale], 'auth.login.title'),
+    landingHeroTitle: lookup(CATALOGS[locale], 'landing.hero.title'),
     loginButton: lookup(CATALOGS[locale], 'auth.login.button'),
     screenNameTitle: lookup(CATALOGS[locale], 'auth.screenName.title'),
   }),

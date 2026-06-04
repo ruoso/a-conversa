@@ -1,10 +1,13 @@
 import { lazy, Suspense, type ReactElement } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { LoginButton, useAuth } from '@a-conversa/shell';
+import { useAuth } from '@a-conversa/shell';
 
 import { LoadingFrame } from './LoadingFrame';
+import { HeroSection } from '../landing/HeroSection';
+import { HowItWorksSection } from '../landing/HowItWorksSection';
+import { WhatItSurfacesSection } from '../landing/WhatItSurfacesSection';
 
 // Lazy-load the interactive demo subtree (Decision §6) so Cytoscape and
 // the ~4k-line seed blob stay off the marketing page's first paint. The
@@ -53,32 +56,25 @@ export function LandingRoute(): ReactElement {
     // desktop-first scaffold it composes around.
     <main data-testid="route-landing" data-allow-scroll="" className="h-screen overflow-y-auto">
       <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-6 p-6">
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-sm uppercase tracking-[0.18em] text-slate-500">
-            {t('root.landing.eyebrow')}
-          </p>
-          <h1 data-testid="route-title" className="mt-3 text-3xl font-semibold text-slate-900">
-            {t('auth.login.title')}
-          </h1>
-          <p className="mt-3 text-slate-600">{t('root.landing.body')}</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              to="/m/sessions/new"
-              data-testid="root-start-session"
-              className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white"
-            >
-              {t('moderator.createSession.title')}
-            </Link>
-            <LoginButton className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700" />
-          </div>
-        </div>
+        {/*
+        The methodology pitch composed around the interactive demo
+        (`landing_hero_and_method` Decision §D1): the hero (product name +
+        value-prop + hypothesis) leads, "how it works" frames the format, the
+        demo shows it, and "what it surfaces" names the three diagnostic
+        goals. Each section is a self-contained, `useTranslation()`-driven
+        presentational unit; `LandingRoute` stays a thin composition root and
+        `landing_responsive_a11y` later restyles the sections without touching
+        the auth branching above.
+      */}
+        <HeroSection />
+
+        <HowItWorksSection />
 
         {/*
-        The walkthrough demo — the page's hero artifact. Final composition /
-        ordering relative to the hero and narrative sections, plus the
-        cross-breakpoint layout, are owned by `landing_hero_and_method` +
-        `landing_responsive_a11y`; this task slots the demo in with a
-        desktop-first layout those tasks compose around (Decision §7).
+        The walkthrough demo — the page's hero artifact. The demo subtree is
+        left exactly as the demo leaves shipped it (`landing_hero_and_method`
+        constraint 3); this task only positions the narrative sections around
+        it. Cross-breakpoint layout is owned by `landing_responsive_a11y`.
       */}
         <section data-testid="landing-walkthrough" className="min-h-[32rem]">
           <Suspense
@@ -94,6 +90,8 @@ export function LandingRoute(): ReactElement {
             <WalkthroughDemoNarrated />
           </Suspense>
         </section>
+
+        <WhatItSurfacesSection />
       </div>
     </main>
   );

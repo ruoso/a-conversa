@@ -90,7 +90,7 @@ describe('LandingRoute', () => {
     expect(window.sessionStorage.getItem('a-conversa:return-to')).toBe('/m/sessions/new');
   });
 
-  it('renders the public landing with i18n eyebrow + body and the login button for anonymous visitors', async () => {
+  it('keeps the functional CTA affordances and the public testid for anonymous visitors', async () => {
     renderLanding('/', {
       auth: {
         status: 'unauthenticated',
@@ -102,14 +102,77 @@ describe('LandingRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('root-start-session')).toBeTruthy();
     });
+    // The hero retains a functional CTA (Decision §D5) — the start-a-session
+    // link plus the SSO login button.
     expect(screen.getByTestId('auth-login-button')).toBeTruthy();
     // The public surface uses the new `route-landing` testid, not `route-home`.
+    expect(screen.queryByTestId('route-landing')).toBeTruthy();
     expect(screen.queryByTestId('route-home')).toBeNull();
-    // i18n-resolved strings (the catalogs have 'a-conversa' / 'Micro-frontend host app');
-    // proves these are coming through `t(...)` and not raw literals — a raw literal
-    // would still match, but a missing key would render the dotted-path back instead.
-    const landing = screen.getByTestId('route-landing');
-    expect(landing.textContent).toContain('a-conversa');
-    expect(landing.textContent).toContain('Micro-frontend host app');
+  });
+
+  it('renders the hero with the product name, value-prop, and hypothesis under a single h1', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const hero = await screen.findByTestId('landing-hero');
+    // Exactly one `<h1>` on the page, and it is the hero's value-prop title.
+    const h1s = screen.getAllByRole('heading', { level: 1 });
+    expect(h1s).toHaveLength(1);
+    expect(screen.getByTestId('route-title')).toBe(h1s[0]);
+    // i18n-resolved en-US strings — a missing key would render the dotted
+    // path back instead of these.
+    expect(hero.textContent).toContain('a-conversa');
+    expect(hero.textContent).toContain('See exactly where a disagreement actually is.');
+    expect(hero.textContent).toContain('talking past each other');
+  });
+
+  it('renders the "how it works" section with its heading and three points', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const section = await screen.findByTestId('landing-how-it-works');
+    expect(section.textContent).toContain('How it works');
+    expect(section.textContent).toContain('Two debaters, one moderator');
+    expect(section.textContent).toContain('One shared, living graph');
+    expect(section.textContent).toContain('Nothing lands until everyone agrees');
+  });
+
+  it('renders the "what it surfaces" section with its heading and three diagnostic goals', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const section = await screen.findByTestId('landing-what-it-surfaces');
+    expect(section.textContent).toContain('What it surfaces');
+    expect(section.textContent).toContain('Internal contradictions');
+    expect(section.textContent).toContain('Category mismatches');
+    expect(section.textContent).toContain('Bedrock axioms');
+  });
+
+  it('keeps the walkthrough demo embed composed alongside the narrative sections', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    // The narrative composition must not displace the demo embed.
+    expect(await screen.findByTestId('landing-walkthrough')).toBeTruthy();
   });
 });

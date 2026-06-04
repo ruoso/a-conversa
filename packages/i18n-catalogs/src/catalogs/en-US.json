@@ -64,6 +64,45 @@
           "body": "What's agreed, what's still contested, and the axioms underneath — a shared structure, not a transcript of two people talking past each other."
         }
       }
+    },
+    "hero": {
+      "eyebrow": "a-conversa",
+      "title": "See exactly where a disagreement actually is.",
+      "hypothesis": "Most disagreements aren't really about the thing being argued. Either someone is quietly contradicting themselves, or both sides are treating the same statement as a different kind of claim — a fact, a value, a prediction — and talking past each other. a-conversa makes that structure visible, so the real disagreement has nowhere left to hide."
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "items": {
+        "participants": {
+          "title": "Two debaters, one moderator",
+          "body": "Two people argue a single question while a moderator steers the structure, not the verdict. Everyone is working the same problem at the same time."
+        },
+        "sharedGraph": {
+          "title": "One shared, living graph",
+          "body": "Every claim, objection, and connection lands on one map that grows as the debate does — not two separate transcripts. What each side is responding to stays in plain view."
+        },
+        "consensus": {
+          "title": "Nothing lands until everyone agrees",
+          "body": "A claim or a link only joins the agreed structure when both debaters and the moderator accept it. Structure is earned, never just asserted."
+        }
+      }
+    },
+    "surfaces": {
+      "title": "What it surfaces",
+      "items": {
+        "contradictions": {
+          "title": "Internal contradictions",
+          "body": "When two claims a side has accepted cannot both be true, the graph shows exactly where they collide — instead of letting the conflict stay buried."
+        },
+        "categories": {
+          "title": "Category mismatches",
+          "body": "Is this a fact, a value, or a prediction? Tagging each claim's kind exposes the most common way debates derail: treating one kind of statement as another."
+        },
+        "axioms": {
+          "title": "Bedrock axioms",
+          "body": "Follow each \"why\" until it stops. Some claims cannot be argued further — they are where a worldview rests. The map marks these instead of pretending the gap is about evidence."
+        }
+      }
     }
   },
   "auth": {

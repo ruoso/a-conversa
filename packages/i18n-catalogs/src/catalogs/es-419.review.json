@@ -420,7 +420,24 @@
     "landing.demo.caption.interpretive_split.body",
     "landing.demo.caption.finale.eyebrow",
     "landing.demo.caption.finale.title",
-    "landing.demo.caption.finale.body"
+    "landing.demo.caption.finale.body",
+    "landing.hero.eyebrow",
+    "landing.hero.title",
+    "landing.hero.hypothesis",
+    "landing.howItWorks.title",
+    "landing.howItWorks.items.participants.title",
+    "landing.howItWorks.items.participants.body",
+    "landing.howItWorks.items.sharedGraph.title",
+    "landing.howItWorks.items.sharedGraph.body",
+    "landing.howItWorks.items.consensus.title",
+    "landing.howItWorks.items.consensus.body",
+    "landing.surfaces.title",
+    "landing.surfaces.items.contradictions.title",
+    "landing.surfaces.items.contradictions.body",
+    "landing.surfaces.items.categories.title",
+    "landing.surfaces.items.categories.body",
+    "landing.surfaces.items.axioms.title",
+    "landing.surfaces.items.axioms.body"
   ],
   "signed_off": []
 }

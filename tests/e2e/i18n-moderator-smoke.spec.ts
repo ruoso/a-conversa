@@ -52,7 +52,7 @@ function localeForProject(projectName: string): string {
 }
 
 test.describe('moderator login route renders localized strings', () => {
-  test('GET / serves the SPA shell and the login title matches the locale catalog', async ({
+  test('GET / serves the SPA shell and the landing hero title matches the locale catalog', async ({
     page,
   }, testInfo) => {
     const locale = localeForProject(testInfo.project.name);
@@ -74,19 +74,23 @@ test.describe('moderator login route renders localized strings', () => {
     const html = await response!.text();
     expect(html, 'GET / must return the moderator SPA index.html').toContain('<div id="root">');
 
-    // Wait for the SPA to mount and render the login route. The
-    // `negotiateAuthenticatedLocale` reads the cookie synchronously
-    // during bootstrap; `initI18n` is awaited before `ReactDOM.render`,
-    // so by the time the `route-title` H1 is in the DOM, the
-    // localized string is already there.
+    // Wait for the SPA to mount and render the public landing route at
+    // `/`. Since `split_public_and_home_routes`, `/` is the anonymous
+    // marketing surface; its primary H1 (`data-testid="route-title"`) is
+    // the localized `landing.hero.title` (`landing_hero_and_method`
+    // replaced the placeholder's `auth.login.title` reuse with the real
+    // marketing hero). `negotiateAuthenticatedLocale` reads the cookie
+    // synchronously during bootstrap; `initI18n` is awaited before
+    // `ReactDOM.render`, so by the time the `route-title` H1 is in the
+    // DOM, the localized string is already there.
     await expect(
       page.getByTestId('route-title'),
       `route-title must render for locale ${locale}`,
     ).toBeVisible();
     await expect(
       page.getByTestId('route-title'),
-      `route-title must be the localized auth.login.title for locale ${locale}`,
-    ).toHaveText(expected.loginTitle);
+      `route-title must be the localized landing.hero.title for locale ${locale}`,
+    ).toHaveText(expected.landingHeroTitle);
   });
 
   test('the SSO login affordance carries the localized label and navigates to /api/auth/login', async ({

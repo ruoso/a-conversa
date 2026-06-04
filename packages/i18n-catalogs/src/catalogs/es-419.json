@@ -64,6 +64,45 @@
           "body": "Lo acordado, lo que sigue en disputa y los axiomas que hay debajo: una estructura compartida, no la transcripción de dos personas hablando sin entenderse."
         }
       }
+    },
+    "hero": {
+      "eyebrow": "a-conversa",
+      "title": "Mira exactamente dónde está, en realidad, un desacuerdo.",
+      "hypothesis": "La mayoría de los desacuerdos no son en realidad sobre aquello que se está discutiendo. O alguien se contradice en silencio, o ambos lados tratan la misma afirmación como un tipo distinto de afirmación —un hecho, un valor, una predicción— y terminan hablando sin entenderse. a-conversa hace visible esa estructura, para que el verdadero desacuerdo no tenga dónde esconderse."
+    },
+    "howItWorks": {
+      "title": "Cómo funciona",
+      "items": {
+        "participants": {
+          "title": "Dos debatientes, un moderador",
+          "body": "Dos personas defienden lados de una sola pregunta mientras un moderador guía la estructura, no el veredicto. Todos trabajan sobre el mismo problema al mismo tiempo."
+        },
+        "sharedGraph": {
+          "title": "Un único grafo compartido y vivo",
+          "body": "Cada afirmación, objeción y conexión entra en un único mapa que crece a medida que avanza el debate, no en dos transcripciones separadas. Aquello a lo que responde cada lado queda a plena vista."
+        },
+        "consensus": {
+          "title": "Nada queda firme hasta que todos están de acuerdo",
+          "body": "Una afirmación o un vínculo solo pasa a integrar la estructura acordada cuando ambos debatientes y el moderador lo aceptan. La estructura se gana, nunca se da por sentada."
+        }
+      }
+    },
+    "surfaces": {
+      "title": "Qué revela",
+      "items": {
+        "contradictions": {
+          "title": "Contradicciones internas",
+          "body": "Cuando dos afirmaciones que un lado aceptó no pueden ser ambas verdaderas, el grafo muestra exactamente dónde chocan, en lugar de dejar el conflicto enterrado."
+        },
+        "categories": {
+          "title": "Discrepancias de categoría",
+          "body": "¿Esto es un hecho, un valor o una predicción? Etiquetar el tipo de cada afirmación expone la forma más común en que un debate se descarrila: tratar un tipo de enunciado como otro."
+        },
+        "axioms": {
+          "title": "Axiomas fundamentales",
+          "body": "Sigue cada \"por qué\" hasta que se detenga. Algunas afirmaciones no pueden discutirse más: son donde se apoya una visión del mundo. El mapa marca estos puntos en lugar de fingir que la diferencia es sobre evidencia."
+        }
+      }
     }
   },
   "auth": {
