@@ -103,6 +103,7 @@ task landing_page "Public landing page" {
   task walkthrough_narration_script "Design the walkthrough narration: step beats + en-US caption copy" {
     effort 0.5d
     allocate team
+    complete 100
     depends !landing_walkthrough_seed
     note -8<-
       Content-design task (not coding). Choose which steps of the zoos
