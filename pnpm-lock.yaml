@@ -268,6 +268,9 @@ importers:
 
   apps/root:
     dependencies:
+      '@a-conversa/graph-view':
+        specifier: workspace:*
+        version: link:../../packages/graph-view
       '@a-conversa/i18n-catalogs':
         specifier: workspace:*
         version: link:../../packages/i18n-catalogs
@@ -277,6 +280,9 @@ importers:
       '@a-conversa/shell':
         specifier: workspace:*
         version: link:../../packages/shell
+      cytoscape:
+        specifier: 3.33.3
+        version: 3.33.3
       react:
         specifier: 18.3.1
         version: 18.3.1

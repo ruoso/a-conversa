@@ -386,7 +386,14 @@
     "moderator.diagnostic.flags.severity.blocking",
     "moderator.diagnostic.flags.severity.advisory",
     "moderator.diagnostic.flags.countAria",
-    "moderator.diagnostic.flags.focusAria"
+    "moderator.diagnostic.flags.focusAria",
+    "landing.demo.regionLabel",
+    "landing.demo.previous",
+    "landing.demo.next",
+    "landing.demo.play",
+    "landing.demo.pause",
+    "landing.demo.scrubberLabel",
+    "landing.demo.stepStatus"
   ],
   "signed_off": []
 }

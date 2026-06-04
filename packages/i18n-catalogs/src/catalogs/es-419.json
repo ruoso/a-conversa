@@ -8,6 +8,17 @@
       "body": "Aplicación host de micro-frontends"
     }
   },
+  "landing": {
+    "demo": {
+      "regionLabel": "Recorrido interactivo del debate",
+      "previous": "Paso anterior",
+      "next": "Paso siguiente",
+      "play": "Reproducir",
+      "pause": "Pausar",
+      "scrubberLabel": "Posición del recorrido",
+      "stepStatus": "Paso {position} de {total}"
+    }
+  },
   "auth": {
     "login": {
       "title": "Iniciar sesión",

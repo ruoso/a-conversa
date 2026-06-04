@@ -10,9 +10,11 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@a-conversa/graph-view": "workspace:*",
     "@a-conversa/i18n-catalogs": "workspace:*",
     "@a-conversa/shared-types": "workspace:*",
     "@a-conversa/shell": "workspace:*",
+    "cytoscape": "3.33.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "7.15.0"

@@ -8,6 +8,17 @@
       "body": "Micro-frontend host app"
     }
   },
+  "landing": {
+    "demo": {
+      "regionLabel": "Interactive debate walkthrough",
+      "previous": "Previous step",
+      "next": "Next step",
+      "play": "Play",
+      "pause": "Pause",
+      "scrubberLabel": "Walkthrough position",
+      "stepStatus": "Step {position} of {total}"
+    }
+  },
   "auth": {
     "login": {
       "title": "Sign in",

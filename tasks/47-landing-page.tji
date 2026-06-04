@@ -117,6 +117,7 @@ task landing_page "Public landing page" {
   task walkthrough_demo_stepper "Embedded interactive walkthrough stepper / scrubber" {
     effort 3d
     allocate team
+    complete 100
     depends !extract_readonly_graph_package, !landing_walkthrough_seed
     note -8<-
       The interactive demo component embedded in the landing page. Loads the
