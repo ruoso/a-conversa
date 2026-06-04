@@ -8,6 +8,9 @@ import { LoadingFrame } from './LoadingFrame';
 import { HeroSection } from '../landing/HeroSection';
 import { HowItWorksSection } from '../landing/HowItWorksSection';
 import { WhatItSurfacesSection } from '../landing/WhatItSurfacesSection';
+import { OpenSourceSection } from '../landing/OpenSourceSection';
+import { CallToActionSection } from '../landing/CallToActionSection';
+import { LandingFooter } from '../landing/LandingFooter';
 
 // Lazy-load the interactive demo subtree (Decision §6) so Cytoscape and
 // the ~4k-line seed blob stay off the marketing page's first paint. The
@@ -92,6 +95,22 @@ export function LandingRoute(): ReactElement {
         </section>
 
         <WhatItSurfacesSection />
+
+        {/*
+        The page chrome below the methodology pitch
+        (`landing_opensource_and_cta` Decision §D1): the open-source / "adopt
+        the format" pitch, the page's *secondary* call-to-action (the action
+        affordances relocated out of the hero, Decision §D2), and the footer
+        with the visitor-facing locale switcher. Each is a self-contained
+        `useTranslation()`-driven unit composed after the narrative + demo;
+        `landing_responsive_a11y` later restyles them without touching the
+        auth branching above.
+      */}
+        <OpenSourceSection />
+
+        <CallToActionSection />
+
+        <LandingFooter />
       </div>
     </main>
   );

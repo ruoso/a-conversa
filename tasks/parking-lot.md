@@ -147,6 +147,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: resolving requires a product decision between Option A (wire `entity-removed` on decompose/split commit; rework `methodology-full-flow`'s subsequent phases to not operate on the now-hidden parent) and Option B (parents stay visible post-split/decompose by design; AC-5's original parent-removal assertion was a stale assumption). Either path requires confirming the intended methodology behavior and cross-cutting implementation; not agent-resolvable without that call.
 - **Suggested resolution**: confirm with the methodology owner whether decomposed/split parents should remain interactive on-canvas (Option B) or should be hidden after the gesture completes (Option A). If Option A, spec a `frontend_decompose_split_parent_visibility` task covering `entity-removed` wire emission in the commit handler for decompose/split, frontend projector updates in both canvases, `methodology-full-flow` rework, and Playwright cover.
 
+### 2026-06-03 — Lift locale switcher into `@a-conversa/shell` when a second call site emerges
+
+- **Source**: closer for `landing_page.landing_opensource_and_cta` (Decision D3).
+- **Question**: `apps/root/src/landing/LocaleSwitcher.tsx` was built landing-local (single call site). ADR 0024's negotiation comments anticipate a second consumer — "the locale-selector control at screen-name capture" (`packages/i18n-catalogs/src/negotiation.ts:236-237`). When that second call site materialises, should the switcher be extracted into `@a-conversa/shell`?
+- **Why parked**: speculative generality for a call site that does not exist yet; the decision belongs at the moment a second consumer is being built, not before.
+- **Suggested resolution**: when the screen-name capture locale selector is being designed, evaluate whether extracting `LocaleSwitcher` into `@a-conversa/shell` is the right boundary. If yes, do the extraction as part of that task rather than as a standalone refactor.
+
 ### 2026-06-03 — Interpretive-split edge inheritance (reading nodes do not inherit parent edges)
 
 - **Source**: closer for `moderator_ui.mod_tests.mod_e2e_playwright.mod_pw_full_session_run` (fixer attempt 3 diagnosis; `interpretive_split_logic.md` open question).

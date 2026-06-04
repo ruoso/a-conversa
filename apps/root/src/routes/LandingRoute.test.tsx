@@ -102,8 +102,9 @@ describe('LandingRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('root-start-session')).toBeTruthy();
     });
-    // The hero retains a functional CTA (Decision §D5) — the start-a-session
-    // link plus the SSO login button.
+    // The functional CTA affordances (start-a-session link + SSO login) are
+    // still on the page — relocated into the secondary CTA section, not the
+    // hero (`landing_opensource_and_cta` Decision §D2).
     expect(screen.getByTestId('auth-login-button')).toBeTruthy();
     // The public surface uses the new `route-landing` testid, not `route-home`.
     expect(screen.queryByTestId('route-landing')).toBeTruthy();
@@ -129,6 +130,59 @@ describe('LandingRoute', () => {
     expect(hero.textContent).toContain('a-conversa');
     expect(hero.textContent).toContain('See exactly where a disagreement actually is.');
     expect(hero.textContent).toContain('talking past each other');
+    // The hero is now pure pitch: the CTA affordances were relocated into the
+    // secondary CTA section, so they no longer live inside `landing-hero`
+    // (`landing_opensource_and_cta` Decision §D2).
+    expect(hero.querySelector('[data-testid="root-start-session"]')).toBeNull();
+    expect(hero.querySelector('[data-testid="auth-login-button"]')).toBeNull();
+  });
+
+  it('renders the open-source section with the GitHub link and the AGPL license', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const section = await screen.findByTestId('landing-opensource');
+    expect(section.textContent).toContain('Built in the open');
+    expect(section.textContent).toContain('AGPL-3.0-or-later');
+
+    const repoLink = screen.getByTestId('landing-opensource-repo-link');
+    expect(repoLink.getAttribute('href')).toBe('https://github.com/ruoso/a-conversa');
+    expect(repoLink.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('renders the secondary CTA section hosting the relocated affordances', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const cta = await screen.findByTestId('landing-cta');
+    expect(cta.textContent).toContain('Start a debate');
+    // The relocated affordances live inside the CTA section now.
+    expect(cta.querySelector('[data-testid="root-start-session"]')).not.toBeNull();
+    expect(cta.querySelector('[data-testid="auth-login-button"]')).not.toBeNull();
+  });
+
+  it('renders the footer landmark with the locale switcher', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'unauthenticated',
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    const footer = await screen.findByTestId('landing-footer');
+    expect(footer.tagName.toLowerCase()).toBe('footer');
+    expect(footer.querySelector('[data-testid="landing-locale-switcher"]')).not.toBeNull();
   });
 
   it('renders the "how it works" section with its heading and three points', async () => {

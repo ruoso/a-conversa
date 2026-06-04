@@ -103,6 +103,22 @@
           "body": "Follow each \"why\" until it stops. Some claims cannot be argued further — they are where a worldview rests. The map marks these instead of pretending the gap is about evidence."
         }
       }
+    },
+    "openSource": {
+      "title": "Built in the open",
+      "body": "a-conversa is open source. Read the code, self-host your own instance, or adopt the debate format for your own community — the method matters more than the platform.",
+      "repoLinkLabel": "View the source on GitHub",
+      "licenseNote": "Licensed under {license}.",
+      "licenseLinkLabel": "Read the license"
+    },
+    "cta": {
+      "title": "Start a debate",
+      "body": "Spin up a session and put a real disagreement on the map — or sign in to pick up where you left off."
+    },
+    "footer": {
+      "tagline": "a-conversa — structured debate you can see.",
+      "note": "Open source · {license}",
+      "localeLabel": "Language"
     }
   },
   "auth": {

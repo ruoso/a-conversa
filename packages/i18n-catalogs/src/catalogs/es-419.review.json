@@ -437,7 +437,17 @@
     "landing.surfaces.items.categories.title",
     "landing.surfaces.items.categories.body",
     "landing.surfaces.items.axioms.title",
-    "landing.surfaces.items.axioms.body"
+    "landing.surfaces.items.axioms.body",
+    "landing.openSource.title",
+    "landing.openSource.body",
+    "landing.openSource.repoLinkLabel",
+    "landing.openSource.licenseNote",
+    "landing.openSource.licenseLinkLabel",
+    "landing.cta.title",
+    "landing.cta.body",
+    "landing.footer.tagline",
+    "landing.footer.note",
+    "landing.footer.localeLabel"
   ],
   "signed_off": []
 }

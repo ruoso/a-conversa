@@ -103,6 +103,22 @@
           "body": "Siga cada \"porquê\" até ele parar. Algumas afirmações não podem ser argumentadas além — é onde uma visão de mundo se apoia. O mapa marca esses pontos em vez de fingir que a lacuna é sobre evidências."
         }
       }
+    },
+    "openSource": {
+      "title": "Feito de forma aberta",
+      "body": "O a-conversa é de código aberto. Leia o código, hospede sua própria instância ou adote o formato de debate para a sua própria comunidade — o método importa mais do que a plataforma.",
+      "repoLinkLabel": "Ver o código-fonte no GitHub",
+      "licenseNote": "Licenciado sob {license}.",
+      "licenseLinkLabel": "Ler a licença"
+    },
+    "cta": {
+      "title": "Inicie um debate",
+      "body": "Crie uma sessão e coloque uma discordância real no mapa — ou entre para continuar de onde parou."
+    },
+    "footer": {
+      "tagline": "a-conversa — debate estruturado que você consegue ver.",
+      "note": "Código aberto · {license}",
+      "localeLabel": "Idioma"
     }
   },
   "auth": {

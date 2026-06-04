@@ -92,6 +92,7 @@ task landing_page "Public landing page" {
   task landing_opensource_and_cta "Open-source section, secondary call-to-action, footer" {
     effort 0.5d
     allocate team
+    complete 100
     depends !split_public_and_home_routes
     note -8<-
       Open-source / "adopt the format" section (GitHub link, license), a

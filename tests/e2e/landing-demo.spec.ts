@@ -142,4 +142,67 @@ test.describe('landing walkthrough demo', () => {
       await context.close();
     }
   });
+
+  // Thin chrome assertion for `landing_opensource_and_cta`. The page chrome
+  // below the methodology pitch (open-source pitch, secondary CTA, footer) is
+  // reachable today on the anonymous `/`. This pins that it renders with the
+  // honest GitHub link and the relocated CTA affordance. The fuller journey
+  // stays owned by the terminal `landing_e2e` leaf.
+  test('anonymous / renders the open-source section, secondary CTA, and footer', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+
+      // The open-source section with the honest GitHub link.
+      await expect(page.getByTestId('landing-opensource')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('landing-opensource-repo-link')).toHaveAttribute(
+        'href',
+        'https://github.com/ruoso/a-conversa',
+      );
+
+      // The secondary CTA hosting the relocated start-session affordance.
+      await expect(page.getByTestId('landing-cta')).toBeVisible();
+      await expect(page.getByTestId('root-start-session')).toBeVisible();
+
+      // The footer landmark with the locale switcher.
+      await expect(page.getByTestId('landing-footer')).toBeVisible();
+      await expect(page.getByTestId('landing-locale-switcher')).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Exercises the `changeLanguage` + `persistLocale` path end-to-end: picking
+  // the `pt-BR` option re-renders a visible heading in Portuguese in place
+  // (no navigation). The fuller responsive/locale journey stays owned by
+  // `landing_e2e`.
+  test('the locale switcher re-renders the page in Portuguese in place', async ({ browser }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      const switcher = page.getByTestId('landing-locale-switcher');
+      await expect(switcher).toBeVisible({ timeout: 15_000 });
+
+      // en-US baseline: the open-source heading reads in English.
+      await expect(page.getByTestId('landing-opensource')).toContainText('Built in the open');
+
+      const urlBefore = page.url();
+      await switcher.selectOption('pt-BR');
+
+      // The heading re-renders in Portuguese with no navigation.
+      await expect(page.getByTestId('landing-opensource')).toContainText('Feito de forma aberta', {
+        timeout: 5_000,
+      });
+      expect(page.url()).toBe(urlBefore);
+    } finally {
+      await context.close();
+    }
+  });
 });
