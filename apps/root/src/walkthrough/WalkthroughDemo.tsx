@@ -51,7 +51,7 @@ const INSTANCE_KEY = 'landing-walkthrough';
  * statements rather than a blank canvas (the seed's first `node-created`
  * lands at index 4). Narration may retune this via the position seam.
  */
-const DEFAULT_INITIAL_POSITION = 6;
+export const DEFAULT_INITIAL_POSITION = 6;
 
 /** Auto-advance interval (Decision §4); default-paused, reduced-motion-gated. */
 const AUTO_ADVANCE_INTERVAL_MS = 1200;

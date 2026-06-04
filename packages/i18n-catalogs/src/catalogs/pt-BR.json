@@ -16,7 +16,54 @@
       "play": "Reproduzir",
       "pause": "Pausar",
       "scrubberLabel": "Posição do tutorial",
-      "stepStatus": "Passo {position} de {total}"
+      "stepStatus": "Passo {position} de {total}",
+      "caption": {
+        "opening": {
+          "eyebrow": "Um grafo compartilhado",
+          "title": "Todo debate começa como uma única afirmação.",
+          "body": "Dois debatedores e um moderador trabalham em um único mapa compartilhado — não em monólogos paralelos. Aqui está a posição inicial, visível para todos."
+        },
+        "decompose": {
+          "eyebrow": "Decomposição",
+          "title": "Divida uma afirmação nas partes em que ela se apoia.",
+          "body": "Você não pode concordar ou discordar de um slogan. A afirmação inicial é desmembrada nas sub-afirmações específicas que realmente a sustentam."
+        },
+        "consensus": {
+          "eyebrow": "Validado por consenso",
+          "title": "Nada se firma até que todos concordem.",
+          "body": "Uma ligação só passa a ser \"acordada\" quando os dois debatedores e o moderador a aceitam. A estrutura deste mapa é conquistada, nunca apenas afirmada."
+        },
+        "counter": {
+          "eyebrow": "Mesmo mapa, os dois lados",
+          "title": "O outro lado constrói sobre a mesma estrutura.",
+          "body": "O contra-argumento não abre uma nova linha — ele se conecta exatamente onde incide sobre a afirmação, de modo que a discordância permaneça plenamente visível."
+        },
+        "contradiction": {
+          "eyebrow": "Contradições internas",
+          "title": "Identifique exatamente onde duas afirmações colidem.",
+          "body": "Uma réplica liga uma afirmação à afirmação precisa que ela contradiz. Os dois lados primeiro concordam sobre onde discordam — o passo que a maioria das discussões pula."
+        },
+        "classification": {
+          "eyebrow": "Incompatibilidades de categoria",
+          "title": "As mesmas palavras podem ser um TIPO diferente de afirmação.",
+          "body": "Isto é um valor, uma previsão ou um fato? Marcar o tipo de cada afirmação expõe a forma mais comum de um debate descarrilar: tratar um tipo de declaração como outro."
+        },
+        "axiom": {
+          "eyebrow": "Axiomas fundamentais",
+          "title": "Siga o \"porquê\" até chegar à base.",
+          "body": "Algumas afirmações não podem ser argumentadas além — é onde uma visão de mundo se apoia. O mapa marca esses axiomas em vez de fingir que a lacuna é sobre evidências."
+        },
+        "interpretive_split": {
+          "eyebrow": "Falando sem se entender",
+          "title": "Às vezes a disputa é sobre o que uma frase sequer significa.",
+          "body": "Uma afirmação é dividida em suas leituras distintas — uma epistêmica, outra metafísica — para que cada uma seja argumentada em seus próprios termos, em vez de uma passar pela outra."
+        },
+        "finale": {
+          "eyebrow": "O mapa concluído",
+          "title": "Um debate que você consegue realmente ver.",
+          "body": "O que está acordado, o que ainda é contestado e os axiomas por baixo — uma estrutura compartilhada, não a transcrição de duas pessoas falando sem se entender."
+        }
+      }
     }
   },
   "auth": {

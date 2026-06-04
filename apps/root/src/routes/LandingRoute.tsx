@@ -10,7 +10,11 @@ import { LoadingFrame } from './LoadingFrame';
 // the ~4k-line seed blob stay off the marketing page's first paint. The
 // seed module was deliberately shaped to be `await import()`-friendly
 // (`landing_walkthrough_seed` Decision §3) precisely for this.
-const WalkthroughDemo = lazy(() => import('../walkthrough/WalkthroughDemo'));
+//
+// The narrated wrapper (`walkthrough_demo_narration` Decision §D1) owns the
+// demo's position and renders the per-step caption beside the graph; it
+// composes the bare stepper internally.
+const WalkthroughDemoNarrated = lazy(() => import('../walkthrough/WalkthroughDemoNarrated'));
 
 export function LandingRoute(): ReactElement {
   const { t } = useTranslation();
@@ -87,7 +91,7 @@ export function LandingRoute(): ReactElement {
               </div>
             }
           >
-            <WalkthroughDemo />
+            <WalkthroughDemoNarrated />
           </Suspense>
         </section>
       </div>

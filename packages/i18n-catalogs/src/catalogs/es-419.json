@@ -16,7 +16,54 @@
       "play": "Reproducir",
       "pause": "Pausar",
       "scrubberLabel": "Posición del recorrido",
-      "stepStatus": "Paso {position} de {total}"
+      "stepStatus": "Paso {position} de {total}",
+      "caption": {
+        "opening": {
+          "eyebrow": "Un grafo compartido",
+          "title": "Todo debate empieza como una sola afirmación.",
+          "body": "Dos debatientes y un moderador trabajan sobre un único mapa compartido, no en monólogos paralelos. Aquí está la posición inicial, visible para todos."
+        },
+        "decompose": {
+          "eyebrow": "Descomposición",
+          "title": "Divide una afirmación en las partes en las que se apoya.",
+          "body": "No puedes estar de acuerdo o en desacuerdo con un eslogan. La afirmación inicial se desglosa en las subafirmaciones específicas que realmente la sostienen."
+        },
+        "consensus": {
+          "eyebrow": "Validado por consenso",
+          "title": "Nada queda firme hasta que todos están de acuerdo.",
+          "body": "Un vínculo pasa a estar \"acordado\" solo cuando ambos debatientes y el moderador lo aceptan. La estructura de este mapa se gana, nunca se da por sentada."
+        },
+        "counter": {
+          "eyebrow": "Mismo mapa, ambos lados",
+          "title": "El otro lado construye sobre la misma estructura.",
+          "body": "El contraargumento no abre un hilo nuevo: se conecta exactamente donde incide sobre la afirmación, de modo que el desacuerdo quede a plena vista."
+        },
+        "contradiction": {
+          "eyebrow": "Contradicciones internas",
+          "title": "Señala exactamente dónde chocan dos afirmaciones.",
+          "body": "Una réplica vincula una afirmación con la afirmación precisa que contradice. Ambos lados primero acuerdan dónde discrepan, el paso que la mayoría de las discusiones se salta."
+        },
+        "classification": {
+          "eyebrow": "Discrepancias de categoría",
+          "title": "Las mismas palabras pueden ser un TIPO distinto de afirmación.",
+          "body": "¿Esto es un valor, una predicción o un hecho? Etiquetar el tipo de cada afirmación expone la forma más común en que un debate se descarrila: tratar un tipo de enunciado como otro."
+        },
+        "axiom": {
+          "eyebrow": "Axiomas fundamentales",
+          "title": "Sigue el \"por qué\" hasta llegar a la base.",
+          "body": "Algunas afirmaciones no pueden discutirse más: son donde se apoya una visión del mundo. El mapa marca estos axiomas en lugar de fingir que la diferencia es sobre evidencia."
+        },
+        "interpretive_split": {
+          "eyebrow": "Hablando sin entenderse",
+          "title": "A veces la disputa es sobre lo que una frase siquiera significa.",
+          "body": "Una afirmación se divide en sus distintas lecturas —una epistémica, otra metafísica— para que cada una se argumente en sus propios términos en lugar de hablar sin entenderse."
+        },
+        "finale": {
+          "eyebrow": "El mapa terminado",
+          "title": "Un debate que de verdad puedes ver.",
+          "body": "Lo acordado, lo que sigue en disputa y los axiomas que hay debajo: una estructura compartida, no la transcripción de dos personas hablando sin entenderse."
+        }
+      }
     }
   },
   "auth": {

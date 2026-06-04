@@ -16,7 +16,54 @@
       "play": "Play",
       "pause": "Pause",
       "scrubberLabel": "Walkthrough position",
-      "stepStatus": "Step {position} of {total}"
+      "stepStatus": "Step {position} of {total}",
+      "caption": {
+        "opening": {
+          "eyebrow": "One shared graph",
+          "title": "Every debate starts as a single claim.",
+          "body": "Two debaters and a moderator work on one shared map — not parallel monologues. Here's the opening position, visible to everyone."
+        },
+        "decompose": {
+          "eyebrow": "Decomposition",
+          "title": "Break a claim into the parts it rests on.",
+          "body": "You can't agree or disagree with a slogan. The opening claim is pulled apart into the specific sub-claims that actually carry it."
+        },
+        "consensus": {
+          "eyebrow": "Consensus-gated",
+          "title": "Nothing lands until everyone agrees.",
+          "body": "A link turns \"agreed\" only when both debaters and the moderator accept it. Structure on this map is earned, never just asserted."
+        },
+        "counter": {
+          "eyebrow": "Same map, both sides",
+          "title": "The other side builds on the same structure.",
+          "body": "The counter-argument doesn't open a new thread — it attaches exactly where it bears on the claim, so the disagreement stays in full view."
+        },
+        "contradiction": {
+          "eyebrow": "Internal contradictions",
+          "title": "Pinpoint where two claims actually collide.",
+          "body": "A rebuttal links one claim to the precise claim it contradicts. Both sides first agree on where they disagree — the step most arguments skip."
+        },
+        "classification": {
+          "eyebrow": "Category mismatches",
+          "title": "The same words can be a different KIND of claim.",
+          "body": "Is this a value, a prediction, or a fact? Tagging each claim's kind exposes the most common way debates derail: treating one kind of statement as another."
+        },
+        "axiom": {
+          "eyebrow": "Bedrock axioms",
+          "title": "Follow the \"why\" until it hits bedrock.",
+          "body": "Some claims can't be argued further — they're where a worldview rests. The map marks these axioms instead of pretending the gap is about evidence."
+        },
+        "interpretive_split": {
+          "eyebrow": "Talking past each other",
+          "title": "Sometimes the fight is over what a sentence even means.",
+          "body": "One claim is split into its distinct readings — one epistemic, one metaphysical — so each is argued on its own terms instead of past each other."
+        },
+        "finale": {
+          "eyebrow": "The finished map",
+          "title": "A debate you can actually see.",
+          "body": "What's agreed, what's still contested, and the axioms underneath — a shared structure, not a transcript of two people talking past each other."
+        }
+      }
     }
   },
   "auth": {

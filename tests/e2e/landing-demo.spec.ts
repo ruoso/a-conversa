@@ -89,4 +89,29 @@ test.describe('landing walkthrough demo', () => {
       await context.close();
     }
   });
+
+  // Thin caption assertion for `walkthrough_demo_narration`. Proves the
+  // per-step caption is reachable on the anonymous `/` and tracks position
+  // end-to-end through the real renderer (not just jsdom). The fuller
+  // through-to-final-state + matching-localized-text journey stays owned by
+  // the terminal `landing_e2e` leaf.
+  test('the narration caption is visible on load and tracks position', async ({ browser }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      // On load the caption shows the first beat (pos 6 = `opening` anchor).
+      const caption = page.getByTestId('walkthrough-caption');
+      await expect(caption).toBeVisible({ timeout: 15_000 });
+      await expect(caption).toHaveAttribute('data-beat', 'opening', { timeout: 5_000 });
+
+      // Scrubbing to a later anchor (pos 100 = `classification`) advances
+      // the active beat — the caption follows the stepper's position.
+      await page.getByTestId('walkthrough-scrubber').fill('100');
+      await expect(caption).toHaveAttribute('data-beat', 'classification', { timeout: 5_000 });
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -133,6 +133,7 @@ task landing_page "Public landing page" {
   task walkthrough_demo_narration "Per-step captions wired into the demo, localized" {
     effort 1d
     allocate team
+    complete 100
     depends !walkthrough_demo_stepper, !walkthrough_narration_script
     note -8<-
       Implement the narration: render the per-step caption alongside the
