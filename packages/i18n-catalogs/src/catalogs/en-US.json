@@ -1060,6 +1060,16 @@
       "empty": "This session has no events yet.",
       "eventCount": "{count, plural, one {# event} other {# events}}"
     },
+    "scrubber": {
+      "regionAriaLabel": "Session replay scrubber",
+      "graphAriaLabel": "Projected graph at the current position",
+      "previous": "Previous event",
+      "next": "Next event",
+      "rangeAriaLabel": "Scrub to an event position",
+      "positionStatus": "Position {position, number} of {head, number}",
+      "snapshotsAriaLabel": "Jump to a snapshot",
+      "snapshotsHeading": "Snapshots"
+    },
     "synthetic": {
       "regionAriaLabel": "Synthetic session scenarios",
       "heading": "Synthetic sessions",

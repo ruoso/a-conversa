@@ -137,6 +137,16 @@ export {
   type AxiomMarkBadgeProps,
 } from './axiom-marks/index.js';
 
+// ─── replay-position ─────────────────────────────────────────────────────
+export {
+  clampPosition,
+  isAtEnd,
+  isAtStart,
+  nextPosition,
+  prevPosition,
+  replayHeadSequence,
+} from './replay-position/index.js';
+
 // ─── snapshot-list ───────────────────────────────────────────────────────
 export {
   resolveSnapshotPosition,

@@ -11,21 +11,25 @@
 // `GET /api/sessions/:id/events` line up end to end through the mounted
 // test-mode surface:
 //
-//   (a) a freshly-minted session loads to the `ready` state showing the
-//       readout — the surface → real REST fetch → real backend wiring
-//       proof. `POST /api/sessions` atomically persists two creation
-//       events (`session-created` at sequence 1, `participant-joined` at
-//       sequence 2 — the implicit host/moderator join), so a brand-new
-//       session's persisted log is never empty: the readout, not the
-//       empty-log affordance, is the real-backend outcome;
+//   (a) a freshly-minted session loads to the `ready` state, which now
+//       mounts the timeline scrubber surface (`test_mode_timeline_scrubber`
+//       superseded the former inert readout in place) — the surface → real
+//       REST fetch → real backend wiring proof. `POST /api/sessions`
+//       atomically persists two creation events (`session-created` at
+//       sequence 1, `participant-joined` at sequence 2 — the implicit
+//       host/moderator join), so a brand-new session's persisted log is
+//       never empty: the scrubber, not the empty-log affordance, is the
+//       real-backend outcome;
 //   (b) a random unused session id renders the `not-found` affordance —
 //       the 404 path (the backend returns the same 404 for unknown and
 //       invisible sessions).
 //
 // The empty-log affordance, the rich multi-page paging loop, and the
-// per-row rendering are pinned deterministically by the Vitest hook + view
-// tests (the empty-ready state is in fact unreachable for a real session,
-// since creation always persists the two events above). Decision §6.
+// scrubber's stepping behaviour are pinned deterministically by the Vitest
+// hook + view + scrubber-component tests (the empty-ready state is in fact
+// unreachable for a real session, since creation always persists the two
+// events above); the live scrubber + snapshot-jump flow is pinned by
+// `test-mode-scrubber.spec.ts`. Decision §6.
 //
 // **Auth.** The `chromium-test-mode-load-session` project depends on the
 // shared `setup-auth` project, so the context already carries the
@@ -54,27 +58,27 @@ async function createSession(page: Page): Promise<string> {
 }
 
 test.describe('Test-mode session log — /t/sessions/:id loads the persisted log', () => {
-  test('a freshly-minted session reaches the ready readout of its creation events', async ({
-    page,
-  }) => {
+  test('a freshly-minted session reaches the ready scrubber surface', async ({ page }) => {
     const sessionId = await createSession(page);
 
     await page.goto(`/t/sessions/${sessionId}`);
 
     // Real surface → `useSessionEventLog` → `GET /api/sessions/:id/events`
     // → real backend returns the two creation events → the `ready` state
-    // renders the readout. This is the surface → real REST fetch → real
-    // backend wiring proof.
+    // mounts the timeline scrubber. This is the surface → real REST fetch →
+    // real backend wiring proof.
     await expect(
-      page.getByTestId('test-mode-session-log'),
-      'a new session loads its persisted creation events → the ready readout',
+      page.getByTestId('test-mode-scrubber'),
+      'a new session loads its persisted creation events → the ready scrubber surface',
     ).toBeVisible({ timeout: 15_000 });
 
-    // The host-create transaction persists `session-created` (sequence 1)
-    // and the implicit host/moderator `participant-joined` (sequence 2).
-    await expect(page.getByTestId('test-mode-session-log-row-1')).toContainText('session-created');
-    await expect(page.getByTestId('test-mode-session-log-row-2')).toContainText(
-      'participant-joined',
+    // The host-create transaction persists two events (`session-created` at
+    // sequence 1, `participant-joined` at sequence 2), so the head sequence
+    // is 2 and the scrubber opens at that head position.
+    await expect(page.getByTestId('test-mode-scrubber-range')).toHaveAttribute('max', '2');
+    await expect(page.getByTestId('test-mode-scrubber-status')).toHaveAttribute(
+      'data-position',
+      '2',
     );
   });
 

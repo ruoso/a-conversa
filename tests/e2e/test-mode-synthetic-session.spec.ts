@@ -11,15 +11,17 @@
 // real gated endpoint → real persisted log → real read path — through the
 // mounted test-mode surface: navigate `/t/`, see the gallery, click
 // generate on the **structured** scenario, and land on
-// `/t/sessions/<id>` with the load readout showing the generated events
-// (`> 0` rows). One spec, en-US only, no fixture/mock.
+// `/t/sessions/<id>` with the ready scrubber surface mounted over the
+// generated log. One spec, en-US only, no fixture/mock.
 //
-// This is the non-empty persisted-log readout that
+// This is the non-empty persisted-log read path that
 // `test_mode_load_session.md` §6 deferred to Vitest because it had no way
 // to persist a rich log in e2e (the browser-store seed helpers hydrate the
 // in-page WS store, not the DB). Synthetic generation persists a rich log
 // through the production write path, so this e2e exercises the non-empty
-// readout end-to-end against the real backend.
+// ready surface end-to-end against the real backend. The scrubber's
+// stepping + snapshot-jump behaviour is pinned by `test-mode-scrubber.spec.ts`;
+// here we only confirm generate → load lands on the scrubber surface.
 //
 // **Gating.** The synthetic generator only registers when
 // `NODE_ENV !== 'production'`; `make up` (which `make test:e2e:compose`
@@ -36,7 +38,7 @@
 import { expect, test } from './fixtures/no-scrollbars';
 
 test.describe('Test-mode synthetic session — generate → load', () => {
-  test('generating the structured scenario lands on the load route with a non-empty readout', async ({
+  test('generating the structured scenario lands on the load route with the scrubber surface', async ({
     page,
   }) => {
     await page.goto('/t/');
@@ -56,21 +58,18 @@ test.describe('Test-mode synthetic session — generate → load', () => {
     // for the URL to settle on the load route.
     await page.waitForURL(/\/t\/sessions\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
-    // The load readout renders the persisted log the generator wrote —
-    // surface → real REST fetch → real backend → real read path.
+    // The ready scrubber surface renders over the persisted log the
+    // generator wrote — surface → real REST fetch → real backend → real
+    // read path. A non-empty log puts the scrubber head beyond the
+    // baseline, so the surface opens with a traversable range and graph.
     await expect(
-      page.getByTestId('test-mode-session-log'),
-      'the generated session loads its persisted log into the ready readout',
+      page.getByTestId('test-mode-scrubber'),
+      'the generated session loads its persisted log into the ready scrubber surface',
     ).toBeVisible({ timeout: 15_000 });
-
-    // The structured scenario opens with `session-created` at sequence 1
-    // and persists more than the four bootstrap events — a genuinely
-    // non-empty log driven end-to-end through the real read path.
-    await expect(page.getByTestId('test-mode-session-log-row-1')).toContainText('session-created');
-    await expect(page.getByTestId('test-mode-session-log-row-5')).toBeVisible();
+    await expect(page.getByTestId('test-mode-scrubber-graph')).toBeVisible();
   });
 
-  test('generating the walkthrough scenario lands on the load route with a deep readout', async ({
+  test('generating the walkthrough scenario lands on the load route with the scrubber surface', async ({
     page,
   }) => {
     await page.goto('/t/');
@@ -88,17 +87,17 @@ test.describe('Test-mode synthetic session — generate → load', () => {
     await page.waitForURL(/\/t\/sessions\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
     await expect(
-      page.getByTestId('test-mode-session-log'),
-      'the generated walkthrough session loads its persisted log',
+      page.getByTestId('test-mode-scrubber'),
+      'the generated walkthrough session loads its persisted log into the scrubber surface',
     ).toBeVisible({ timeout: 15_000 });
 
     // The walkthrough is the rich canonical fixture re-keyed into a fresh
-    // session: it opens with `session-created` at sequence 1 and persists
-    // a deep log — a high-sequence row well beyond the bootstrap range
-    // proves the full re-keyed log reached the real read path end-to-end.
-    await expect(page.getByTestId('test-mode-session-log-row-1')).toContainText('session-created');
-    await expect(page.getByTestId('test-mode-session-log-row-200')).toBeVisible({
-      timeout: 15_000,
-    });
+    // session: it persists a deep log, so the scrubber head sits well beyond
+    // the bootstrap range — a high head position proves the full re-keyed
+    // log reached the real read path end-to-end.
+    const head = await page
+      .getByTestId('test-mode-scrubber-status')
+      .getAttribute('data-head', { timeout: 15_000 });
+    expect(Number(head)).toBeGreaterThan(200);
   });
 });

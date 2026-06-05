@@ -484,6 +484,30 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Test-mode timeline-scrubber e2e
+    // (replay_test.test_mode.test_mode_timeline_scrubber, refinement
+    // `tasks/refinements/replay_test/test_mode_timeline_scrubber.md`).
+    // Generates the walkthrough synthetic session (deep log + a
+    // `snapshot-created` event at log_position 265), navigates to
+    // `/t/sessions/<id>`, and drives the scrubber: stepping next/prev,
+    // dragging the range, the prev@0 / next@head boundary affordances, and
+    // the inherited snapshot-jump debt (click the snapshot row → the
+    // position-status reflects 265). Mirrors the
+    // `chromium-test-mode-synthetic-session` shape — single locale en-US,
+    // `ignoreHTTPSErrors` for the OIDC redirect, the bootstrap auth jar via
+    // `setup-auth`. The gated generator is live because `make up` runs the
+    // app under `NODE_ENV=development` (ADR 0041).
+    {
+      name: 'chromium-test-mode-scrubber',
+      testMatch: /test-mode-scrubber\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Cross-surface lobby + start-debate spec — three real browser
     // contexts (alice + ben + maria) prove the moderator-lobby's
     // Enter-session click after both debaters self-claim through

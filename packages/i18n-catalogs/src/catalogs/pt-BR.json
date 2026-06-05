@@ -1060,6 +1060,16 @@
       "empty": "Esta sessão ainda não tem eventos.",
       "eventCount": "{count, plural, one {# evento} other {# eventos}}"
     },
+    "scrubber": {
+      "regionAriaLabel": "Navegador da repetição da sessão",
+      "graphAriaLabel": "Grafo projetado na posição atual",
+      "previous": "Evento anterior",
+      "next": "Próximo evento",
+      "rangeAriaLabel": "Navegar até uma posição de evento",
+      "positionStatus": "Posição {position, number} de {head, number}",
+      "snapshotsAriaLabel": "Ir para um snapshot",
+      "snapshotsHeading": "Snapshots"
+    },
     "synthetic": {
       "regionAriaLabel": "Cenários de sessão sintética",
       "heading": "Sessões sintéticas",

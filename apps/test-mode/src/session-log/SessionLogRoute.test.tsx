@@ -6,11 +6,13 @@
 //
 // Mocks the shell's `useSessionEventLog` hook (the paging-fetch logic is
 // pinned separately by `useSessionEventLog.test.tsx`) and asserts the view
-// renders each of the four load states + the empty-ready state through
-// their stable `data-testid` seams, reading the `testMode.loadSession.*`
-// catalog keys: loading, not-found, error (+ working retry), empty-ready,
-// and a non-empty ready readout (count header + one ascending-`sequence`
-// row per event).
+// renders each of the four load states through their stable `data-testid`
+// seams, reading the `testMode.loadSession.*` catalog keys: loading,
+// not-found, error (+ working retry), empty-ready. The non-empty ready state
+// now mounts the timeline scrubber surface (`test-mode_timeline_scrubber`,
+// Decision §3), superseding the former inert readout list — asserted here by
+// the scrubber's `data-testid`; the scrubber's own behaviour is pinned by
+// `scrubber/TimelineScrubber.test.tsx`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -26,14 +28,27 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { createI18nInstance } from '@a-conversa/shell';
 import type { SessionEventLog } from '@a-conversa/shell';
+import type { Event } from '@a-conversa/shared-types';
 
 const useSessionEventLogMock = vi.fn<(sessionId: string) => SessionEventLog>();
+
+// Stub the heavy Cytoscape renderer the scrubber mounts on the ready path.
+vi.mock('@a-conversa/graph-view', () => ({
+  GraphView: ({ events }: { events: readonly Event[]; instanceKey: string }) => (
+    <div data-testid="graph-view-stub" data-event-count={events.length} />
+  ),
+}));
 
 vi.mock('@a-conversa/shell', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@a-conversa/shell')>();
   return {
     ...actual,
     useSessionEventLog: (sessionId: string) => useSessionEventLogMock(sessionId),
+    // Stub the connected snapshot list (it fetches on mount); the live
+    // jump flow is pinned by the Playwright e2e.
+    SnapshotJumpList: ({ sessionId }: { sessionId: string; onJump: (p: number) => void }) => (
+      <div data-testid="snapshot-jump-stub" data-session-id={sessionId} />
+    ),
   };
 });
 
@@ -125,8 +140,8 @@ describe('SessionLogRoute — empty ready', () => {
   });
 });
 
-describe('SessionLogRoute — ready readout', () => {
-  it('renders the count header and one row per event in ascending sequence order', async () => {
+describe('SessionLogRoute — ready (non-empty) mounts the scrubber', () => {
+  it('mounts the timeline scrubber surface, not the superseded readout list', async () => {
     const events = [
       makeEvent(1, 'session-created'),
       makeEvent(2, 'node-created'),
@@ -135,14 +150,13 @@ describe('SessionLogRoute — ready readout', () => {
     useSessionEventLogMock.mockReturnValue({ status: 'ready', events, retry: vi.fn() });
     await render();
 
-    expect(screen.getByTestId('test-mode-session-log-count').textContent).toBe('3 events');
+    // The scrubber surface supersedes the former event-list readout in place.
+    expect(screen.getByTestId('test-mode-scrubber')).toBeTruthy();
+    expect(screen.getByTestId('test-mode-scrubber-range')).toBeTruthy();
+    expect(screen.queryByTestId('test-mode-session-log')).toBeNull();
 
-    const container = screen.getByTestId('test-mode-session-log');
-    const rows = container.querySelectorAll('[data-sequence]');
-    expect([...rows].map((r) => r.getAttribute('data-sequence'))).toEqual(['1', '2', '3']);
-
-    const row2 = screen.getByTestId('test-mode-session-log-row-2');
-    expect(row2.textContent).toContain('node-created');
-    expect(row2.textContent).toContain('2026-06-01T10:00:02.000Z');
+    // It opens at the head, projecting the whole log into the graph.
+    expect(screen.getByTestId('test-mode-scrubber-status').getAttribute('data-position')).toBe('3');
+    expect(screen.getByTestId('graph-view-stub').getAttribute('data-event-count')).toBe('3');
   });
 });
