@@ -38,6 +38,9 @@
 import type { Event } from '@a-conversa/shared-types';
 import type { SyntheticScenarioDescriptor } from '@a-conversa/shared-types';
 
+import { rekeyFixture } from './rekey.js';
+import { walkthroughFixtureData } from './walkthrough.data.js';
+
 /**
  * A stable, clearly-marked synthetic debater user. Inserted by the
  * generator route `ON CONFLICT (oauth_subject) DO NOTHING` under the
@@ -311,6 +314,21 @@ const buildStructuredScenario: ScenarioBuilder = (sessionId, hostUserId, idFacto
 };
 
 /**
+ * `walkthrough` — the rich canonical fixture (~260 events of real debate
+ * structure: nodes, edges, annotations, proposals, votes, commits, a
+ * snapshot) instantiated into a fresh synthetic session by the
+ * non-destructive typed re-keyer (`rekeyFixture`). The vendored fixture
+ * data is an imported `const` (ADR 0042), so this builder stays
+ * synchronous and matches the `ScenarioBuilder` signature exactly — it
+ * plugs into the registry like `empty` / `structured`, with no route or
+ * signature change. The re-keyer maps the fixture's moderator role onto
+ * the operator and its two debaters onto the stable synthetic debaters,
+ * mints every entity/event id fresh, and preserves all cross-references.
+ */
+const buildWalkthroughScenario: ScenarioBuilder = (sessionId, hostUserId, idFactory) =>
+  rekeyFixture(walkthroughFixtureData, { sessionId, hostUserId, idFactory });
+
+/**
  * One registry entry per scenario — the builder plus the descriptor the
  * read endpoint advertises. Keeping the descriptor next to the builder
  * means a scenario the server cannot build can never be advertised
@@ -339,6 +357,15 @@ const SCENARIO_ENTRIES: readonly ScenarioEntry[] = [
         'A small worked log: a captured statement, a classification proposal, agreeing votes, and a commit.',
     },
     build: buildStructuredScenario,
+  },
+  {
+    descriptor: {
+      key: 'walkthrough',
+      title: 'Walkthrough session',
+      description:
+        'The full worked debate fixture: decomposition, edges, annotations, axiom-marks, an interpretive split, and a snapshot — a deep log for exercising the scrubber and inspectors.',
+    },
+    build: buildWalkthroughScenario,
   },
 ];
 

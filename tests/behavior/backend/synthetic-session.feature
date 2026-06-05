@@ -26,6 +26,7 @@ Feature: Test-mode synthetic-session generator — list + generate through the r
     Then the response status is 200
     And the response body's scenarios include "empty"
     And the response body's scenarios include "structured"
+    And the response body's scenarios include "walkthrough"
 
   Scenario: Generating the empty scenario persists a real session log owned by the caller
     When I POST /test-mode/synthetic-sessions with scenario "empty"
@@ -39,6 +40,13 @@ Feature: Test-mode synthetic-session generator — list + generate through the r
     Then the response status is 201
     And the response body carries a sessionId
     And the generated session has more than 4 session_events
+
+  Scenario: Generating the walkthrough scenario persists the full rich log owned by the caller
+    When I POST /test-mode/synthetic-sessions with scenario "walkthrough"
+    Then the response status is 201
+    And the response body carries a sessionId
+    And the generated session is owned by that user
+    And the generated session has the full walkthrough event log in ascending sequence
 
   Scenario: An unknown scenario is rejected
     When I POST /test-mode/synthetic-sessions with scenario "does-not-exist"

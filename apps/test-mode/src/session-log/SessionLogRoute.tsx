@@ -91,8 +91,9 @@ export function SessionLogRoute(): ReactElement {
   return (
     <main
       data-testid="test-mode-session-log"
+      data-allow-scroll=""
       aria-label={t('testMode.loadSession.regionAriaLabel')}
-      className="mx-auto max-w-3xl p-6 text-sm text-slate-900"
+      className="mx-auto h-screen max-w-3xl overflow-y-auto p-6 text-sm text-slate-900"
     >
       <h1 data-testid="test-mode-session-log-count" className="mb-3 text-lg font-semibold">
         {t('testMode.loadSession.eventCount', { count: events.length })}

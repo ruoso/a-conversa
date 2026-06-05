@@ -1079,6 +1079,10 @@
         "structured": {
           "title": "Structured session",
           "description": "A small worked log: a captured statement, a classification proposal, agreeing votes, and a commit."
+        },
+        "walkthrough": {
+          "title": "Walkthrough session",
+          "description": "The full worked debate fixture: decomposition, edges, annotations, axiom-marks, an interpretive split, and a snapshot — a deep log for exercising the scrubber and inspectors."
         }
       }
     }

@@ -89,6 +89,7 @@ task replay_test "Replay and test mode" {
     task test_mode_synthetic_scenario_library "Non-destructive typed re-keyer for walkthrough fixture instantiation" {
       effort 2d
       allocate team
+      complete 100
       depends !test_mode_synthetic_session
       note "Add a non-destructive typed re-keyer that instantiates the walkthrough (and future) test-fixtures into a fresh synthetic session, registered as additional scenarios in the test-mode generator. Source: replay_test.test_mode.test_mode_synthetic_session refinement Decision §4; registered in commit that ships test_mode_synthetic_session complete 100."
     }

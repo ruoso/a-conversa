@@ -69,4 +69,36 @@ test.describe('Test-mode synthetic session — generate → load', () => {
     await expect(page.getByTestId('test-mode-session-log-row-1')).toContainText('session-created');
     await expect(page.getByTestId('test-mode-session-log-row-5')).toBeVisible();
   });
+
+  test('generating the walkthrough scenario lands on the load route with a deep readout', async ({
+    page,
+  }) => {
+    await page.goto('/t/');
+
+    await expect(
+      page.getByTestId('test-mode-synthetic-gallery'),
+      'the surface root renders the synthetic-session gallery',
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The walkthrough affordance renders automatically from the new
+    // descriptor — no gallery component change (ADR-0041 data-driven list).
+    await page.getByTestId('test-mode-synthetic-generate-walkthrough').click({ timeout: 15_000 });
+
+    // Real surface → gated endpoint → re-keyed persisted log → read path.
+    await page.waitForURL(/\/t\/sessions\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    await expect(
+      page.getByTestId('test-mode-session-log'),
+      'the generated walkthrough session loads its persisted log',
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The walkthrough is the rich canonical fixture re-keyed into a fresh
+    // session: it opens with `session-created` at sequence 1 and persists
+    // a deep log — a high-sequence row well beyond the bootstrap range
+    // proves the full re-keyed log reached the real read path end-to-end.
+    await expect(page.getByTestId('test-mode-session-log-row-1')).toContainText('session-created');
+    await expect(page.getByTestId('test-mode-session-log-row-200')).toBeVisible({
+      timeout: 15_000,
+    });
+  });
 });

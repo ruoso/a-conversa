@@ -1079,6 +1079,10 @@
         "structured": {
           "title": "Sesión estructurada",
           "description": "Un pequeño registro trabajado: una afirmación capturada, una propuesta de clasificación, votos de acuerdo y un commit."
+        },
+        "walkthrough": {
+          "title": "Sesión completa",
+          "description": "El registro completo del debate de ejemplo: descomposición, aristas, anotaciones, marcas de axioma, una división interpretativa y una instantánea — un registro profundo para ejercitar el scrubber y los inspectores."
         }
       }
     }

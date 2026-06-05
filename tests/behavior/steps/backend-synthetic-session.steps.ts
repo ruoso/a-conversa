@@ -26,6 +26,7 @@ import { strict as assert } from 'node:assert';
 
 import { SESSION_COOKIE_NAME } from '../../../apps/server/src/auth/index.js';
 import { __buildTestTestModeApp } from '../../../apps/server/src/test-mode/routes.js';
+import { walkthroughFixtureData } from '../../../apps/server/src/test-mode/synthetic/walkthrough.data.js';
 import type { AConversaWorld, QueryResult } from '../support/world.js';
 
 type FastifyAppInstance = Awaited<ReturnType<typeof __buildTestTestModeApp>>;
@@ -195,6 +196,24 @@ Then(
       (res.rows[0]?.count ?? 0) > floor,
       `expected more than ${String(floor)} events; got ${String(res.rows[0]?.count)}`,
     );
+  },
+);
+
+Then(
+  'the generated session has the full walkthrough event log in ascending sequence',
+  async function (this: AConversaWorld) {
+    const sessionId = scratch(this).generatedSessionId;
+    assert.ok(sessionId, 'no generated sessionId captured — preceding Then missing');
+    const res = (await this.db.query(
+      'SELECT sequence FROM session_events WHERE session_id = $1 ORDER BY sequence ASC',
+      [sessionId],
+    )) as QueryResult<{ sequence: string | number }>;
+    const actual = res.rows.map((r) => Number(r.sequence));
+    // The full rich log persisted — count matches the vendored fixture
+    // (the wire proof), and sequences are contiguous ascending from 1.
+    const expectedCount = walkthroughFixtureData.events.length;
+    const expected = Array.from({ length: expectedCount }, (_, i) => i + 1);
+    assert.deepEqual(actual, expected);
   },
 );
 
