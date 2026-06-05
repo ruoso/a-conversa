@@ -39,6 +39,7 @@ import {
   readSessionSnapshots,
 } from '../events/read.js';
 import { projectAtPosition, ReplayPositionError } from '../projection/at-position.js';
+import { computeAllDiagnostics } from '../diagnostics/index.js';
 import { canSeeSession } from '../sessions/visibility.js';
 import { serializeProjectionForWire } from '../ws/handlers/index.js';
 
@@ -283,6 +284,53 @@ export const sessionStateResponseRef = {
 } as const;
 
 /**
+ * Stable `$id` for the `SessionDiagnosticsResponse` wrapper — the shape
+ * `GET /sessions/:id/diagnostics` returns: `{ diagnostics: DiagnosticEntry[] }`.
+ * The array elements are the bare `DiagnosticEntry` objects
+ * `computeAllDiagnostics` returns verbatim — each a discriminated union
+ * member keyed on a string `kind` plus its kind-specific node/edge ids.
+ * They are deliberately NOT the WS `DiagnosticPayload` envelope (no
+ * `status`/`severity`/`sequence` wrapper — those are live-head transition
+ * concepts meaningless for a static positional snapshot; ADR 0044). The
+ * shipped client `useDiagnosticsAtPosition` binds this contract: it
+ * requires `Array.isArray(body.diagnostics)` and narrows each element on
+ * its string `kind`.
+ */
+export const SESSION_DIAGNOSTICS_RESPONSE_SCHEMA_ID = 'SessionDiagnosticsResponse';
+
+export const sessionDiagnosticsResponseSchema = {
+  $id: SESSION_DIAGNOSTICS_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['diagnostics'],
+  additionalProperties: false,
+  properties: {
+    diagnostics: {
+      // Opaque entries on purpose — for the same reason the state route
+      // leaves `projection` open: the entries are built by pure detectors
+      // over schema-validated events (ADR 0021), so re-validating their
+      // internal shape would couple the route to every detector's field
+      // set and duplicate the detectors' own unit coverage. This schema
+      // keeps only the outer `{ diagnostics: [...] }` envelope honest; the
+      // detectors' Vitest tests pin the per-entry shapes.
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+      description:
+        'The structural diagnostics the methodology engine surfaces for the projected ' +
+        'state at `position` — the wire-shaped `DiagnosticEntry` objects ' +
+        '`computeAllDiagnostics` returns verbatim (cycles, contradictions, multi-warrants, ' +
+        'dangling claims, coherency hints). Each element carries a string `kind` ' +
+        'discriminant plus its kind-specific node/edge ids. An empty array is the valid ' +
+        'clean state (e.g. `position = 0`, the empty baseline projection).',
+    },
+  },
+} as const;
+
+/** The `$ref` clients use to point at the `SessionDiagnosticsResponse` schema. */
+export const sessionDiagnosticsResponseRef = {
+  $ref: `${SESSION_DIAGNOSTICS_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Path-params schema for `:id`. A non-UUID `:id` is rejected with 400
  * `validation-failed` by the Fastify validator before the handler runs.
  */
@@ -393,6 +441,36 @@ const sessionStateQuerySchema = {
 } as const;
 
 /**
+ * Query-string schema for the diagnostics read. Identical single-axis
+ * contract to the projected-state read: `position` is the required
+ * event-sequence position to replay-then-detect at; ajv coerces the
+ * query string (`"5" → 5`). A missing, non-integer, or negative
+ * `position` is rejected with 400 `validation-failed` by the validator; a
+ * position above the log's head sequence passes the schema but is
+ * rejected at replay time (see the handler). `additionalProperties:
+ * false` documents the single-axis contract; the route-scoped
+ * `preValidation` hook is what actually rejects an unknown query key on
+ * the wire (ajv's `removeAdditional` would otherwise strip it silently).
+ */
+const sessionDiagnosticsQuerySchema = {
+  type: 'object',
+  required: ['position'],
+  additionalProperties: false,
+  properties: {
+    position: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        'The log position to compute diagnostics at (event-sequence space). `0` returns ' +
+        'the empty baseline projection`s diagnostics (`[]`); `N` returns the diagnostics ' +
+        'for the state after the event whose `sequence === N`. Required — there is no ' +
+        'implicit "current state" default. A position above the log`s head sequence is ' +
+        'rejected with 400 (out of range).',
+    },
+  },
+} as const;
+
+/**
  * Options accepted by `replayRoutesPlugin`. Mirrors the sessions
  * plugin's pool-injection contract: production passes `{}` and the
  * plugin lazily resolves the default pool on the first request; tests
@@ -436,6 +514,9 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
   }
   if (app.getSchema(SESSION_STATE_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionStateResponseSchema);
+  }
+  if (app.getSchema(SESSION_DIAGNOSTICS_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionDiagnosticsResponseSchema);
   }
 
   // Lazy DB-pool resolution — the first request triggers
@@ -826,6 +907,134 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
           sequence: position,
           projection: serializeProjectionForWire(projection),
         });
+      } catch (err) {
+        if (err instanceof ReplayPositionError) {
+          // The position is outside the log's range — a client-input
+          // error, not a server fault. Re-thrown as 400 carrying the valid
+          // `0..headSequence` range the error already computed.
+          throw new ApiError(400, 'validation-failed', err.message, {
+            position: err.position,
+            headSequence: err.headSequence,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.get(
+    '/api/sessions/:id/diagnostics',
+    {
+      preHandler: app.authenticate,
+      // Only `position` is accepted. Same shape as the state route: the
+      // schema's `additionalProperties: false` documents the single-axis
+      // contract, but Fastify's ajv runs `removeAdditional: true` and would
+      // silently strip an unknown query param, so this route-scoped
+      // `preValidation` hook restores the 400 the contract requires while
+      // preserving `position` (the one accepted key).
+      preValidation: async (request) => {
+        const unknownKeys = Object.keys(request.query as Record<string, unknown>).filter(
+          (key) => key !== 'position',
+        );
+        if (unknownKeys.length > 0) {
+          throw new ApiError(400, 'validation-failed', 'Request validation failed', {
+            issues: unknownKeys.map((key) => ({
+              keyword: 'additionalProperties',
+              instancePath: '',
+              schemaPath: '#/additionalProperties',
+              params: { additionalProperty: key },
+              message: 'must NOT have additional properties',
+            })),
+          });
+        }
+      },
+      schema: {
+        tags: ['replay'],
+        summary: "Fetch a session's structural diagnostics at a log position",
+        description:
+          'Returns the structural diagnostics the methodology engine would surface for the ' +
+          'session`s projected state at log position `?position=N` — the cycles, ' +
+          'contradictions, multi-warrants, dangling claims, and coherency hints. It is the ' +
+          'diagnostics-shaped sibling of `GET /sessions/:id/state`: a thin HTTP wrapper that ' +
+          'reads the log, replays to `N` with the replay primitive, and runs the server`s ' +
+          'detectors (`computeAllDiagnostics`) over the resulting projection. The detectors ' +
+          'are the single source of truth — there is no client-side mirror (ADR 0044).' +
+          '\n\n' +
+          'The 200 body is `{ diagnostics: [...] }`: a JSON object with a single ' +
+          '`diagnostics` array whose elements are the bare diagnostic entries (each a string ' +
+          '`kind` discriminant plus its kind-specific node/edge ids). The entries are NOT the ' +
+          'live WS `diagnostic` broadcast envelope — `status`/`severity`/`sequence` are ' +
+          'live-head transition concepts meaningless for a static positional snapshot.' +
+          '\n\n' +
+          'Position is event-sequence space: `position = 0` returns the empty baseline ' +
+          'projection`s diagnostics (`{ diagnostics: [] }` — valid for any visible session, ' +
+          'including a brand-new one); `position = N` returns the diagnostics for the state ' +
+          'after the event whose `sequence === N`; `position = headSequence` returns the ' +
+          'full-log diagnostics. `position` is required (no implicit "current state" default).' +
+          '\n\n' +
+          'Visibility is exactly the session`s own: public sessions are visible to every ' +
+          'authenticated user; private sessions only to the host or a current/past ' +
+          'participant. When the session does not exist OR exists but is invisible to the ' +
+          'caller, the server returns 404 `not-found` — the two cases are deliberately ' +
+          'indistinguishable to avoid leaking the existence of private sessions. The gate ' +
+          'runs before the log read, so a private session never reaches the replay.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
+          '`validation-failed` when `:id` is not a UUID, `position` is missing / non-integer ' +
+          '/ negative, an unknown query param is sent, or `position` is above the log`s head ' +
+          'sequence (out of range — the 400 carries the valid `0..headSequence` range).',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        querystring: sessionDiagnosticsQuerySchema,
+        response: {
+          200: sessionDiagnosticsResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — the middleware guarantees `authUser` is set on every
+      // request that reaches a handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+      // ajv coerced the query string to an integer >= 0 (the schema's job);
+      // an out-of-range position is still possible and is caught below.
+      const query = request.query as { position: number };
+      const { position } = query;
+
+      const pool = ensurePool();
+
+      // Visibility gate runs BEFORE the log read — an invisible session
+      // never reaches the read or the replay. Zero visibility → 404
+      // (whether the id is unused or exists-but-invisible, per the
+      // existence-leak rule). A session's diagnostics are exactly as
+      // visible as the session itself.
+      if (!(await canSeeSession(pool, sessionId, userId))) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      // Read the ENTIRE log ascending and hand it to the replay primitive
+      // (same rationale as the state route: the whole log lets
+      // `projectAtPosition` validate `position` against the true head
+      // sequence). Then run the detectors over the in-memory projection —
+      // it is NOT serialized to the wire here (the detectors consume the
+      // `Projection` class directly; only the diagnostics they yield cross
+      // the wire — refinement Decisions §8).
+      const events = await readSessionEventLog(pool, { sessionId });
+      try {
+        const projection = projectAtPosition(events, sessionId, position);
+        const diagnostics = computeAllDiagnostics(projection);
+        return reply.code(200).send({ diagnostics });
       } catch (err) {
         if (err instanceof ReplayPositionError) {
           // The position is outside the log's range — a client-input

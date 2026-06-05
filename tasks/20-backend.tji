@@ -409,6 +409,7 @@ task backend "Backend" {
     task get_diagnostics_at_position "GET /sessions/:id/diagnostics?position=... — structural diagnostics at log position" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.replay_primitive.project_at_position, data_and_methodology.diagnostics
       note "Registered by closer for replay_test.test_mode.test_mode_diagnostic_inspector (2026-06-05): the DiagnosticInspector panel fetches this endpoint; it runs projectAtPosition + computeAllDiagnostics server-side and returns wire-shaped, severity-classified entries. Backend leaf carries its own Cucumber coverage (ADR 0007). See ADR 0044 and tasks/refinements/replay_test/test_mode_diagnostic_inspector.md Decision §1."
     }

@@ -1072,3 +1072,321 @@ describe('GET /sessions/:id/state', () => {
     expect(body.error?.code).toBe('validation-failed');
   });
 });
+
+// ===========================================================================
+// GET /sessions/:id/diagnostics — structural diagnostics at a log position.
+// The diagnostics-shaped sibling of /state: read the log, replay to N, run
+// `computeAllDiagnostics` over the projection, return `{ diagnostics: [...] }`
+// (bare DiagnosticEntry objects — the shipped client narrows on `kind`).
+// ===========================================================================
+
+// Two extra node ids + an edge id for the diagnostic-producing log: an
+// edge with a NON-justification role (`defines`) from a source node to a
+// target node makes the target "claim-positioned but unjustified" → a
+// `dangling-claim` diagnostic for the target (see
+// `diagnostics/dangling-claim-detection.ts`). The source node is not
+// claim-positioned (no incoming edges) so it yields no entry.
+const DANGLING_SOURCE_NODE_ID = '66666666-6666-4666-8666-666666666601';
+const DANGLING_TARGET_NODE_ID = '66666666-6666-4666-8666-666666666602';
+const DANGLING_EDGE_ID = '77777777-7777-4777-8777-777777777701';
+
+// Seed a projectable log whose head-position projection carries exactly one
+// structural diagnostic: a dangling claim on DANGLING_TARGET_NODE_ID.
+//   seq 1 session-created, 2 participant-joined,
+//   seq 3 node-created (source), 4 node-created (target),
+//   seq 5 edge-created (source -> target, role `defines`).
+// headSequence = 5. The dangling claim only exists once the edge at seq 5
+// is applied; at position 4 there is no incoming edge, so no diagnostic.
+async function insertDanglingClaimLog(
+  db: PGlite,
+  sessionId: string,
+  hostId: string,
+): Promise<void> {
+  const ev = async (
+    sequence: number,
+    kind: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> => {
+    await db.query(
+      `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+       VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      [sessionId, sequence, kind, hostId, JSON.stringify(payload)],
+    );
+  };
+  await ev(1, 'session-created', {
+    host_user_id: hostId,
+    privacy: 'public',
+    topic: 'public debate',
+    created_at: '2026-05-10T12:00:00Z',
+  });
+  await ev(2, 'participant-joined', {
+    user_id: hostId,
+    role: 'moderator',
+    screen_name: 'alice',
+    joined_at: '2026-05-10T12:00:01Z',
+  });
+  await ev(3, 'node-created', {
+    node_id: DANGLING_SOURCE_NODE_ID,
+    wording: 'Definition node',
+    created_by: hostId,
+    created_at: '2026-05-10T12:00:02Z',
+  });
+  await ev(4, 'node-created', {
+    node_id: DANGLING_TARGET_NODE_ID,
+    wording: 'Unjustified claim',
+    created_by: hostId,
+    created_at: '2026-05-10T12:00:03Z',
+  });
+  await ev(5, 'edge-created', {
+    edge_id: DANGLING_EDGE_ID,
+    role: 'defines',
+    source_node_id: DANGLING_SOURCE_NODE_ID,
+    target_node_id: DANGLING_TARGET_NODE_ID,
+    created_by: hostId,
+    created_at: '2026-05-10T12:00:04Z',
+  });
+}
+
+interface DiagnosticsBody {
+  diagnostics?: Array<{ kind?: string; nodeId?: string }>;
+}
+
+describe('GET /sessions/:id/diagnostics', () => {
+  let db: PGlite;
+  let app: FastifyInstance;
+
+  const UNKNOWN_ID = '00000000-0000-4000-8000-ffffffff0001';
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await applyMigrations(db);
+    app = await __buildTestReplayApp({ pool: asPool(db), sessionTokenSecret: TEST_SECRET });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await db.close();
+  });
+
+  it('returns 200 + a diagnostics array at position = headSequence for a visible caller', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertDanglingClaimLog(db, sessionId, alice); // headSequence = 5
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=5`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<DiagnosticsBody>();
+    expect(Array.isArray(body.diagnostics)).toBe(true);
+    // The dangling-claim diagnostic for the unjustified target node.
+    const dangling = body.diagnostics?.find((d) => d.kind === 'dangling-claim');
+    expect(dangling).toBeDefined();
+    expect(dangling?.nodeId).toBe(DANGLING_TARGET_NODE_ID);
+  });
+
+  it('returns the empty diagnostics array at position 0 (empty baseline projection)', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertDanglingClaimLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<DiagnosticsBody>();
+    expect(body.diagnostics).toEqual([]);
+  });
+
+  it('returns no diagnostics at a mid-log position before the structural issue appears', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertDanglingClaimLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    // position = 4 applies both nodes but NOT the edge at seq 5, so the
+    // target is not yet claim-positioned → no dangling-claim diagnostic.
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=4`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<DiagnosticsBody>();
+    expect(body.diagnostics?.some((d) => d.kind === 'dangling-claim')).toBe(false);
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=0`,
+    });
+
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns 404 not-found when the session id does not exist', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${UNKNOWN_ID}/diagnostics?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const ben = await insertUser(db, 'authelia:ben', 'ben');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertDanglingClaimLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: ben }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 200 for a private session visible to its host', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertDanglingClaimLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=5`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<DiagnosticsBody>();
+    expect(body.diagnostics?.some((d) => d.kind === 'dangling-claim')).toBe(true);
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/not-a-uuid/diagnostics?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is missing', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is negative', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=-1`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is non-integer', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=1.5`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 (out-of-range) when position > headSequence, carrying the valid range', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertDanglingClaimLog(db, sessionId, alice); // headSequence = 5
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=99`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{
+      error?: { code?: string; position?: number; headSequence?: number };
+    }>();
+    expect(body.error?.code).toBe('validation-failed');
+    expect(body.error?.position).toBe(99);
+    expect(body.error?.headSequence).toBe(5);
+  });
+
+  it('returns 400 when an unknown query key is present', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/diagnostics?position=0&bogus=1`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+});
