@@ -58,7 +58,7 @@ export function LandingRoute(): ReactElement {
     // `landing_responsive_a11y`'s job (Decision §7); this is the
     // desktop-first scaffold it composes around.
     <main data-testid="route-landing" data-allow-scroll="" className="h-screen overflow-y-auto">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-6 p-6">
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-6 p-4 sm:p-6">
         {/*
         The methodology pitch composed around the interactive demo
         (`landing_hero_and_method` Decision §D1): the hero (product name +
@@ -79,7 +79,11 @@ export function LandingRoute(): ReactElement {
         constraint 3); this task only positions the narrative sections around
         it. Cross-breakpoint layout is owned by `landing_responsive_a11y`.
       */}
-        <section data-testid="landing-walkthrough" className="min-h-[32rem]">
+        <section
+          data-testid="landing-walkthrough"
+          aria-label={t('landing.demo.embedRegionLabel')}
+          className="min-h-[32rem]"
+        >
           <Suspense
             fallback={
               <div

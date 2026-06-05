@@ -24,6 +24,7 @@ export function LandingFooter(): ReactElement {
   return (
     <footer
       data-testid="landing-footer"
+      aria-label={t('landing.footer.regionLabel')}
       className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 px-2 py-6 text-sm text-slate-500"
     >
       <div>

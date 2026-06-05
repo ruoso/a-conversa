@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@a-conversa/i18n-catalogs": "workspace:*",
+    "@axe-core/playwright": "^4.10.2",
     "@cucumber/cucumber": "^12.8.3",
     "@electric-sql/pglite": "^0.4.5",
     "@eslint/js": "^10.0.1",

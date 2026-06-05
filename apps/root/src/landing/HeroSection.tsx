@@ -28,7 +28,7 @@ export function HeroSection(): ReactElement {
     <section
       data-testid="landing-hero"
       aria-labelledby={TITLE_ID}
-      className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
     >
       <p className="text-sm uppercase tracking-[0.18em] text-slate-500">
         {t('landing.hero.eyebrow')}

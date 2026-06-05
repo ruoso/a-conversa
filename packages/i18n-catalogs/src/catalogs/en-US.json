@@ -20,6 +20,7 @@
       "compactRegionLabel": "Debate walkthrough (compact)",
       "previousSegment": "Previous section",
       "nextSegment": "Next section",
+      "embedRegionLabel": "Walkthrough demonstration",
       "caption": {
         "opening": {
           "eyebrow": "One shared graph",
@@ -121,7 +122,8 @@
     "footer": {
       "tagline": "a-conversa — structured debate you can see.",
       "note": "Open source · {license}",
-      "localeLabel": "Language"
+      "localeLabel": "Language",
+      "regionLabel": "Site footer"
     }
   },
   "auth": {

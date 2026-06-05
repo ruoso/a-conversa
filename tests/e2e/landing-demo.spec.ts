@@ -31,7 +31,14 @@
 // with the matching localized caption) stays owned by `landing_e2e`, which
 // depends on `walkthrough_demo_narration` (captions).
 
+import AxeBuilder from '@axe-core/playwright';
+
 import { expect, test } from './fixtures/no-scrollbars';
+
+// The declared WCAG rule-tag set the axe scan asserts against (ADR 0040):
+// Level A + AA for WCAG 2.0 and 2.1. Best-practice / experimental tags are
+// deliberately excluded so a green run means "no Level A/AA violation."
+const WCAG_AA_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 
 test.describe('landing walkthrough demo', () => {
   test('anonymous / renders the walkthrough demo with its renderer and controls', async ({
@@ -280,6 +287,210 @@ test.describe('landing walkthrough demo', () => {
         timeout: 5_000,
       });
       expect(page.url()).toBe(urlBefore);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Page-wide accessibility + responsive pins for `landing_responsive_a11y`
+  // (acceptance criteria 3-7). These land inline rather than deferring to the
+  // terminal `landing_e2e` leaf: the whole page is reachable today (an
+  // anonymous visit to `/` renders it) and `landing_e2e` already inherits
+  // coverage from five leaves, so per the UI-stream e2e policy we pay the debt
+  // down here. The fuller stepped-through-to-final-state journey stays owned by
+  // `landing_e2e`.
+  // ---------------------------------------------------------------------------
+
+  const DESKTOP_VIEWPORT = { width: 1280, height: 800 } as const;
+  const AXE_PHONE_VIEWPORT = { width: 390, height: 844 } as const;
+  const NARROW_PHONE_VIEWPORT = { width: 360, height: 740 } as const;
+
+  // Criterion 3: automated WCAG-AA scan at a desktop viewport. This is the
+  // durable colour-contrast + broad-WCAG gate (ADR 0040 / Decision §D2) — the
+  // one a11y dimension jsdom cannot evaluate. Scanned after the lazy demo has
+  // resolved so the real, fully-painted page is audited.
+  test('axe reports no WCAG 2.0/2.1 A/AA violations on anonymous / (desktop)', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: DESKTOP_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      const results = await new AxeBuilder({ page }).withTags([...WCAG_AA_TAGS]).analyze();
+      // Map to `id (nodeCount)` so a failure names the rule(s) instead of
+      // dumping the full violation objects.
+      const summary = results.violations.map((v) => `${v.id} (${v.nodes.length})`);
+      expect(summary).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Criterion 4: the same WCAG-AA scan at the phone viewport, where the
+  // **compact** demo variant is mounted — so the small-screen assembly is held
+  // to the same bar.
+  test('axe reports no WCAG 2.0/2.1 A/AA violations on anonymous / (phone)', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: AXE_PHONE_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo-compact')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      const results = await new AxeBuilder({ page }).withTags([...WCAG_AA_TAGS]).analyze();
+      const summary = results.violations.map((v) => `${v.id} (${v.nodes.length})`);
+      expect(summary).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Criterion 5: focus order + visible focus indicator. Repeated Tab presses
+  // move focus through the page in DOM order — the demo controls (which precede
+  // the chrome below the methodology pitch) are reached before the footer
+  // locale switcher — with no keyboard trap, and each control shows a non-empty
+  // computed focus outline (constraint 3; the page-wide `:focus-visible` ring is
+  // not suppressed by any `outline-none`). Keyboard *activation* of the demo
+  // controls is already pinned above; this adds the *order* + *indicator*
+  // assertion.
+  test('Tab order flows in DOM order with a visible focus indicator and no trap', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: DESKTOP_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-next')).toBeVisible();
+
+      const MAX_TABS = 40;
+      const order: string[] = [];
+      const focusByTestid = new Map<string, { outlineWidth: string; outlineStyle: string }>();
+
+      for (let i = 0; i < MAX_TABS; i += 1) {
+        await page.keyboard.press('Tab');
+        const focused = await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement | null;
+          if (el === null) return null;
+          const style = window.getComputedStyle(el);
+          return {
+            testid: el.getAttribute('data-testid'),
+            outlineWidth: style.outlineWidth,
+            outlineStyle: style.outlineStyle,
+          };
+        });
+        if (focused?.testid != null && focused.testid !== '') {
+          order.push(focused.testid);
+          focusByTestid.set(focused.testid, {
+            outlineWidth: focused.outlineWidth,
+            outlineStyle: focused.outlineStyle,
+          });
+          if (focused.testid === 'landing-locale-switcher') break;
+        }
+      }
+
+      // No keyboard trap: tabbing reaches the footer locale switcher.
+      expect(order).toContain('landing-locale-switcher');
+      // DOM order: the demo's next control precedes the footer switcher.
+      expect(order).toContain('walkthrough-next');
+      expect(order.indexOf('walkthrough-next')).toBeLessThan(
+        order.indexOf('landing-locale-switcher'),
+      );
+
+      // Each expected control showed a non-empty, visible focus indicator —
+      // a real outline (style !== none, width !== 0), not `outline-none`.
+      for (const id of ['walkthrough-next', 'root-start-session', 'landing-locale-switcher']) {
+        const focus = focusByTestid.get(id);
+        expect(focus, `${id} should have been a keyboard tab stop`).toBeDefined();
+        expect(focus?.outlineStyle).not.toBe('none');
+        expect(focus?.outlineWidth).not.toBe('0px');
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Criterion 6: no horizontal overflow across breakpoints. At a narrow phone
+  // width and at a desktop width the document never scrolls horizontally, and
+  // the key sections are present — pinning the page-level reflow (constraint 2).
+  test('the assembled page has no horizontal overflow at phone or desktop widths', async ({
+    browser,
+  }) => {
+    for (const viewport of [NARROW_PHONE_VIEWPORT, DESKTOP_VIEWPORT]) {
+      const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport });
+      const page = await context.newPage();
+      try {
+        await page.goto('/');
+
+        await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+        for (const id of [
+          'landing-hero',
+          'landing-how-it-works',
+          'landing-opensource',
+          'landing-cta',
+          'landing-footer',
+        ]) {
+          await expect(page.getByTestId(id)).toBeVisible();
+        }
+
+        const metrics = await page.evaluate(() => {
+          const el = document.scrollingElement ?? document.documentElement;
+          return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+        });
+        // 1 px tolerance matches the no-scrollbars fixture (fractional-pixel
+        // layout rounding can report scrollWidth one pixel larger than client).
+        expect(
+          metrics.scrollWidth,
+          `horizontal overflow at ${viewport.width}px (scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth})`,
+        ).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  // Criterion 7: reduced motion respected end-to-end. Under
+  // `prefers-reduced-motion: reduce` an anonymous desktop visit renders the
+  // full demo with auto-advance off — the play toggle is `disabled` — confirming
+  // the page honours the preference in a real browser, not just in jsdom (the
+  // behaviour unit-tested in `WalkthroughDemo`).
+  test('under prefers-reduced-motion the desktop demo loads with auto-advance disabled', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: DESKTOP_VIEWPORT,
+      reducedMotion: 'reduce',
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
+
+      await expect(page.getByTestId('walkthrough-play-toggle')).toBeDisabled();
     } finally {
       await context.close();
     }

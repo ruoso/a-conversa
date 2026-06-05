@@ -26,7 +26,7 @@ export function WhatItSurfacesSection(): ReactElement {
     <section
       data-testid="landing-what-it-surfaces"
       aria-labelledby={TITLE_ID}
-      className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
     >
       <h2 id={TITLE_ID} className="text-2xl font-semibold text-slate-900">
         {t('landing.surfaces.title')}

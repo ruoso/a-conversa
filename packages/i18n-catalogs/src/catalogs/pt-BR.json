@@ -20,6 +20,7 @@
       "compactRegionLabel": "Tutorial do debate (compacto)",
       "previousSegment": "Seção anterior",
       "nextSegment": "Próxima seção",
+      "embedRegionLabel": "Demonstração do passo a passo",
       "caption": {
         "opening": {
           "eyebrow": "Um grafo compartilhado",
@@ -121,7 +122,8 @@
     "footer": {
       "tagline": "a-conversa — debate estruturado que você consegue ver.",
       "note": "Código aberto · {license}",
-      "localeLabel": "Idioma"
+      "localeLabel": "Idioma",
+      "regionLabel": "Rodapé do site"
     }
   },
   "auth": {

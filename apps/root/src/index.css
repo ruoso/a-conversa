@@ -1,1 +1,20 @@
 @import 'tailwindcss';
+
+/*
+ * Page-wide visible focus indicator (landing_responsive_a11y constraint 3).
+ *
+ * Every natively-focusable control on the public surface must show a clearly
+ * visible focus indicator for keyboard users, and nothing in the app may
+ * suppress it with a global `outline-none`. A single `:focus-visible` rule in
+ * the base layer gives every link / button / select / range a consistent,
+ * high-contrast ring while leaving pointer interaction ring-free
+ * (`:focus-visible` only matches keyboard / AT focus). slate-900 on the white
+ * surface is well above the WCAG-AA contrast floor. The e2e focus-order
+ * scenario asserts this indicator is non-empty (`tests/e2e/landing-demo.spec.ts`).
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-slate-900, #0f172a);
+    outline-offset: 2px;
+  }
+}

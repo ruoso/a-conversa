@@ -162,6 +162,7 @@ task landing_page "Public landing page" {
   task landing_responsive_a11y "Responsive layout + accessibility pass across the page" {
     effort 1d
     allocate team
+    complete 100
     depends !landing_hero_and_method, !landing_opensource_and_cta, !walkthrough_demo_stepper
     note -8<-
       General responsive layout (narrative sections, hero, footer) across

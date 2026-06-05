@@ -397,6 +397,7 @@
     "landing.demo.compactRegionLabel",
     "landing.demo.previousSegment",
     "landing.demo.nextSegment",
+    "landing.demo.embedRegionLabel",
     "landing.demo.caption.opening.eyebrow",
     "landing.demo.caption.opening.title",
     "landing.demo.caption.opening.body",
@@ -450,7 +451,8 @@
     "landing.cta.body",
     "landing.footer.tagline",
     "landing.footer.note",
-    "landing.footer.localeLabel"
+    "landing.footer.localeLabel",
+    "landing.footer.regionLabel"
   ],
   "signed_off": []
 }
