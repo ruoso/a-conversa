@@ -412,6 +412,8 @@
     "audience.replay.playback.pause",
     "audience.replay.playback.stepBack",
     "audience.replay.playback.stepForward",
+    "audience.replay.playback.prevChapter",
+    "audience.replay.playback.nextChapter",
     "audience.replay.playback.positionStatus",
     "audience.replay.playback.seekAriaLabel",
     "audience.replay.playback.speedAriaLabel",

@@ -64,6 +64,34 @@ const SIX_EVENTS: Event[] = [
 ];
 const HEAD = 6;
 
+// Two chapter markers inside the six-event log: positions 2 and 4. Their
+// `logPosition`s deliberately differ from their `snapshotId`s so a row click
+// can prove it jumps to the position, not the id.
+const SNAP_EARLY = {
+  snapshotId: '00000000-0000-4000-8000-0000000000a1',
+  label: 'Chapter A',
+  logPosition: 2,
+  createdAt: '2026-06-01T10:00:02.000Z',
+};
+const SNAP_LATE = {
+  snapshotId: '00000000-0000-4000-8000-0000000000a2',
+  label: 'Chapter B',
+  logPosition: 4,
+  createdAt: '2026-06-01T10:00:04.000Z',
+};
+const SNAPSHOTS = [SNAP_EARLY, SNAP_LATE];
+
+// Stub `GET /api/sessions/:id/snapshots` (consumed by the lifted
+// `useSessionSnapshots`) with a resolving 200 carrying the given records.
+function stubSnapshotFetch(records: readonly unknown[]): void {
+  global.fetch = vi.fn(() =>
+    Promise.resolve({
+      status: 200,
+      json: () => Promise.resolve({ snapshots: records }),
+    }),
+  ) as unknown as typeof fetch;
+}
+
 function renderContainer(events: readonly Event[], initialPosition?: number | null): RenderResult {
   return render(
     <ReplayPlaybackContainer
@@ -101,15 +129,33 @@ function speedSeam(): string | null {
 function setSpeed(multiplier: number): void {
   fireEvent.change(speedSelect(), { target: { value: String(multiplier) } });
 }
+// The chapter index is ready once the snapshot rows have rendered.
+async function chapterIndexReady(): Promise<HTMLElement> {
+  return screen.findByTestId('snapshot-list');
+}
+function tickValues(): string[] {
+  return Array.from(
+    screen.getByTestId('audience-replay-chapter-ticks').querySelectorAll('option'),
+  ).map((option) => option.value);
+}
+
+const originalFetch = global.fetch;
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
+  // Default: the lifted `useSessionSnapshots` fetch never resolves, so the
+  // chapter affordances stay in their inert loading state and the
+  // position-only suites below see no post-mount snapshot state change (no
+  // stray act warning). The chapter suite overrides this with a resolving
+  // stub before rendering.
+  global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  global.fetch = originalFetch;
 });
 
 describe('ReplayPlaybackContainer — controls + stepping', () => {
@@ -493,6 +539,104 @@ describe('ReplayPlaybackContainer — mid-play speed change (fake timers)', () =
     act(() => {
       vi.advanceTimersByTime(INTERVAL * 3);
     });
+    expect(position()).toBe(String(HEAD));
+  });
+});
+
+describe('ReplayPlaybackContainer — chapter (snapshot) navigation', () => {
+  // replay_chapter_jumping (Acceptance §2). One lifted `useSessionSnapshots`
+  // read feeds three affordances — prev/next chapter buttons, seek-bar
+  // `<datalist>` ticks, and a clickable chapter index — all funnelled through
+  // the same `updatePosition`/`clampPosition` guard as a step, a seek, or a
+  // play-loop tick. Markers at positions 2 and 4 inside the six-event log.
+  it('next/prev chapter jump to the adjacent marker through updatePosition', async () => {
+    stubSnapshotFetch(SNAPSHOTS);
+    renderContainer(SIX_EVENTS);
+    await chapterIndexReady();
+
+    // Opens at the head (6): no marker is strictly greater, so next-chapter is
+    // disabled and prev-chapter steps back to the last marker (4).
+    expect(position()).toBe(String(HEAD));
+    expect(disabled('audience-replay-next-chapter')).toBe(true);
+    expect(disabled('audience-replay-prev-chapter')).toBe(false);
+
+    fireEvent.click(screen.getByTestId('audience-replay-prev-chapter'));
+    expect(position()).toBe('4');
+    // The prefix re-projects from the jumped position (sequence <= 4).
+    expect(graphCount()).toBe(4);
+
+    fireEvent.click(screen.getByTestId('audience-replay-prev-chapter'));
+    expect(position()).toBe('2');
+
+    // From the first marker, forward jumps to the next marker.
+    fireEvent.click(screen.getByTestId('audience-replay-next-chapter'));
+    expect(position()).toBe('4');
+  });
+
+  it('disables prev/next chapter at the ends, and a disabled button fires no jump', async () => {
+    stubSnapshotFetch(SNAPSHOTS);
+    renderContainer(SIX_EVENTS);
+    await chapterIndexReady();
+
+    // At the head no marker is strictly greater: next-chapter is disabled and
+    // clicking it does not move the position.
+    expect(disabled('audience-replay-next-chapter')).toBe(true);
+    fireEvent.click(screen.getByTestId('audience-replay-next-chapter'));
+    expect(position()).toBe(String(HEAD));
+
+    // Seek to the baseline: no marker is strictly less, so prev-chapter is
+    // disabled and clicking it fires no jump.
+    fireEvent.change(seek(), { target: { value: '0' } });
+    expect(position()).toBe('0');
+    expect(disabled('audience-replay-prev-chapter')).toBe(true);
+    fireEvent.click(screen.getByTestId('audience-replay-prev-chapter'));
+    expect(position()).toBe('0');
+  });
+
+  it('renders a seek-bar <datalist> whose options are the deduped ascending marker positions', async () => {
+    stubSnapshotFetch(SNAPSHOTS);
+    renderContainer(SIX_EVENTS);
+    await chapterIndexReady();
+
+    // The range input is decorated by the chapter ticks.
+    expect(seek().getAttribute('list')).toBe('audience-replay-chapter-ticks');
+    expect(tickValues()).toEqual(['2', '4']);
+  });
+
+  it('a chapter-row click sets position to the snapshot logPosition, not its snapshotId', async () => {
+    stubSnapshotFetch(SNAPSHOTS);
+    renderContainer(SIX_EVENTS);
+    await chapterIndexReady();
+
+    fireEvent.click(screen.getByTestId(`snapshot-list-row-${SNAP_LATE.snapshotId}`));
+    // SNAP_LATE.logPosition is 4 — the position, not the id.
+    expect(position()).toBe('4');
+    expect(graphCount()).toBe(4);
+  });
+
+  it('with no snapshots: no ticks, chapter buttons disabled, the viewer is unaffected', async () => {
+    stubSnapshotFetch([]);
+    renderContainer(SIX_EVENTS);
+    await screen.findByTestId('snapshot-list-empty');
+
+    expect(tickValues()).toHaveLength(0);
+    expect(disabled('audience-replay-prev-chapter')).toBe(true);
+    expect(disabled('audience-replay-next-chapter')).toBe(true);
+    // The rest of the viewer still opens at the head and seeks normally.
+    expect(position()).toBe(String(HEAD));
+    fireEvent.change(seek(), { target: { value: '3' } });
+    expect(position()).toBe('3');
+  });
+
+  it('while the snapshot fetch is loading the chapter affordances are inert', () => {
+    // The default beforeEach stub never resolves — the hook stays in loading.
+    renderContainer(SIX_EVENTS);
+
+    expect(screen.getByTestId('snapshot-list-loading')).toBeTruthy();
+    expect(tickValues()).toHaveLength(0);
+    expect(disabled('audience-replay-prev-chapter')).toBe(true);
+    expect(disabled('audience-replay-next-chapter')).toBe(true);
+    // The position controls are unaffected by the pending snapshot load.
     expect(position()).toBe(String(HEAD));
   });
 });

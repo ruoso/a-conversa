@@ -84,6 +84,7 @@ task milestones "Milestones" {
 
   task m_replay_mvp "M8: Replay MVP" {
     milestone
+    complete 100
     depends !m_end_to_end_debate, replay_test.replay_ui, replay_test.test_mode, replay_test.snapshots, backend.replay_endpoints, replay_test.test_mode.test_mode_synthetic_scenario_library, shell_package.coherency_hint_wire_mirror_exhaustiveness, shell_package.coherency_hint_server_kind_parity_test
     note "Completed debates can be replayed; the test-mode timeline scrubber lets developers and producers walk through any saved session."
   }

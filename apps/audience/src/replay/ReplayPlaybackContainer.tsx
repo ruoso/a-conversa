@@ -9,6 +9,11 @@
 //   position}` so the thumb doubles as a live playback progress indicator.
 //   Constraint §5 — plain bar, no chapter ticks. Constraint §6 — the text
 //   readout stays as the a11y announce surface.)
+//   then tasks/refinements/replay_test/replay_chapter_jumping.md (chapter
+//   navigation on top of the seek bar: prev/next chapter buttons, seek-bar
+//   `<datalist>` ticks, and a clickable chapter index — all driven by one
+//   lifted `useSessionSnapshots` read, all funnelled through `updatePosition`;
+//   the chapter arithmetic is ported into `@a-conversa/shell` per ADR 0043.)
 //   (Decision §1 — lift `position` into a route-local container mirroring
 //    test-mode's `SessionScrubberContainer`; render `GraphView` + the
 //    controls as siblings so the downstream `replay_seek_bar` /
@@ -38,8 +43,14 @@ import {
   isAtEnd,
   isAtStart,
   nextPosition,
+  nextSnapshotPosition,
   prevPosition,
+  prevSnapshotPosition,
   replayHeadSequence,
+  resolveSnapshotPosition,
+  SnapshotList,
+  snapshotPositions,
+  useSessionSnapshots,
 } from '@a-conversa/shell';
 import { GraphView } from '@a-conversa/graph-view';
 
@@ -113,9 +124,29 @@ export function ReplayPlaybackContainer({
     intervalMs,
   });
 
+  // One lifted snapshot source feeds all three chapter affordances — prev/next
+  // buttons, the seek-bar ticks, and the clickable chapter index
+  // (replay_chapter_jumping Constraint §1). `SnapshotList` renders the hook's
+  // loading/error/empty states directly; the buttons and ticks derive from the
+  // (empty-while-loading) `snapshots` array, so they are naturally inert until
+  // the chapters arrive (Constraint §6).
+  const {
+    status: snapshotStatus,
+    snapshots,
+    retry: retrySnapshots,
+  } = useSessionSnapshots(sessionId);
+
   const head = replayHeadSequence(events);
   const atStart = isAtStart(position);
   const atEnd = isAtEnd(events, position);
+
+  // The chapter (snapshot) markers in event-sequence space, deduped + ascending
+  // (Constraint §2 — ported helper, never re-derived here). The prev/next
+  // targets are `null` at the ends, which *disables* the affordance rather than
+  // saturating like the event-step buttons (Decision §4).
+  const chapterTicks = useMemo(() => snapshotPositions(snapshots), [snapshots]);
+  const prevChapter = prevSnapshotPosition(snapshots, position);
+  const nextChapter = nextSnapshotPosition(snapshots, position);
 
   // Constraint §2: the prefix rendered at position `p` is every event whose
   // sequence is `<= p`. `GraphView` re-projects this prefix on each change;
@@ -130,6 +161,31 @@ export function ReplayPlaybackContainer({
   };
   const goNext = (): void => {
     updatePosition(nextPosition(events, position));
+  };
+  // Chapter jumps are just another writer of the lifted `position`, funnelled
+  // through the same `updatePosition`/`clampPosition` guard as a step, a seek,
+  // or a play-loop tick (Constraint §3). A `null` target means no further
+  // chapter in that direction — the button is `disabled`, so this guard is a
+  // belt-and-braces no-op (Constraint §5).
+  const goPrevChapter = (): void => {
+    if (prevChapter !== null) {
+      updatePosition(prevChapter);
+    }
+  };
+  const goNextChapter = (): void => {
+    if (nextChapter !== null) {
+      updatePosition(nextChapter);
+    }
+  };
+  // A chapter-row click resolves `snapshotId → logPosition` at the click
+  // boundary via the shipped resolver (Constraint §4 — `snapshotId` never
+  // leaks into `position` state); the resolved position funnels through the
+  // same guard. `null` (an unreachable miss) fires no jump.
+  const jumpToChapter = (snapshotId: string): void => {
+    const target = resolveSnapshotPosition(snapshots, snapshotId);
+    if (target !== null) {
+      updatePosition(target);
+    }
   };
   const togglePlay = (): void => {
     if (isPlaying) {
@@ -161,6 +217,23 @@ export function ReplayPlaybackContainer({
   return (
     <div data-testid="audience-replay-playback" className="relative h-screen w-screen">
       <GraphView events={prefix} instanceKey={sessionId} />
+
+      {/* The clickable chapter index — the snapshot list rendered as chapters
+          (Decision §3). Reuses the shipped presentational `SnapshotList` +
+          `resolveSnapshotPosition`; clicking a chapter jumps `position` to that
+          snapshot's `logPosition`. Loading / error / empty states pass straight
+          through (Constraint §6). */}
+      <div
+        data-testid="audience-replay-chapter-index"
+        className="absolute right-4 top-4 max-h-[60vh] w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white/90 backdrop-blur"
+      >
+        <SnapshotList
+          status={snapshotStatus}
+          snapshots={snapshots}
+          onSelect={jumpToChapter}
+          onRetry={retrySnapshots}
+        />
+      </div>
 
       <div
         data-testid="audience-replay-controls"
@@ -198,6 +271,26 @@ export function ReplayPlaybackContainer({
         >
           {t('audience.replay.playback.stepForward')}
         </button>
+        <button
+          type="button"
+          data-testid="audience-replay-prev-chapter"
+          onClick={goPrevChapter}
+          disabled={prevChapter === null}
+          aria-label={t('audience.replay.playback.prevChapter')}
+          className="inline-flex items-center rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {t('audience.replay.playback.prevChapter')}
+        </button>
+        <button
+          type="button"
+          data-testid="audience-replay-next-chapter"
+          onClick={goNextChapter}
+          disabled={nextChapter === null}
+          aria-label={t('audience.replay.playback.nextChapter')}
+          className="inline-flex items-center rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {t('audience.replay.playback.nextChapter')}
+        </button>
 
         <input
           type="range"
@@ -207,9 +300,17 @@ export function ReplayPlaybackContainer({
           step={1}
           value={position}
           onChange={onScrub}
+          list="audience-replay-chapter-ticks"
           aria-label={t('audience.replay.playback.seekAriaLabel')}
           className="h-2 min-w-[12rem] flex-1 cursor-pointer"
         />
+        {/* Decorative chapter tick marks on the existing labelled range input —
+            a native `<datalist>` (Decision §5), no new focus trap. */}
+        <datalist id="audience-replay-chapter-ticks" data-testid="audience-replay-chapter-ticks">
+          {chapterTicks.map((mark) => (
+            <option key={mark} value={mark} />
+          ))}
+        </datalist>
 
         <select
           data-testid="audience-replay-speed"

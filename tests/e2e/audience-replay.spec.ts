@@ -80,10 +80,17 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
  * Generate a synthetic session (rich persisted log, owned by the caller)
  * through the dev-gated generator — the real surface → real endpoint →
  * real persisted log path. Returns the new session id.
+ *
+ * The scenario defaults to `structured` (the rich log most tests need); the
+ * chapter-jumping spec requests `walkthrough`, the only scenario that carries
+ * a `snapshot-created` chapter marker (replay_chapter_jumping §6).
  */
-async function generateSyntheticSession(page: Page): Promise<string> {
+async function generateSyntheticSession(
+  page: Page,
+  scenario: 'empty' | 'structured' | 'walkthrough' = 'structured',
+): Promise<string> {
   const response = await page.request.post('/api/test-mode/synthetic-sessions', {
-    data: { scenario: 'structured' },
+    data: { scenario },
   });
   expect(
     response.status(),
@@ -468,6 +475,89 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
           message: 'play auto-advances the position at the selected 2× speed',
         })
         .toBeGreaterThan(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(9) chapter jumping: list-click, prev/next chapter, and a seek-bar tick mark', async ({
+    browser,
+  }) => {
+    // Refinement: replay_chapter_jumping (Acceptance §3 — reachable behavior on
+    // the already-mounted authenticated replay surface; pays down the
+    // snapshot_jump_ui §4 list-render → click row → jump-to-position debt
+    // forwarded to this leaf). The `walkthrough` scenario is the one synthetic
+    // log carrying a `snapshot-created` chapter marker; `structured` does not,
+    // so this spec seeds `walkthrough`.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      await loginAs(page, { username: 'alice' });
+      const sessionId = await generateSyntheticSession(page, 'walkthrough');
+
+      await page.goto(`/a/replay/${sessionId}`);
+
+      await expect(page.getByTestId('audience-replay-controls')).toBeVisible({ timeout: 15_000 });
+
+      const positionEl = page.getByTestId('audience-replay-position');
+      const readPosition = async (): Promise<number> =>
+        Number(await positionEl.getAttribute('data-position'));
+      const head = Number(await positionEl.getAttribute('data-head'));
+
+      // The clickable chapter index renders the session's snapshot row; read
+      // the marker position straight off the row so the spec is independent of
+      // the fixture's exact log_position.
+      const chapterIndex = page.getByTestId('audience-replay-chapter-index');
+      const row = chapterIndex.locator('[data-log-position]').first();
+      await expect(row, 'the chapter index renders the snapshot row').toBeVisible({
+        timeout: 15_000,
+      });
+      const marker = Number(await row.getAttribute('data-log-position'));
+      expect(marker, 'the walkthrough marker sits inside the log').toBeGreaterThan(0);
+      expect(
+        head,
+        'the head is past the marker so prev-chapter is reachable from it',
+      ).toBeGreaterThan(marker);
+
+      // (a) list-click → jump (the inherited snapshot_jump_ui debt): clicking
+      // the chapter row moves the position readout to the snapshot's
+      // log_position.
+      await row.click();
+      await expect(
+        positionEl,
+        'a chapter-row click jumps to the snapshot log_position',
+      ).toHaveAttribute('data-position', String(marker));
+
+      // (b) tick mark present: the seek bar exposes a chapter tick at the marker
+      // via its bound <datalist>.
+      const seek = page.getByTestId('audience-replay-seek');
+      await expect(seek).toHaveAttribute('list', 'audience-replay-chapter-ticks');
+      await expect(
+        page.locator(`#audience-replay-chapter-ticks option[value="${String(marker)}"]`),
+        'a datalist tick marks the chapter position',
+      ).toHaveCount(1);
+
+      // (c) next/prev chapter + disabled-at-the-ends. From the head, no marker
+      // is strictly greater (next-chapter disabled) and prev-chapter returns to
+      // the marker.
+      const prevChapter = page.getByTestId('audience-replay-prev-chapter');
+      const nextChapter = page.getByTestId('audience-replay-next-chapter');
+      await seek.fill(String(head));
+      await expect(positionEl).toHaveAttribute('data-position', String(head));
+      await expect(nextChapter, 'no chapter past the head: next-chapter disabled').toBeDisabled();
+      await prevChapter.click();
+      expect(await readPosition(), 'prev-chapter returns to the marker').toBe(marker);
+
+      // From the baseline, no marker is strictly less (prev-chapter disabled)
+      // and next-chapter jumps to the marker.
+      await seek.fill('0');
+      await expect(positionEl).toHaveAttribute('data-position', '0');
+      await expect(
+        prevChapter,
+        'no chapter before the baseline: prev-chapter disabled',
+      ).toBeDisabled();
+      await nextChapter.click();
+      expect(await readPosition(), 'next-chapter jumps to the marker').toBe(marker);
     } finally {
       await context.close();
     }

@@ -149,7 +149,10 @@ export {
 
 // ─── snapshot-list ───────────────────────────────────────────────────────
 export {
+  nextSnapshotPosition,
+  prevSnapshotPosition,
   resolveSnapshotPosition,
+  snapshotPositions,
   SnapshotJumpList,
   SnapshotList,
   useSessionSnapshots,

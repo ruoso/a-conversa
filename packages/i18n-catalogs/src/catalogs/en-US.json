@@ -1056,6 +1056,8 @@
         "pause": "Pause",
         "stepBack": "Step back",
         "stepForward": "Step forward",
+        "prevChapter": "Previous chapter",
+        "nextChapter": "Next chapter",
         "positionStatus": "Position {position, number} of {head, number}",
         "seekAriaLabel": "Seek to an event position",
         "speedAriaLabel": "Playback speed",

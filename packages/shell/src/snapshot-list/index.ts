@@ -6,6 +6,11 @@ export { SnapshotList, type SnapshotListProps, type SnapshotListStatus } from '.
 export { SnapshotJumpList, type SnapshotJumpListProps } from './SnapshotJumpList.js';
 export { resolveSnapshotPosition } from './resolveSnapshotPosition.js';
 export {
+  nextSnapshotPosition,
+  prevSnapshotPosition,
+  snapshotPositions,
+} from './snapshot-navigation.js';
+export {
   useSessionSnapshots,
   type SessionSnapshots,
   type SessionSnapshotsStatus,
