@@ -397,6 +397,7 @@ task backend "Backend" {
     task list_snapshots "GET /sessions/:id/snapshots" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task get_snapshot "GET /sessions/:id/snapshots/:label" {
       effort 0.5d

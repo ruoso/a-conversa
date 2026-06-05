@@ -18,6 +18,8 @@
 
 import type { Event } from '@a-conversa/shared-types';
 
+import type { SnapshotRecord } from '../projection/types.js';
+
 /**
  * Minimal executor surface the read helper needs — the same structural
  * `query<TRow>(text, params?)` shape `DbPool` exposes. Production passes
@@ -134,4 +136,67 @@ export async function readSessionEventsPage(
   const events = pageRows.map(rowToEvent);
   const nextCursor = hasMore && events.length > 0 ? events[events.length - 1]!.sequence : null;
   return { events, nextCursor };
+}
+
+/**
+ * Snake-case row shape for a snapshot-marker read. A snapshot is a
+ * regular `session_events` row with `kind = 'snapshot-created'`; its
+ * `payload` self-describes the marker (`snapshot_id`, `label`,
+ * `log_position`). `created_at` surfaces as a `Date` (pg) or an ISO
+ * string (pglite) — normalized to ISO-8601 below, mirroring `rowToEvent`.
+ */
+interface SnapshotEventRow extends Record<string, unknown> {
+  readonly payload: {
+    readonly snapshot_id: string;
+    readonly label: string;
+    readonly log_position: number;
+  };
+  readonly created_at: Date | string;
+}
+
+/** Parameters for a snapshot-marker list read. */
+export interface ReadSessionSnapshotsParams {
+  /** Owning session id. */
+  readonly sessionId: string;
+}
+
+/**
+ * List a session's snapshot markers — the moderator-created labeled
+ * checkpoints — as `SnapshotRecord[]`, ordered by `sequence` ASC (chapter
+ * order; `log_position === sequence` by construction in `createSnapshot`,
+ * so this is identical to `logPosition` order).
+ *
+ * A snapshot is a regular `session_events` row with
+ * `kind = 'snapshot-created'` (no separate table), so this is a filtered
+ * read of those events mapped to the camelCase record. The `payload` JSON
+ * was validated against `snapshotCreatedPayloadSchema` on write (ADR
+ * 0021) and is trusted on read — no per-row Zod re-parse. The
+ * `(session_id, kind)` index keeps the read bounded by snapshot count,
+ * not log length.
+ *
+ * The caller is responsible for the visibility gate — this helper does
+ * not check who may see the session.
+ */
+export async function readSessionSnapshots(
+  executor: SessionEventReadExecutor,
+  params: ReadSessionSnapshotsParams,
+): Promise<SnapshotRecord[]> {
+  const { sessionId } = params;
+  const result = await executor.query<SnapshotEventRow>(
+    `SELECT payload, created_at
+     FROM session_events
+     WHERE session_id = $1 AND kind = 'snapshot-created'
+     ORDER BY sequence ASC`,
+    [sessionId],
+  );
+  return result.rows.map((row) => {
+    const createdAt =
+      row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+    return {
+      snapshotId: row.payload.snapshot_id,
+      label: row.payload.label,
+      logPosition: row.payload.log_position,
+      createdAt,
+    };
+  });
 }

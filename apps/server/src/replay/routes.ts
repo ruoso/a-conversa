@@ -33,7 +33,7 @@ import fp from 'fastify-plugin';
 import { ApiError } from '../errors.js';
 import { errorEnvelopeRef } from '../openapi.js';
 import { getDefaultPool, type DbPool } from '../db.js';
-import { readSessionEventsPage } from '../events/read.js';
+import { readSessionEventsPage, readSessionSnapshots } from '../events/read.js';
 import { canSeeSession } from '../sessions/visibility.js';
 
 /**
@@ -145,6 +145,85 @@ export const sessionEventsResponseRef = {
 } as const;
 
 /**
+ * Stable `$id` for the shared `SnapshotRecord` schema — one snapshot
+ * marker (a moderator-created labeled checkpoint). The camelCase shape
+ * matches `projection/types.ts`'s `SnapshotRecord` (`snapshotId`,
+ * `label`, `logPosition`, `createdAt`); the envelope-level event `id` is
+ * deliberately omitted (internal identity, no consumer use). Declared as
+ * a top-level schema so `get_snapshot` (the next sibling) can `$ref` it.
+ */
+export const SNAPSHOT_RECORD_SCHEMA_ID = 'SnapshotRecord';
+
+export const snapshotRecordSchema = {
+  $id: SNAPSHOT_RECORD_SCHEMA_ID,
+  type: 'object',
+  required: ['snapshotId', 'label', 'logPosition', 'createdAt'],
+  additionalProperties: false,
+  properties: {
+    snapshotId: {
+      type: 'string',
+      format: 'uuid',
+      description:
+        'The snapshot`s canonical key (`payload.snapshot_id`). Distinct from the ' +
+        'envelope event id; the jump-to-snapshot action keys on this. Labels carry no ' +
+        'uniqueness guarantee, so this is the stable identifier.',
+    },
+    label: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 128,
+      description: 'The moderator-supplied chapter name (1–128 chars).',
+    },
+    logPosition: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        'The `sequence` the marker points at. Equal to the snapshot event`s own ' +
+        '`sequence` by construction, so listing by `logPosition` is chapter order.',
+    },
+    createdAt: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Server-clock insert time (ISO-8601). Audit metadata, not the ordering key.',
+    },
+  },
+} as const;
+
+/** The `$ref` clients use to point at the shared `SnapshotRecord` schema. */
+export const snapshotRecordRef = { $ref: `${SNAPSHOT_RECORD_SCHEMA_ID}#` } as const;
+
+/**
+ * Stable `$id` for the `SessionSnapshotsResponse` wrapper — the shape
+ * `GET /sessions/:id/snapshots` returns: `{ snapshots: SnapshotRecord[] }`.
+ * A wrapper object (rather than a bare array) matches the
+ * `SessionEventsResponse` envelope style and leaves room for a future
+ * `headPosition` field without a breaking shape change.
+ */
+export const SESSION_SNAPSHOTS_RESPONSE_SCHEMA_ID = 'SessionSnapshotsResponse';
+
+export const sessionSnapshotsResponseSchema = {
+  $id: SESSION_SNAPSHOTS_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['snapshots'],
+  additionalProperties: false,
+  properties: {
+    snapshots: {
+      type: 'array',
+      description:
+        'All of the session`s snapshot markers, ascending by `logPosition` (chapter ' +
+        'order). A session with no snapshots — the common case — returns `[]` with a ' +
+        '200, not a 404.',
+      items: snapshotRecordRef,
+    },
+  },
+} as const;
+
+/** The `$ref` clients use to point at the `SessionSnapshotsResponse` schema. */
+export const sessionSnapshotsResponseRef = {
+  $ref: `${SESSION_SNAPSHOTS_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Path-params schema for `:id`. A non-UUID `:id` is rejected with 400
  * `validation-failed` by the Fastify validator before the handler runs.
  */
@@ -190,6 +269,18 @@ const sessionEventsQuerySchema = {
 } as const;
 
 /**
+ * Query-string schema for the snapshots list. v1 takes no query params
+ * (snapshots are sparse — no pagination, no filter; see the refinement's
+ * Decisions). `additionalProperties: false` with no properties rejects
+ * any unknown query param with 400 `validation-failed`.
+ */
+const sessionSnapshotsQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {},
+} as const;
+
+/**
  * Options accepted by `replayRoutesPlugin`. Mirrors the sessions
  * plugin's pool-injection contract: production passes `{}` and the
  * plugin lazily resolves the default pool on the first request; tests
@@ -224,6 +315,12 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
   }
   if (app.getSchema(SESSION_EVENTS_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionEventsResponseSchema);
+  }
+  if (app.getSchema(SNAPSHOT_RECORD_SCHEMA_ID) === undefined) {
+    app.addSchema(snapshotRecordSchema);
+  }
+  if (app.getSchema(SESSION_SNAPSHOTS_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionSnapshotsResponseSchema);
   }
 
   // Lazy DB-pool resolution — the first request triggers
@@ -310,6 +407,99 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
       });
 
       return reply.code(200).send(page);
+    },
+  );
+
+  app.get(
+    '/api/sessions/:id/snapshots',
+    {
+      preHandler: app.authenticate,
+      // v1 takes no query params. `schema.querystring` with
+      // `additionalProperties: false` documents that in the OpenAPI doc,
+      // but it does NOT reject an unknown param on the wire: Fastify's
+      // default ajv runs `removeAdditional: true`, so an additional query
+      // property is silently stripped (the request would otherwise reach
+      // the handler and return 200). We rely on that strip-not-reject
+      // behavior for request *bodies* elsewhere (see `sessions/routes.ts`),
+      // so flipping the global ajv config is not an option. This
+      // route-scoped `preValidation` hook closes the gap: it runs before
+      // ajv strips the query, and rejects any present query param with the
+      // same 400 `validation-failed` envelope ajv would have produced —
+      // honoring the endpoint's "400 on an unknown query param" contract.
+      preValidation: async (request) => {
+        const queryKeys = Object.keys(request.query as Record<string, unknown>);
+        if (queryKeys.length > 0) {
+          throw new ApiError(400, 'validation-failed', 'Request validation failed', {
+            issues: queryKeys.map((key) => ({
+              keyword: 'additionalProperties',
+              instancePath: '',
+              schemaPath: '#/additionalProperties',
+              params: { additionalProperty: key },
+              message: 'must NOT have additional properties',
+            })),
+          });
+        }
+      },
+      schema: {
+        tags: ['replay'],
+        summary: "List a session's snapshot markers (chapter order)",
+        description:
+          'Returns all of the session`s snapshot markers — the moderator-created labeled ' +
+          'checkpoints — each as `{ snapshotId, label, logPosition, createdAt }`, ordered ' +
+          'by `logPosition` ascending (chapter order). A snapshot is a regular event ' +
+          '(`kind: snapshot-created`), not a separate table; this is a filtered read of ' +
+          'those events, not a projection.\n\n' +
+          'Visibility is exactly the session`s own: public sessions are visible to every ' +
+          'authenticated user; private sessions only to the host or a current/past ' +
+          'participant. When the session does not exist OR exists but is invisible to the ' +
+          'caller, the server returns 404 `not-found` — the two cases are deliberately ' +
+          'indistinguishable to avoid leaking the existence of private sessions.\n\n' +
+          'A visible session with no snapshots (the common case) returns ' +
+          '`{ snapshots: [] }` with a 200 — 404 is reserved for the session itself being ' +
+          'absent or invisible. v1 returns the full set (snapshots are sparse); there is ' +
+          'no pagination or query filter.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
+          '`validation-failed` when `:id` is not a UUID or an unknown query param is sent.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        querystring: sessionSnapshotsQuerySchema,
+        response: {
+          200: sessionSnapshotsResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — the middleware guarantees `authUser` is set on every
+      // request that reaches a handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      const pool = ensurePool();
+
+      // Visibility gate runs BEFORE the snapshots read — an invisible
+      // session never reaches the query. Zero visibility → 404 (whether
+      // the id is unused or exists-but-invisible, per the existence-leak
+      // rule). A session's snapshots are exactly as visible as the
+      // session itself.
+      if (!(await canSeeSession(pool, sessionId, userId))) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      const snapshots = await readSessionSnapshots(pool, { sessionId });
+
+      return reply.code(200).send({ snapshots });
     },
   );
 };

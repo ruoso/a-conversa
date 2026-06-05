@@ -15,7 +15,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 
-import { readSessionEventsPage, type SessionEventReadExecutor } from './read.js';
+import {
+  readSessionEventsPage,
+  readSessionSnapshots,
+  type SessionEventReadExecutor,
+} from './read.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // apps/server/src/events/ -> ../../.. -> repo root -> apps/server/migrations
@@ -200,6 +204,124 @@ describe('readSessionEventsPage', () => {
 
       expect(page.events).toEqual([]);
       expect(page.nextCursor).toBeNull();
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+});
+
+/**
+ * Seed a user + session, then append a snapshot-created event at the
+ * given `sequence` with the supplied label. `log_position === sequence`
+ * by construction (cf. `createSnapshot.ts`), mirrored here. `actor` is
+ * the seeded user. Returns the seeded session id (and host) for reuse.
+ */
+async function seedSessionWithUser(db: PGlite): Promise<{ sessionId: string; userId: string }> {
+  const userRes = await db.query<{ id: string }>(
+    `INSERT INTO users (oauth_subject, screen_name) VALUES ($1, $2) RETURNING id`,
+    ['authelia:snap-seed', 'snap-seed-user'],
+  );
+  const userId = userRes.rows[0]!.id;
+  const sessionRes = await db.query<{ id: string }>(
+    `INSERT INTO sessions (host_user_id, privacy, topic) VALUES ($1, 'public', $2) RETURNING id`,
+    [userId, 'snapshot topic'],
+  );
+  return { sessionId: sessionRes.rows[0]!.id, userId };
+}
+
+async function insertSnapshotEvent(
+  db: PGlite,
+  sessionId: string,
+  actorId: string,
+  sequence: number,
+  snapshotId: string,
+  label: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+     VALUES ($1, $2, 'snapshot-created', $3, $4::jsonb)`,
+    [
+      sessionId,
+      sequence,
+      actorId,
+      JSON.stringify({ snapshot_id: snapshotId, label, log_position: sequence }),
+    ],
+  );
+}
+
+async function insertProposalEvent(
+  db: PGlite,
+  sessionId: string,
+  actorId: string,
+  sequence: number,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+     VALUES ($1, $2, 'proposal', $3, $4::jsonb)`,
+    [sessionId, sequence, actorId, JSON.stringify({ n: sequence })],
+  );
+}
+
+const SNAP_A = '00000000-0000-4000-8000-aaaaaaaa0001';
+const SNAP_B = '00000000-0000-4000-8000-aaaaaaaa0002';
+
+describe('readSessionSnapshots', () => {
+  it('returns snapshot markers ascending by sequence, mapped to the camelCase record', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      const { sessionId, userId } = await seedSessionWithUser(db);
+      // Insert out of sequence order to prove the ORDER BY, not insert order.
+      await insertSnapshotEvent(db, sessionId, userId, 7, SNAP_B, 'Chapter two');
+      await insertSnapshotEvent(db, sessionId, userId, 3, SNAP_A, 'Chapter one');
+
+      const snapshots = await readSessionSnapshots(asExecutor(db), { sessionId });
+
+      expect(snapshots.map((s) => s.logPosition)).toEqual([3, 7]);
+      expect(snapshots[0]).toEqual({
+        snapshotId: SNAP_A,
+        label: 'Chapter one',
+        logPosition: 3,
+        createdAt: expect.any(String) as string,
+      });
+      expect(snapshots[1]?.label).toBe('Chapter two');
+      expect(snapshots[1]?.snapshotId).toBe(SNAP_B);
+      // createdAt normalized to an ISO-8601 string.
+      expect(typeof snapshots[0]?.createdAt).toBe('string');
+      expect(snapshots[0]?.createdAt).toMatch(/T.*Z$/);
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+
+  it('ignores non-snapshot events (proposals/votes are not markers)', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      const { sessionId, userId } = await seedSessionWithUser(db);
+      await insertProposalEvent(db, sessionId, userId, 1);
+      await insertProposalEvent(db, sessionId, userId, 2);
+      await insertSnapshotEvent(db, sessionId, userId, 3, SNAP_A, 'Only marker');
+      await insertProposalEvent(db, sessionId, userId, 4);
+
+      const snapshots = await readSessionSnapshots(asExecutor(db), { sessionId });
+
+      expect(snapshots.map((s) => s.snapshotId)).toEqual([SNAP_A]);
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+
+  it('returns an empty array for a session with no snapshots', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      const { sessionId, userId } = await seedSessionWithUser(db);
+      await insertProposalEvent(db, sessionId, userId, 1);
+
+      const snapshots = await readSessionSnapshots(asExecutor(db), { sessionId });
+
+      expect(snapshots).toEqual([]);
     } finally {
       await db.close();
     }

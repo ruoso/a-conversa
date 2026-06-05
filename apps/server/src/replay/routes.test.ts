@@ -88,10 +88,42 @@ async function insertEvents(
   }
 }
 
+async function insertSnapshot(
+  db: PGlite,
+  sessionId: string,
+  actorId: string,
+  sequence: number,
+  snapshotId: string,
+  label: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+     VALUES ($1, $2, 'snapshot-created', $3, $4::jsonb)`,
+    [
+      sessionId,
+      sequence,
+      actorId,
+      JSON.stringify({ snapshot_id: snapshotId, label, log_position: sequence }),
+    ],
+  );
+}
+
 interface EventsBody {
   events?: Array<{ sequence?: number; sessionId?: string; payload?: { n?: number } }>;
   nextCursor?: number | null;
 }
+
+interface SnapshotsBody {
+  snapshots?: Array<{
+    snapshotId?: string;
+    label?: string;
+    logPosition?: number;
+    createdAt?: string;
+  }>;
+}
+
+const SNAP_ONE = '00000000-0000-4000-8000-bbbbbbbb0001';
+const SNAP_TWO = '00000000-0000-4000-8000-bbbbbbbb0002';
 
 describe('GET /sessions/:id/events', () => {
   let db: PGlite;
@@ -319,5 +351,181 @@ describe('GET /sessions/:id/events', () => {
     const body = response.json<EventsBody>();
     expect(body.events).toEqual([]);
     expect(body.nextCursor).toBeNull();
+  });
+});
+
+describe('GET /sessions/:id/snapshots', () => {
+  let db: PGlite;
+  let app: FastifyInstance;
+
+  const UNKNOWN_ID = '00000000-0000-4000-8000-ffffffff0001';
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await applyMigrations(db);
+    app = await __buildTestReplayApp({ pool: asPool(db), sessionTokenSecret: TEST_SECRET });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await db.close();
+  });
+
+  it('returns 200 + snapshot markers ascending by logPosition for a visible caller', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    // Insert out of order to prove the ORDER BY.
+    await insertSnapshot(db, sessionId, alice, 7, SNAP_TWO, 'Chapter two');
+    await insertSnapshot(db, sessionId, alice, 3, SNAP_ONE, 'Chapter one');
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<SnapshotsBody>();
+    expect(body.snapshots?.map((s) => s.logPosition)).toEqual([3, 7]);
+    expect(body.snapshots?.[0]?.snapshotId).toBe(SNAP_ONE);
+    expect(body.snapshots?.[0]?.label).toBe('Chapter one');
+    expect(typeof body.snapshots?.[0]?.createdAt).toBe('string');
+    expect(body.snapshots?.[1]?.label).toBe('Chapter two');
+  });
+
+  it('returns 200 + { snapshots: [] } for a visible session with no snapshots', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'no snapshots');
+    await insertEvents(db, sessionId, alice, 3);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<SnapshotsBody>();
+    expect(body.snapshots).toEqual([]);
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+    });
+
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns 404 not-found when the session id does not exist', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${UNKNOWN_ID}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const ben = await insertUser(db, 'authelia:ben', 'ben');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertSnapshot(db, sessionId, alice, 3, SNAP_ONE, 'Chapter one');
+
+    const token = await signSessionToken({ sub: ben }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 200 for a private session visible to its host', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertSnapshot(db, sessionId, alice, 3, SNAP_ONE, 'Chapter one');
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<SnapshotsBody>();
+    expect(body.snapshots?.map((s) => s.snapshotId)).toEqual([SNAP_ONE]);
+  });
+
+  it('returns 200 for a private session visible to a participant', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const ben = await insertUser(db, 'authelia:ben', 'ben');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertSnapshot(db, sessionId, alice, 3, SNAP_ONE, 'Chapter one');
+    await db.query(
+      `INSERT INTO session_participants (session_id, user_id, role) VALUES ($1, $2, 'debater-A')`,
+      [sessionId, ben],
+    );
+
+    const token = await signSessionToken({ sub: ben }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<SnapshotsBody>();
+    expect(body.snapshots?.map((s) => s.snapshotId)).toEqual([SNAP_ONE]);
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/not-a-uuid/snapshots`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 validation-failed when an unknown query param is sent', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/snapshots?after=2`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
   });
 });
