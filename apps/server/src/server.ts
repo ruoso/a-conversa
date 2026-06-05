@@ -85,6 +85,7 @@ import { healthzPlugin } from './routes/healthz.js';
 import { staticFrontendsPlugin } from './routes/static-frontends.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
 import { replayRoutesPlugin } from './replay/routes.js';
+import { registerTestModeRoutes } from './test-mode/register.js';
 import { resolveWsOriginAllowlist } from './ws-origin-allowlist.js';
 import { wsHandlersPlugin } from './ws/handlers/index.js';
 import {
@@ -631,6 +632,19 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // route literals rather than a `prefix` option. Refinement:
   //   tasks/refinements/backend/get_session_log.md.
   await app.register(replayRoutesPlugin);
+
+  // Test-mode synthetic-session generator (`GET /api/test-mode/
+  // synthetic-scenarios`, `POST /api/test-mode/synthetic-sessions`).
+  // Registered ONLY when `NODE_ENV !== 'production'` — in production the
+  // routes never mount and 404. The env gate is the single enforcement
+  // of the participant-authorization bypass synthetic generation
+  // inherently requires (the same gate the CORS lockdown uses). The
+  // plugin registers AFTER the auth middleware so its routes'
+  // `preHandler: app.authenticate` resolves the decorator, and reaches
+  // for the DB pool lazily on the first generate request. Refinement:
+  //   tasks/refinements/replay_test/test_mode_synthetic_session.md.
+  // ADR: docs/adr/0041-synthetic-session-generation-dev-gated-seam.md.
+  await registerTestModeRoutes(app);
 
   // WebSocket connection lifecycle. Registers `@fastify/websocket`
   // (decorating `app.websocketServer` + `app.injectWS`) and a single

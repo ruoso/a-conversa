@@ -6,4 +6,5 @@
 
 export * from './events.js';
 export * from './limits.js';
+export * from './synthetic-scenarios.js';
 export * from './ws-envelope.js';

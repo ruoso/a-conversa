@@ -1059,6 +1059,28 @@
       "retry": "Reintentar",
       "empty": "Esta sesión aún no tiene eventos.",
       "eventCount": "{count, plural, one {# evento} other {# eventos}}"
+    },
+    "synthetic": {
+      "regionAriaLabel": "Escenarios de sesión sintética",
+      "heading": "Sesiones sintéticas",
+      "intro": "Genera una sesión sintética para revisar — sin participantes en vivo.",
+      "loading": "Cargando escenarios…",
+      "listError": "No se pudo cargar la lista de escenarios.",
+      "retry": "Reintentar",
+      "empty": "No hay escenarios disponibles.",
+      "generate": "Generar",
+      "generating": "Generando…",
+      "generateError": "No se pudo generar la sesión. Inténtalo de nuevo.",
+      "scenario": {
+        "empty": {
+          "title": "Sesión vacía",
+          "description": "Una sesión básica: creada, con el moderador y dos debatientes presentes. Sin estructura."
+        },
+        "structured": {
+          "title": "Sesión estructurada",
+          "description": "Un pequeño registro trabajado: una afirmación capturada, una propuesta de clasificación, votos de acuerdo y un commit."
+        }
+      }
     }
   },
   "snapshotList": {

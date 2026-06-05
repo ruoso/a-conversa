@@ -1059,6 +1059,28 @@
       "retry": "Retry",
       "empty": "This session has no events yet.",
       "eventCount": "{count, plural, one {# event} other {# events}}"
+    },
+    "synthetic": {
+      "regionAriaLabel": "Synthetic session scenarios",
+      "heading": "Synthetic sessions",
+      "intro": "Generate a synthetic session to look at — no live participants required.",
+      "loading": "Loading scenarios…",
+      "listError": "Couldn't load the scenario list.",
+      "retry": "Retry",
+      "empty": "No scenarios available.",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "generateError": "Couldn't generate the session. Try again.",
+      "scenario": {
+        "empty": {
+          "title": "Empty session",
+          "description": "A bare session: created, with the moderator and two debaters joined. No structure."
+        },
+        "structured": {
+          "title": "Structured session",
+          "description": "A small worked log: a captured statement, a classification proposal, agreeing votes, and a commit."
+        }
+      }
     }
   },
   "snapshotList": {

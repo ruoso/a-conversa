@@ -10,32 +10,24 @@
 //
 // The `/sessions/:sessionId` route (`test_mode_load_session`) loads and
 // displays a saved session's complete persisted event log. The root `/`
-// (and any other URL inside `/t/*`) keeps rendering the placeholder until
-// the remaining downstream `test_mode_*` leaves — the synthetic-session
-// builder, the timeline scrubber driving a projected state into a graph
-// viewport, and the inspectors — land and supersede it in place.
+// is the synthetic-session gallery (`test_mode_synthetic_session`,
+// Decision §5) — the first natural landing for a test-mode operator
+// ("what do you want to look at?"): it lists the generator's scenarios
+// and, on generate, hands off to the load route above. The gallery
+// supersedes the former root placeholder in place; the timeline scrubber
+// and inspectors land in the remaining downstream `test_mode_*` leaves.
 
 import type { ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 
 import { SessionLogRoute } from './session-log/SessionLogRoute';
-
-function PlaceholderRoute(): ReactElement {
-  const { t } = useTranslation();
-  return (
-    <main data-testid="route-test-mode-placeholder" className="mx-auto max-w-2xl p-6">
-      <h1 className="text-2xl font-semibold">{t('testMode.placeholder.title')}</h1>
-      <p className="mt-2 text-sm text-slate-600">{t('testMode.placeholder.body')}</p>
-    </main>
-  );
-}
+import { SyntheticGallery } from './synthetic/SyntheticGallery';
 
 export function App(): ReactElement {
   return (
     <Routes>
       <Route path="/sessions/:sessionId" element={<SessionLogRoute />} />
-      <Route path="*" element={<PlaceholderRoute />} />
+      <Route path="*" element={<SyntheticGallery />} />
     </Routes>
   );
 }

@@ -26,42 +26,45 @@
 // cookie-free for the SPA's auth probe.
 //
 // **Scope.** Two scenarios, en-US only (cross-locale text is covered at
-// the catalog parity layer): (a) the authenticated placeholder render;
-// (b) the `requiredAuthLevel: 'authenticated'` gate deflecting an
-// anonymous visitor to the host login.
+// the catalog parity layer): (a) the authenticated gallery render at the
+// surface root; (b) the `requiredAuthLevel: 'authenticated'` gate
+// deflecting an anonymous visitor to the host login.
+//
+// **Root is now the synthetic-session gallery.** `test_mode_synthetic_
+// session` superseded the former root placeholder with the scenario
+// gallery (Decision §5 / Constraint §6 of that refinement), so the root
+// `/t/` assertion targets the gallery container, not
+// `route-test-mode-placeholder`. The auth-deflection assertion is
+// route-independent and retained unchanged.
 
 import { expect, test } from './fixtures/no-scrollbars';
 
 // A deterministic UUID for the session id segment, used by the
 // unauthenticated-deflection scenario (the auth gate fires before mount
-// regardless of path). The placeholder-presence scenario navigates the
-// surface root `/t/` instead: since `test_mode_load_session` landed the
-// real `/sessions/:sessionId` route, `/t/sessions/<uuid>` now renders the
-// session-log view, not the placeholder — only the root still falls
-// through the surface's `*` placeholder route.
+// regardless of path).
 const SESSION_ID = '00000000-0000-4000-8000-000000000099';
 
 test.describe('Test-mode surface skeleton — /t/* reaches the surface bundle', () => {
-  test('authenticated user hits /t/ and sees the test-mode placeholder render', async ({
+  test('authenticated user hits /t/ and sees the synthetic-session gallery render', async ({
     page,
   }) => {
     // The root host's `/t/*` route, the `SurfaceHost` dispatcher's
     // dynamic-import of the test-mode bundle, the surface's
     // `mount(props)` boundary, and the `BrowserRouter`-scoped `*`
-    // placeholder route must all line up for the placeholder testid to
-    // appear at the surface root.
+    // gallery route must all line up for the gallery testid to appear at
+    // the surface root.
     await page.goto('/t/');
 
     await expect(
-      page.getByTestId('route-test-mode-placeholder'),
-      'the surface bundle must mount and render the test-mode placeholder',
+      page.getByTestId('test-mode-synthetic-gallery'),
+      'the surface bundle must mount and render the synthetic-session gallery',
     ).toBeVisible({ timeout: 15_000 });
 
-    // The placeholder's title is the first <h1> inside the route body;
-    // pin the en-US text so a regression in the i18n bridge (host-
-    // supplied i18n not reaching the surface) surfaces here. The string
-    // is `testMode.placeholder.title` (en-US: "Test mode").
-    await expect(page.locator('h1').first()).toHaveText('Test mode');
+    // The gallery heading is the first <h1> inside the route body; pin
+    // the en-US text so a regression in the i18n bridge (host-supplied
+    // i18n not reaching the surface) surfaces here. The string is
+    // `testMode.synthetic.heading` (en-US: "Synthetic sessions").
+    await expect(page.locator('h1').first()).toHaveText('Synthetic sessions');
   });
 });
 

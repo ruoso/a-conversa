@@ -7,19 +7,34 @@
 // Mirrors `apps/moderator/src/mount.test.tsx` except for the surface
 // name, the URL pushed into `window.history`, and the asserted testid.
 // Proves `mount()` wires the React tree under a host-supplied
-// `routerBasePath` + `auth` + `i18n`, renders the placeholder, and the
-// returned `UnmountFn` tears the container down.
+// `routerBasePath` + `auth` + `i18n`, renders the root synthetic gallery,
+// and the returned `UnmountFn` tears the container down.
+//
+// The gallery fetches the scenario list on mount; we stub `fetch` with a
+// never-resolving promise so the surface stays in its `loading` state for
+// the lifetime of the test — no async `setState` fires after the `act()`
+// boundary (which would surface as a React act warning → hard failure per
+// `vitest.setup.ts`). The list-fetch behaviour itself is pinned by
+// `SyntheticGallery.test.tsx`; this case only proves the mount wiring.
 
 import { act } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 
 import { createI18nInstance, type AuthContextValue, type I18n } from '@a-conversa/shell';
 
 import { mount } from './main';
 
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   document.body.innerHTML = '';
   window.history.replaceState({}, '', '/');
 });
@@ -52,7 +67,7 @@ describe('test-mode surface mount()', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('route-test-mode-placeholder')).toBeTruthy();
+      expect(screen.getByTestId('test-mode-synthetic-gallery')).toBeTruthy();
     });
 
     act(() => {

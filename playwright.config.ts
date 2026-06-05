@@ -459,6 +459,31 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Test-mode synthetic-session generate→load e2e
+    // (replay_test.test_mode.test_mode_synthetic_session, refinement
+    // `tasks/refinements/replay_test/test_mode_synthetic_session.md`).
+    // Drives a logged-in browser to `/t/`, clicks generate on the
+    // structured scenario, and asserts it lands on `/t/sessions/<id>`
+    // with the load readout showing the generated events — the whole
+    // chain (real surface → real gated endpoint → real persisted log →
+    // real read path) end to end. The gated generator is live because
+    // `make up` runs the app under `NODE_ENV=development` (ADR 0041).
+    // Mirrors the `chromium-test-mode-load-session` shape — single locale
+    // en-US (cross-locale text is covered at the catalog-parity layer;
+    // the gallery view + builders are pinned by the Vitest + Cucumber
+    // layers), `ignoreHTTPSErrors` for the OIDC redirect, and the
+    // bootstrap auth jar via `setup-auth`.
+    {
+      name: 'chromium-test-mode-synthetic-session',
+      testMatch: /test-mode-synthetic-session\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Cross-surface lobby + start-debate spec — three real browser
     // contexts (alice + ben + maria) prove the moderator-lobby's
     // Enter-session click after both debaters self-claim through
