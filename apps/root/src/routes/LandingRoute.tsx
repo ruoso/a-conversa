@@ -54,11 +54,16 @@ export function LandingRoute(): ReactElement {
     // `<html>` scroll, so we make `<main>` the scroll region and mark it
     // allowed — the same idiom `apps/moderator`'s OperateLayout uses for
     // its sidebar. The inner `min-h-full` wrapper keeps the content
-    // vertically centered when it does fit. Cross-breakpoint layout is
-    // `landing_responsive_a11y`'s job (Decision §7); this is the
-    // desktop-first scaffold it composes around.
+    // vertically centered when it does fit, and now spans the full window
+    // width (capped at a generous `max-w-[120rem]` to stay sane on
+    // ultrawide displays) so the interactive walkthrough — the page's hero
+    // artifact — gets the room to breathe; the marketing prose stays
+    // readable because each paragraph caps itself at `max-w-2xl`
+    // independently. Cross-breakpoint layout is `landing_responsive_a11y`'s
+    // job (Decision §7); this is the desktop-first scaffold it composes
+    // around.
     <main data-testid="route-landing" data-allow-scroll="" className="h-screen overflow-y-auto">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-6 p-4 sm:p-6">
+      <div className="mx-auto flex min-h-full w-full max-w-[120rem] flex-col justify-center gap-6 p-4 sm:p-6 lg:px-8">
         {/*
         The methodology pitch composed around the interactive demo
         (`landing_hero_and_method` Decision §D1): the hero (product name +
@@ -82,13 +87,13 @@ export function LandingRoute(): ReactElement {
         <section
           data-testid="landing-walkthrough"
           aria-label={t('landing.demo.embedRegionLabel')}
-          className="min-h-[32rem]"
+          className="min-h-[36rem] lg:min-h-[44rem]"
         >
           <Suspense
             fallback={
               <div
                 data-testid="walkthrough-demo-loading"
-                className="flex min-h-[32rem] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500"
+                className="flex min-h-[36rem] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 lg:min-h-[44rem]"
               >
                 {t('auth.login.checking')}
               </div>
