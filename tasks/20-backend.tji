@@ -413,6 +413,12 @@ task backend "Backend" {
       depends data_and_methodology.replay_primitive.project_at_position, data_and_methodology.diagnostics
       note "Registered by closer for replay_test.test_mode.test_mode_diagnostic_inspector (2026-06-05): the DiagnosticInspector panel fetches this endpoint; it runs projectAtPosition + computeAllDiagnostics server-side and returns wire-shaped, severity-classified entries. Backend leaf carries its own Cucumber coverage (ADR 0007). See ADR 0044 and tasks/refinements/replay_test/test_mode_diagnostic_inspector.md Decision §1."
     }
+    task anonymous_public_session_log "Anonymous read of a public session's event log (replay surface)" {
+      effort 1d
+      allocate team
+      depends !get_session_log
+      note "Registered by closer for replay_test.replay_ui.replay_mode_audience_surface (2026-06-05): relaxes GET /sessions/:id/events to two auth postures — anonymous → new canReplaySessionAnonymously predicate (privacy = 'public', ended-agnostic); authenticated → unchanged canSeeSession. Preserves existence-non-leak rule. Owns Cucumber scenarios (anon+public-ended→200; anon+public-live→200; anon+private→404; auth paths unchanged) and the deferred anonymous-public-replay Playwright spec from criterion 5 of the replay_mode_audience_surface refinement. Constrained by ADR 0045. Source: tasks/refinements/replay_test/replay_mode_audience_surface.md §Named follow-up."
+    }
   }
 
   task server_validation "Server-side validation" {

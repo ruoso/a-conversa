@@ -1044,6 +1044,12 @@
     "privateSession": {
       "title": "Sessão indisponível",
       "body": "Esta sessão não está disponível para visitantes anônimos. Se você tem uma conta que pode vê-la, entre para tentar novamente."
+    },
+    "replay": {
+      "loading": "Carregando replay…",
+      "unavailableTitle": "Replay indisponível",
+      "unavailableBody": "Não foi possível carregar este replay. Tente novamente.",
+      "retry": "Tentar novamente"
     }
   },
   "testMode": {

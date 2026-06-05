@@ -1044,6 +1044,12 @@
     "privateSession": {
       "title": "Session unavailable",
       "body": "This session is not available to anonymous visitors. If you have an account that can view it, sign in to retry."
+    },
+    "replay": {
+      "loading": "Loading replay…",
+      "unavailableTitle": "Replay unavailable",
+      "unavailableBody": "This replay could not be loaded. Please try again.",
+      "retry": "Retry"
     }
   },
   "testMode": {

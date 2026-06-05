@@ -62,4 +62,4 @@ Per [ADR 0022](0022-no-throwaway-verifications.md), the architecture lands behin
 
 ## Amendments
 
-(none)
+- **2026-06-05** — The deferred "anonymous catch-up / replay of a public session for an anonymous viewer" (noted under Decision → Write handlers and Consequences → "Anonymous catch-up is deferred") is taken up by [ADR 0045](0045-audience-replay-surface-visibility-gating.md). ADR 0045 routes anonymous public-session replay through the **HTTP** event-log endpoint (not anonymous WS catch-up), gated by a new `canReplaySessionAnonymously` predicate (`privacy = 'public'`, ended-agnostic — strictly this ADR's `canSeeSessionAnonymously` minus its `ended_at IS NULL` clause), and scopes the build into the `backend.replay_endpoints.anonymous_public_session_log` leaf. The WS anonymous-catch-up path described here remains deferred and unbuilt; replay is served over HTTP instead.

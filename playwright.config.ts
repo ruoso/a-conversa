@@ -413,6 +413,35 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Audience replay-surface e2e
+    // (replay_test.replay_ui.replay_mode_audience_surface, refinement
+    // `tasks/refinements/replay_test/replay_mode_audience_surface.md`).
+    // Drives the `/a/{locale}/replay/<id>` route: an authenticated viewer
+    // replays a synthetic session's persisted log into the shared
+    // `@a-conversa/graph-view` renderer (ADR 0039), an anonymous viewer is
+    // funnelled to the `PrivateSessionCta` sign-in wall (ADR 0045 — the
+    // events endpoint is authenticated-only in v1), and a pt-BR URL prefix
+    // proves URL-locale flows through the replay route. Lives in its own
+    // project so its `testMatch` doesn't bleed into the live-audience
+    // `chromium-audience-skeleton` project. Same browser profile as the
+    // sibling audience project — single locale en-US (the pt-BR assertion
+    // is driven by the URL prefix, not the browser locale),
+    // `ignoreHTTPSErrors` for the OIDC redirect, the bootstrap auth jar via
+    // `setup-auth`. The dev-gated synthetic generator the spec seeds with
+    // is live because `make up` runs the app under `NODE_ENV=development`
+    // (ADR 0041). The anonymous-public-replay-without-sign-in behavior is
+    // deferred to `backend.replay_endpoints.anonymous_public_session_log`.
+    {
+      name: 'chromium-audience-replay',
+      testMatch: /audience-replay\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Test-mode skeleton e2e (replay_test.test_mode.test_mode_app,
     // refinement `tasks/refinements/replay_test/test_mode_app.md`).
     // Drives a logged-in browser to `/t/sessions/<uuid>` and asserts

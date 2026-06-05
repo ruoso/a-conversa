@@ -33,6 +33,7 @@ task replay_test "Replay and test mode" {
     task replay_mode_audience_surface "Replay-mode variant of the audience surface" {
       effort 2d
       allocate team
+      complete 100
       depends frontend_i18n.i18n_catalog_workflow
       note -8<-
         Same renderer as live audience; switches the input from live event stream to log-replay.

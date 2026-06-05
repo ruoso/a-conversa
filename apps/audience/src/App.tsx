@@ -87,6 +87,7 @@ import { negotiateUrlLocale } from '@a-conversa/i18n-catalogs';
 import { LoginButton, useAuth } from '@a-conversa/shell';
 
 import { AudienceLiveRoute } from './routes/AudienceLiveRoute.js';
+import { AudienceReplayRoute } from './routes/AudienceReplayRoute.js';
 
 function AnonymousChrome(): ReactElement {
   // The per-session "this session is private; sign in to view" wording
@@ -174,11 +175,25 @@ export function App(): ReactElement {
        * same component because the `<App>` `useEffect` above already
        * negotiates the locale from `window.location.pathname` — the
        * route component is locale-agnostic. Inserted above the wildcard
-       * so non-session URLs (`/a`, `/a/foo`, future `/a/replay/...`)
-       * continue to fall through to the placeholder.
+       * so non-session URLs (`/a`, `/a/foo`) continue to fall through to
+       * the placeholder. The `/a/replay/...` sibling routes land just
+       * below (`replay_mode_audience_surface`).
        */}
       <Route path="/sessions/:sessionId" element={<AudienceLiveRoute />} />
       <Route path="/:locale/sessions/:sessionId" element={<AudienceLiveRoute />} />
+      {/*
+       * `replay_mode_audience_surface` — the replay-mode variant of the
+       * audience surface (ADR 0045). Both shapes mount
+       * `<AudienceReplayRoute>` (which loads the saved log via
+       * `useSessionEventLog` and renders the shared `@a-conversa/graph-view`
+       * `GraphView` at the log head). The locale-prefixed sibling shares
+       * the component because the `<App>` `useEffect` above already
+       * negotiates the locale from `window.location.pathname` — the route
+       * component is locale-agnostic. Inserted above the wildcard so
+       * non-replay URLs continue to fall through to the placeholder.
+       */}
+      <Route path="/replay/:sessionId" element={<AudienceReplayRoute />} />
+      <Route path="/:locale/replay/:sessionId" element={<AudienceReplayRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );
