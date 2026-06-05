@@ -241,6 +241,31 @@ const sessionIdParamsSchema = {
 } as const;
 
 /**
+ * Path-params schema for `:id` + `:snapshotId`. Both are UUIDs — `:id`
+ * names the session, `:snapshotId` the snapshot's canonical key
+ * (`payload.snapshot_id`, not the label, which carries no uniqueness
+ * guarantee). A non-UUID in either segment is rejected with 400
+ * `validation-failed` by the Fastify validator before the handler runs.
+ */
+const sessionSnapshotParamsSchema = {
+  type: 'object',
+  required: ['id', 'snapshotId'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The session id (UUID).',
+    },
+    snapshotId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The snapshot`s canonical key (`payload.snapshot_id`, a UUID).',
+    },
+  },
+} as const;
+
+/**
  * Query-string schema. `after` is the exclusive lower bound on
  * `sequence` (absent → start of log); `limit` is the page size
  * (default 100, max 1000). Out-of-range values are rejected with 400
@@ -500,6 +525,106 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
       const snapshots = await readSessionSnapshots(pool, { sessionId });
 
       return reply.code(200).send({ snapshots });
+    },
+  );
+
+  app.get(
+    '/api/sessions/:id/snapshots/:snapshotId',
+    {
+      preHandler: app.authenticate,
+      // Same strip-not-reject gap as the snapshots-list route: Fastify's
+      // ajv runs `removeAdditional: true`, so an unknown query param is
+      // silently stripped rather than rejected. This route-scoped
+      // `preValidation` hook restores the 400 the no-query-string contract
+      // requires — identical to the list route above.
+      preValidation: async (request) => {
+        const queryKeys = Object.keys(request.query as Record<string, unknown>);
+        if (queryKeys.length > 0) {
+          throw new ApiError(400, 'validation-failed', 'Request validation failed', {
+            issues: queryKeys.map((key) => ({
+              keyword: 'additionalProperties',
+              instancePath: '',
+              schemaPath: '#/additionalProperties',
+              params: { additionalProperty: key },
+              message: 'must NOT have additional properties',
+            })),
+          });
+        }
+      },
+      schema: {
+        tags: ['replay'],
+        summary: 'Fetch one snapshot marker of a session by its snapshotId',
+        description:
+          'Returns a single snapshot marker — the moderator-created labeled checkpoint with ' +
+          'the given `:snapshotId` — as `{ snapshotId, label, logPosition, createdAt }`. The ' +
+          'marker is resolved by its canonical `snapshotId` (a UUID), NOT by its `label`: ' +
+          'labels carry no uniqueness guarantee (a session may hold two snapshots both ' +
+          'labeled the same), so `snapshotId` is the stable key. A snapshot is a regular ' +
+          'event (`kind: snapshot-created`), not a separate table; this is a filtered read ' +
+          'of those events plus an in-memory match on `snapshot_id`, not a projection.\n\n' +
+          'Visibility is exactly the session`s own: public sessions are visible to every ' +
+          'authenticated user; private sessions only to the host or a current/past ' +
+          'participant. When the session does not exist OR exists but is invisible to the ' +
+          'caller, the server returns 404 `not-found` — the two cases are deliberately ' +
+          'indistinguishable to avoid leaking the existence of private sessions. Because the ' +
+          'visibility gate runs first, a snapshot-not-found 404 (a visible session with no ' +
+          'snapshot at `:snapshotId`) is reachable only after the session is confirmed ' +
+          'visible, so it leaks nothing about a private session`s contents.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
+          '`validation-failed` when `:id` or `:snapshotId` is not a UUID or an unknown query ' +
+          'param is sent.',
+        security: [{ cookieAuth: [] }],
+        params: sessionSnapshotParamsSchema,
+        querystring: sessionSnapshotsQuerySchema,
+        response: {
+          200: snapshotRecordRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — the middleware guarantees `authUser` is set on every
+      // request that reaches a handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string; snapshotId: string };
+      const sessionId = params.id;
+      const { snapshotId } = params;
+
+      const pool = ensurePool();
+
+      // Visibility gate runs BEFORE the snapshots read — an invisible
+      // session never reaches the query. Zero visibility → 404 (whether
+      // the id is unused or exists-but-invisible, per the existence-leak
+      // rule). A session's snapshots are exactly as visible as the
+      // session itself.
+      if (!(await canSeeSession(pool, sessionId, userId))) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      // Snapshots are sparse (a handful per session); read the small
+      // `(session_id, kind)`-bounded set and match `snapshotId` in memory.
+      // No targeted single-row SQL — the JSON predicate is not indexed, so
+      // it would scan the same rows for no cost win (Decisions §2). Reuses
+      // the helper already covered by Vitest + Cucumber.
+      const all = await readSessionSnapshots(pool, { sessionId });
+      const record = all.find((r) => r.snapshotId === snapshotId);
+      if (record === undefined) {
+        // Reachable only after the session is confirmed visible, so this
+        // distinct message leaks nothing about a private session.
+        throw ApiError.notFound('snapshot not found');
+      }
+
+      return reply.code(200).send(record);
     },
   );
 };

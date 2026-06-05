@@ -399,9 +399,10 @@ task backend "Backend" {
       allocate team
       complete 100
     }
-    task get_snapshot "GET /sessions/:id/snapshots/:label" {
+    task get_snapshot "GET /sessions/:id/snapshots/:snapshotId" {
       effort 0.5d
       allocate team
+      complete 100
       depends !list_snapshots
     }
   }
