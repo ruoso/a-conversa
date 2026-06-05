@@ -101,13 +101,26 @@ interface PillRowPlacement {
   readonly x: number;
   readonly y: number;
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /**
+   * The Cytoscape viewport zoom captured at commit time. The pill row
+   * is a DOM overlay sized in CSS pixels, so — unlike the statement
+   * label, which Cytoscape paints at `font-size × zoom` and therefore
+   * shrinks/grows with the camera — the pill's intrinsic `text-[10px]`
+   * stays a fixed on-screen size. That makes the pills read as
+   * disproportionately large when the graph is zoomed out (the statement
+   * label shrinks past them). We scale the whole row by this zoom so it
+   * tracks the node it annotates and stays subordinate to the statement
+   * font at every zoom level.
+   */
+  readonly zoom: number;
 }
 
 /**
  * Vertical offset (px) above the node bounding-box top edge. Keeps the
  * pill row clear of the per-state border (up to 3px wide for disputed
  * nodes) plus a small breathing gap so the row reads as a distinct
- * surface from the node body.
+ * surface from the node body. Expressed in unscaled CSS px and applied
+ * pre-`scale()` so the gap shrinks with the row as the camera zooms out.
  */
 const PILL_ROW_OFFSET_Y = 6;
 
@@ -162,7 +175,19 @@ export function AudiencePerFacetPillOverlay({
             position: 'absolute',
             left: `${String(p.x)}px`,
             top: `${String(p.y)}px`,
-            transform: 'translate(-50%, -100%)',
+            // `translate(-50%, -100%)` anchors the row's bottom-center at
+            // (x, y) — the node top-center — exactly as before. The added
+            // `scale(p.zoom)` makes the row's on-screen size track the
+            // camera so the pill font stays proportionally smaller than
+            // the statement label (which Cytoscape already paints at
+            // `font-size × zoom`). `transformOrigin: 'center bottom'`
+            // pins the scale about that same anchor point, so the row's
+            // bottom-center stays put at (x, y) while the row
+            // grows/shrinks. (The `PILL_ROW_OFFSET_Y` gap is scaled
+            // separately into `y` at commit time, since the anchor itself
+            // sits outside this transform.)
+            transform: `translate(-50%, -100%) scale(${String(p.zoom)})`,
+            transformOrigin: 'center bottom',
             display: 'flex',
             gap: '4px',
           }}
@@ -191,6 +216,10 @@ export function AudiencePerFacetPillOverlay({
 
 function commitPerFacetPlacements(cy: Core): readonly PillRowPlacement[] {
   const next: PillRowPlacement[] = [];
+  // Captured once per commit and shared by every row: the hook re-runs
+  // this on `cy.on('render pan zoom resize', …)`, so a fresh zoom is
+  // read on every camera change.
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     const facetStatuses = node.data('facetStatuses') as
       | Readonly<Partial<Record<FacetName, FacetStatus>>>
@@ -211,8 +240,9 @@ function commitPerFacetPlacements(cy: Core): readonly PillRowPlacement[] {
     next.push({
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
-      y: bb.y1 - PILL_ROW_OFFSET_Y,
+      y: bb.y1 - PILL_ROW_OFFSET_Y * zoom,
       facetStatuses,
+      zoom,
     });
   });
   return next;

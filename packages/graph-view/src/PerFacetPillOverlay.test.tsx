@@ -537,6 +537,44 @@ describe('AudiencePerFacetPillOverlay', () => {
     }
   });
 
+  it('(q) scales the pill row by the cytoscape zoom and offsets it by a zoom-scaled gap', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'proposed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      await flushRaf();
+      const findRow = (): HTMLElement | undefined =>
+        Array.from(document.querySelectorAll('[data-facet-pill-row]')).find(
+          (r) => r.getAttribute('data-element-id') === NODE_A,
+        ) as HTMLElement | undefined;
+      // Default zoom (1): row scales 1:1 and the offset gap is the raw
+      // PILL_ROW_OFFSET_Y (6) above the stubbed bounding-box top (50).
+      const rowAtUnitZoom = findRow();
+      expect(rowAtUnitZoom?.style.transform).toContain('scale(1)');
+      expect(rowAtUnitZoom?.style.top).toBe('44px');
+
+      // Zoom the camera in to 2× — the row's transform tracks the camera
+      // so the pill font stays proportionally below the statement label
+      // (which cytoscape paints at font-size × zoom), and the offset gap
+      // scales with it (6 × 2 = 12 → top 38).
+      act(() => {
+        cy.zoom(2);
+        cy.emit('zoom');
+      });
+      await flushRaf();
+      const rowAtDoubleZoom = findRow();
+      expect(rowAtDoubleZoom?.style.transform).toContain('scale(2)');
+      expect(rowAtDoubleZoom?.style.transformOrigin).toBe('center bottom');
+      expect(rowAtDoubleZoom?.style.top).toBe('38px');
+    } finally {
+      unmount();
+    }
+  });
+
   it('(j) the wording pill renders the localized en-US label "Wording"', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {
