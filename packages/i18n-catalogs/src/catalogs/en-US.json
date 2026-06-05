@@ -1050,6 +1050,15 @@
     "placeholder": {
       "title": "Test mode",
       "body": "Loading…"
+    },
+    "loadSession": {
+      "regionAriaLabel": "Session event log",
+      "loading": "Loading session log…",
+      "notFound": "Session not found or not visible.",
+      "error": "Couldn't load the session log.",
+      "retry": "Retry",
+      "empty": "This session has no events yet.",
+      "eventCount": "{count, plural, one {# event} other {# events}}"
     }
   },
   "snapshotList": {

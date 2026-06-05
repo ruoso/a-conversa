@@ -77,6 +77,7 @@ task replay_test "Replay and test mode" {
     task test_mode_load_session "Load a saved session's event log" {
       effort 1d
       allocate team
+      complete 100
       depends !test_mode_app, backend.replay_endpoints.get_session_log
     }
     task test_mode_synthetic_session "Generate / load synthetic sessions for design iteration" {

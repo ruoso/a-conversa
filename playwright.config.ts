@@ -436,6 +436,29 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Test-mode load-session e2e (replay_test.test_mode.test_mode_load_session,
+    // refinement `tasks/refinements/replay_test/test_mode_load_session.md`).
+    // Drives a logged-in browser to `/t/sessions/<uuid>` and proves the
+    // real `/sessions/:sessionId` route fetches the persisted event log
+    // through the mounted surface: a freshly-minted session reaches the
+    // ready / empty-log affordance, and an unused id reaches the
+    // not-found affordance (the 404 path). Mirrors the
+    // `chromium-test-mode-skeleton` shape — single locale en-US
+    // (cross-locale text is covered at the catalog-parity layer; the rich
+    // readout + paging are pinned by the Vitest hook + view tests),
+    // `ignoreHTTPSErrors` for the OIDC redirect, and the bootstrap auth
+    // jar via `setup-auth`.
+    {
+      name: 'chromium-test-mode-load-session',
+      testMatch: /test-mode-load-session\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Cross-surface lobby + start-debate spec — three real browser
     // contexts (alice + ben + maria) prove the moderator-lobby's
     // Enter-session click after both debaters self-claim through

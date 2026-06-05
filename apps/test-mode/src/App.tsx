@@ -8,17 +8,18 @@
 //              0026 (host owns auth chrome; the surface only reads the
 //                    host-supplied i18n through `useTranslation()`).
 //
-// The single wildcard route absorbs every URL inside `/t/*` (e.g.
-// `/t/sessions/:id`, `/t/foo`). The real test-mode routes — the
-// session loader, the synthetic-session builder, the timeline scrubber
-// driving a projected state into a graph viewport, and the inspectors —
-// land in the downstream `test_mode_*` leaves, at which point this
-// wildcard is replaced with the real route table and the placeholder
-// testid disappears.
+// The `/sessions/:sessionId` route (`test_mode_load_session`) loads and
+// displays a saved session's complete persisted event log. The root `/`
+// (and any other URL inside `/t/*`) keeps rendering the placeholder until
+// the remaining downstream `test_mode_*` leaves — the synthetic-session
+// builder, the timeline scrubber driving a projected state into a graph
+// viewport, and the inspectors — land and supersede it in place.
 
 import type { ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+
+import { SessionLogRoute } from './session-log/SessionLogRoute';
 
 function PlaceholderRoute(): ReactElement {
   const { t } = useTranslation();
@@ -33,6 +34,7 @@ function PlaceholderRoute(): ReactElement {
 export function App(): ReactElement {
   return (
     <Routes>
+      <Route path="/sessions/:sessionId" element={<SessionLogRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );

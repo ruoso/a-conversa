@@ -151,6 +151,13 @@ export {
   type SnapshotRecord,
 } from './snapshot-list/index.js';
 
+// ─── session-log ─────────────────────────────────────────────────────────
+export {
+  useSessionEventLog,
+  type SessionEventLog,
+  type SessionEventLogStatus,
+} from './session-log/index.js';
+
 // ─── annotations ─────────────────────────────────────────────────────────
 export {
   EMPTY_ANNOTATIONS,

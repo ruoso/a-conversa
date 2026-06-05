@@ -1050,6 +1050,15 @@
     "placeholder": {
       "title": "Modo de teste",
       "body": "Carregando…"
+    },
+    "loadSession": {
+      "regionAriaLabel": "Registro de eventos da sessão",
+      "loading": "Carregando o registro da sessão…",
+      "notFound": "Sessão não encontrada ou não visível.",
+      "error": "Não foi possível carregar o registro da sessão.",
+      "retry": "Tentar novamente",
+      "empty": "Esta sessão ainda não tem eventos.",
+      "eventCount": "{count, plural, one {# evento} other {# eventos}}"
     }
   },
   "snapshotList": {

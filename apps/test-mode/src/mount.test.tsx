@@ -39,7 +39,7 @@ describe('test-mode surface mount()', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/t/sessions/00000000-0000-4000-8000-000000000099');
+    window.history.replaceState({}, '', '/t/');
 
     let unmount!: () => void;
     act(() => {

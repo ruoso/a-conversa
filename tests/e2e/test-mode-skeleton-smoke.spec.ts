@@ -32,22 +32,25 @@
 
 import { expect, test } from './fixtures/no-scrollbars';
 
-// A deterministic UUID for the session id segment. The skeleton's
-// wildcard route ignores the segment entirely, so the value is
-// arbitrary — but a fixed UUID keeps the spec self-describing and
-// matches the canonical test-mode session URL shape the downstream
-// scrubber leaf will point at.
+// A deterministic UUID for the session id segment, used by the
+// unauthenticated-deflection scenario (the auth gate fires before mount
+// regardless of path). The placeholder-presence scenario navigates the
+// surface root `/t/` instead: since `test_mode_load_session` landed the
+// real `/sessions/:sessionId` route, `/t/sessions/<uuid>` now renders the
+// session-log view, not the placeholder — only the root still falls
+// through the surface's `*` placeholder route.
 const SESSION_ID = '00000000-0000-4000-8000-000000000099';
 
 test.describe('Test-mode surface skeleton — /t/* reaches the surface bundle', () => {
-  test('authenticated user hits /t/sessions/<uuid> and sees the test-mode placeholder render', async ({
+  test('authenticated user hits /t/ and sees the test-mode placeholder render', async ({
     page,
   }) => {
     // The root host's `/t/*` route, the `SurfaceHost` dispatcher's
     // dynamic-import of the test-mode bundle, the surface's
-    // `mount(props)` boundary, and the `BrowserRouter`-scoped wildcard
-    // route must all line up for the placeholder testid to appear.
-    await page.goto(`/t/sessions/${SESSION_ID}`);
+    // `mount(props)` boundary, and the `BrowserRouter`-scoped `*`
+    // placeholder route must all line up for the placeholder testid to
+    // appear at the surface root.
+    await page.goto('/t/');
 
     await expect(
       page.getByTestId('route-test-mode-placeholder'),
