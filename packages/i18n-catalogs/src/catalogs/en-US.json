@@ -1084,6 +1084,26 @@
       "baselineTitle": "Baseline",
       "baselineBody": "Before the first event — no event at this position."
     },
+    "diagnosticInspector": {
+      "regionAriaLabel": "Structural diagnostics at this position",
+      "heading": "Diagnostics",
+      "loading": "Loading diagnostics…",
+      "error": "Couldn't load diagnostics for this position.",
+      "retry": "Retry",
+      "emptyTitle": "No diagnostics",
+      "emptyBody": "The engine flags no structural problems at this position.",
+      "blockingHeading": "Blocking",
+      "advisoryHeading": "Advisory",
+      "otherHeading": "Other",
+      "affectedLabel": "Affected",
+      "kind": {
+        "cycle": "Cycle",
+        "contradiction": "Contradiction",
+        "multi-warrant": "Multi-warrant",
+        "dangling-claim": "Dangling claim",
+        "coherency-hint": "Coherency hint"
+      }
+    },
     "changes": {
       "regionAriaLabel": "What changed at this step",
       "heading": "Changes",

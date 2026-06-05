@@ -115,7 +115,14 @@ task replay_test "Replay and test mode" {
     task test_mode_diagnostic_inspector "Inspect structural diagnostics at any position" {
       effort 1d
       allocate team
+      complete 100
       depends !test_mode_timeline_scrubber, data_and_methodology.diagnostics
+    }
+    task test_mode_diagnostic_inspector_e2e_tracking "Tighten scrubber e2e: diagnostic panel tracks position + shows flagged entries" {
+      effort 0.5d
+      allocate team
+      depends !test_mode_diagnostic_inspector, backend.replay_endpoints.get_diagnostics_at_position
+      note "Deferred from test_mode_diagnostic_inspector (commit that ships complete 100 2026-06-05): the 'scrub-to-flagged-position shows the entry' e2e assertion (Acceptance §5 of test_mode_diagnostic_inspector.md) could not land until backend.replay_endpoints.get_diagnostics_at_position ships. Once the endpoint is live, extend tests/e2e/test-mode-scrubber.spec.ts to assert the diagnostic panel tracks position and shows flagged entries on the walkthrough scenario."
     }
     task test_mode_export_position "Export the projected state at any position" {
       effort 1d

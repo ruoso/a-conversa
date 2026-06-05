@@ -1084,6 +1084,26 @@
       "baselineTitle": "Línea base",
       "baselineBody": "Antes del primer evento — ningún evento en esta posición."
     },
+    "diagnosticInspector": {
+      "regionAriaLabel": "Diagnósticos estructurales en esta posición",
+      "heading": "Diagnósticos",
+      "loading": "Cargando diagnósticos…",
+      "error": "No se pudieron cargar los diagnósticos de esta posición.",
+      "retry": "Reintentar",
+      "emptyTitle": "Sin diagnósticos",
+      "emptyBody": "El motor no señala problemas estructurales en esta posición.",
+      "blockingHeading": "Bloqueantes",
+      "advisoryHeading": "Consultivos",
+      "otherHeading": "Otros",
+      "affectedLabel": "Afectados",
+      "kind": {
+        "cycle": "Ciclo",
+        "contradiction": "Contradicción",
+        "multi-warrant": "Múltiples garantías",
+        "dangling-claim": "Afirmación suelta",
+        "coherency-hint": "Sugerencia de coherencia"
+      }
+    },
     "changes": {
       "regionAriaLabel": "Qué cambió en este paso",
       "heading": "Cambios",

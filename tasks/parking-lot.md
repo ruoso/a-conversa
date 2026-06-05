@@ -168,6 +168,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or methodology vocabulary accuracy. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review.
 - **Suggested resolution**: when the v1 surfaces are string-complete, review the `testMode.changes.*` block in `packages/i18n-catalogs/src/catalogs/pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
 
+### 2026-06-05 — i18n native review — testMode.diagnosticInspector.* block (pt-BR, es-419)
+
+- **Source**: closer for `replay_test.test_mode.test_mode_diagnostic_inspector`.
+- **Question**: the pt-BR and es-419 translations for the new `testMode.diagnosticInspector.*` catalog block (section heading, severity group labels, per-kind labels, loading/error/empty strings) were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or methodology vocabulary accuracy. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: when the v1 surfaces are string-complete, review the `testMode.diagnosticInspector.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
 ### 2026-06-05 — Reconcile ADR 0026's `replay-test` reservation with the `test-mode` / `replay_ui` split
 
 - **Source**: closer for `replay_test.test_mode.test_mode_app` (Decision §1).

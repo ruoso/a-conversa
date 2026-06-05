@@ -83,6 +83,26 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     const changes = page.getByTestId('test-mode-changes');
     await expect(changes, 'the changes panel renders beside the scrubber').toBeVisible();
 
+    // (f) The diagnostic inspector mounts as a sibling section reading the
+    // same lifted position (test_mode_diagnostic_inspector §4). Unlike the
+    // pure-client inspector/changes panels, it fetches a backend endpoint
+    // (`GET /sessions/:id/diagnostics?position=N` — ADR 0044) for the position.
+    // The section renders and its fetch settles to a terminal state (the
+    // loading affordance clears) rather than hanging, proving the wiring
+    // end-to-end. The richer "scrub to a flagged position → that diagnostic
+    // entry shows; scrub to a clean position → the no-diagnostics state"
+    // assertion (Acceptance §5) is deferred until the
+    // `backend.replay_endpoints.get_diagnostics_at_position` leaf ships —
+    // until then the panel degrades gracefully to its error readout against
+    // the not-yet-wired route (follow-up:
+    // `replay_test.test_mode.test_mode_diagnostic_inspector_e2e_tracking`).
+    const diagnostics = page.getByTestId('test-mode-diagnostics');
+    await expect(diagnostics, 'the diagnostics panel renders beside the scrubber').toBeVisible();
+    await expect(
+      page.getByTestId('test-mode-diagnostics-loading'),
+      'the diagnostics fetch settles to a terminal state rather than hanging',
+    ).toHaveCount(0, { timeout: 15_000 });
+
     // (b) The surface opens at the head: next is disabled, prev is enabled.
     const head = Number(await status.getAttribute('data-head'));
     expect(head, 'the walkthrough head sequence is a deep, non-baseline position').toBeGreaterThan(
