@@ -138,5 +138,11 @@ function coherencyHintSuggestions(hint: WireCoherencyHint): readonly SuggestionM
       return [...COHERENCY_HINT_MOVES];
     case 'self-contradicts':
       return [...COHERENCY_HINT_MOVES];
+    case 'annotation-of-annotation-chain':
+      return [...COHERENCY_HINT_MOVES];
+    case 'self-referential-annotation-contradicts':
+      return [...COHERENCY_HINT_MOVES];
+    case 'non-self-referential-annotation-contradicts':
+      return [...COHERENCY_HINT_MOVES];
   }
 }

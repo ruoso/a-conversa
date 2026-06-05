@@ -87,21 +87,48 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     // same lifted position (test_mode_diagnostic_inspector §4). Unlike the
     // pure-client inspector/changes panels, it fetches a backend endpoint
     // (`GET /sessions/:id/diagnostics?position=N` — ADR 0044) for the position.
-    // The section renders and its fetch settles to a terminal state (the
-    // loading affordance clears) rather than hanging, proving the wiring
-    // end-to-end. The richer "scrub to a flagged position → that diagnostic
-    // entry shows; scrub to a clean position → the no-diagnostics state"
-    // assertion (Acceptance §5) is deferred until the
-    // `backend.replay_endpoints.get_diagnostics_at_position` leaf ships —
-    // until then the panel degrades gracefully to its error readout against
-    // the not-yet-wired route (follow-up:
-    // `replay_test.test_mode.test_mode_diagnostic_inspector_e2e_tracking`).
+    // With that route now live, the panel renders the *real* diagnostics for
+    // the projected state at this stop: at the head the walkthrough's
+    // deterministic E15 finding — a `contradicts` edge from a node to a
+    // cross-anchor annotation (sequence 264, included by log position 265 <
+    // head) — surfaces as a `non-self-referential-annotation-contradicts`
+    // coherency-hint under the *advisory* severity group. The contradiction
+    // detector deliberately skips annotation endpoints, so the coherency-hint
+    // detector raises the advisory instead
+    // (test_mode_diagnostic_inspector_e2e_tracking Decision §1). The fixture's
+    // entity ids are rekeyed per generation, so the entry is asserted
+    // structurally — severity group + `data-kind` discriminant + non-empty ids
+    // text — never on a hardcoded UUID (Decision §2).
     const diagnostics = page.getByTestId('test-mode-diagnostics');
     await expect(diagnostics, 'the diagnostics panel renders beside the scrubber').toBeVisible();
     await expect(
       page.getByTestId('test-mode-diagnostics-loading'),
       'the diagnostics fetch settles to a terminal state rather than hanging',
     ).toHaveCount(0, { timeout: 15_000 });
+
+    // At the head the advisory group renders E15's coherency-hint.
+    const advisory = page.getByTestId('test-mode-diagnostics-advisory');
+    await expect(advisory, 'the advisory severity group renders at the head position').toBeVisible({
+      timeout: 15_000,
+    });
+    const coherencyEntry = advisory.locator(
+      '[data-testid="test-mode-diagnostics-entry"][data-kind="coherency-hint"]',
+    );
+    await expect(
+      coherencyEntry,
+      "E15's cross-anchor contradicts edge surfaces as a coherency-hint advisory",
+    ).toBeVisible();
+    expect(
+      (
+        (await coherencyEntry.getByTestId('test-mode-diagnostics-entry-ids').textContent()) ?? ''
+      ).trim(),
+      'the coherency-hint entry renders its affected ids verbatim',
+    ).not.toBe('');
+    // The live route means the panel renders the real result — never its error
+    // readout, the unknown-kind fallback, or the empty state at the head.
+    await expect(page.getByTestId('test-mode-diagnostics-fallback')).toHaveCount(0);
+    await expect(page.getByTestId('test-mode-diagnostics-error')).toHaveCount(0);
+    await expect(page.getByTestId('test-mode-diagnostics-empty')).toHaveCount(0);
 
     // (b) The surface opens at the head: next is disabled, prev is enabled.
     const head = Number(await status.getAttribute('data-head'));
@@ -177,6 +204,17 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     await expect(page.getByTestId('test-mode-changes-baseline')).toBeVisible();
     await expect(nodesAdded).toHaveCount(0);
     await expect(page.getByTestId('test-mode-changes-nodes-changed')).toHaveCount(0);
+
+    // (f) At the empty baseline the live endpoint returns `{ diagnostics: [] }`
+    // and the panel settles to its clean empty state — never an error. The
+    // head→0 transition (advisory entry present at head → empty here), driven
+    // only by moving the scrubber position, is the "tracks position" guarantee
+    // (test_mode_diagnostic_inspector_e2e_tracking Acceptance §3).
+    await expect(
+      page.getByTestId('test-mode-diagnostics-empty'),
+      'the diagnostics panel settles to its clean empty state at position 0',
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('test-mode-diagnostics-error')).toHaveCount(0);
 
     // (c) Inherited snapshot-jump debt: the snapshot list renders the
     // walkthrough's snapshot row; clicking it jumps the scrubber to the

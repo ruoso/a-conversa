@@ -126,10 +126,39 @@ export interface WireSelfContradictsHint {
   nodeId: string;
 }
 
+/** Mirrors `AnnotationOfAnnotationChainHint`. */
+export interface WireAnnotationOfAnnotationChainHint {
+  kind: 'annotation-of-annotation-chain';
+  edgeId: string;
+  sourceAnnotationId: string;
+  targetAnnotationId: string;
+  incomingEdgeId: string;
+}
+
+/** Mirrors `SelfReferentialAnnotationContradictsHint`. */
+export interface WireSelfReferentialAnnotationContradictsHint {
+  kind: 'self-referential-annotation-contradicts';
+  edgeId: string;
+  nodeId: string;
+  annotationId: string;
+}
+
+/** Mirrors `NonSelfReferentialAnnotationContradictsHint`. */
+export interface WireNonSelfReferentialAnnotationContradictsHint {
+  kind: 'non-self-referential-annotation-contradicts';
+  edgeId: string;
+  nodeId: string;
+  annotationId: string;
+  anchorNodeId: string;
+}
+
 export type WireCoherencyHint =
   | WireIncompleteWarrantMissingBridgesToHint
   | WireIncompleteWarrantMissingBridgesFromHint
-  | WireSelfContradictsHint;
+  | WireSelfContradictsHint
+  | WireAnnotationOfAnnotationChainHint
+  | WireSelfReferentialAnnotationContradictsHint
+  | WireNonSelfReferentialAnnotationContradictsHint;
 
 /** Mirrors server `CoherencyHintDiagnosticEntry`. */
 export interface WireCoherencyHintDiagnostic {
@@ -230,6 +259,12 @@ function coherencyHintIdentityKey(hint: WireCoherencyHint): string {
       return `coherency-hint\0incomplete-warrant-missing-bridges-from\0${hint.warrantNodeId}\0${hint.claimNodeId}`;
     case 'self-contradicts':
       return `coherency-hint\0self-contradicts\0${hint.edgeId}`;
+    case 'annotation-of-annotation-chain':
+      return `coherency-hint\0annotation-of-annotation-chain\0${hint.edgeId}`;
+    case 'self-referential-annotation-contradicts':
+      return `coherency-hint\0self-referential-annotation-contradicts\0${hint.edgeId}`;
+    case 'non-self-referential-annotation-contradicts':
+      return `coherency-hint\0non-self-referential-annotation-contradicts\0${hint.edgeId}`;
   }
 }
 
@@ -280,6 +315,18 @@ function coherencyHintAffectedEntities(hint: WireCoherencyHint): {
       return { nodes: [hint.warrantNodeId, hint.claimNodeId], edges: [] };
     case 'self-contradicts':
       return { nodes: [hint.nodeId], edges: [hint.edgeId] };
+    case 'annotation-of-annotation-chain':
+      return {
+        nodes: [hint.sourceAnnotationId, hint.targetAnnotationId],
+        edges: [hint.edgeId, hint.incomingEdgeId],
+      };
+    case 'self-referential-annotation-contradicts':
+      return { nodes: [hint.nodeId, hint.annotationId], edges: [hint.edgeId] };
+    case 'non-self-referential-annotation-contradicts':
+      return {
+        nodes: [hint.nodeId, hint.annotationId, hint.anchorNodeId],
+        edges: [hint.edgeId],
+      };
   }
 }
 

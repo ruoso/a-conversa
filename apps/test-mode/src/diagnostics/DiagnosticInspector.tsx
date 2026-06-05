@@ -76,6 +76,12 @@ function coherencyHintIds(hint: WireCoherencyHint): readonly string[] {
       return [hint.warrantNodeId, hint.claimNodeId];
     case 'self-contradicts':
       return [hint.edgeId, hint.nodeId];
+    case 'annotation-of-annotation-chain':
+      return [hint.edgeId, hint.sourceAnnotationId, hint.targetAnnotationId, hint.incomingEdgeId];
+    case 'self-referential-annotation-contradicts':
+      return [hint.edgeId, hint.nodeId, hint.annotationId];
+    case 'non-self-referential-annotation-contradicts':
+      return [hint.edgeId, hint.nodeId, hint.annotationId, hint.anchorNodeId];
     default:
       return [];
   }

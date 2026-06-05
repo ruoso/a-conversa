@@ -168,6 +168,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or methodology vocabulary accuracy. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review.
 - **Suggested resolution**: when the v1 surfaces are string-complete, review the `testMode.changes.*` block in `packages/i18n-catalogs/src/catalogs/pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
 
+### 2026-06-05 — Flaky pglite WASM JIT crash under Node 24.15.0 during cucumber init
+
+- **Source**: fixer sub-agent for `replay_test.test_mode.test_mode_diagnostic_inspector_e2e_tracking` (attempt 1 return summary).
+- **Question**: a transient `Check failed: jit_page_->allocations_.erase(addr) == 1` fatal V8 JIT/WASM crash aborted the cucumber run during pglite WASM init on Node 24.15.0 — same JIT/WASM teardown race as the 2026-06-03 entry (tsc -b context) but triggered in the cucumber runner. The re-run passed (317/317 scenarios). Should we pin Node to a stable LTS (e.g. 22.x) or add a cucumber retry wrapper to tolerate flakes?
+- **Why parked**: the crash is non-deterministic and unrelated to any source change (identical code, different timing). The choice between pinning Node and adding a retry wrapper is a maintenance-cost trade-off requiring human judgment. See also the 2026-06-03 entry "Intermittent V8 JIT/WASM teardown SIGABRT under Node 24 during workspace tsc -b" — same root cause, different host process.
+- **Suggested resolution**: if the JIT/WASM crash recurs more than once or twice in CI, pin Node to 22.x LTS or add `--retry 1` to the cucumber CLI config in the affected `package.json` scripts. If it does not recur, close this item.
+
 ### 2026-06-05 — i18n native review — testMode.diagnosticInspector.* block (pt-BR, es-419)
 
 - **Source**: closer for `replay_test.test_mode.test_mode_diagnostic_inspector`.

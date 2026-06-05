@@ -214,6 +214,13 @@ task shell_package "Shell package (@aconversa/shell)" {
     ->8-
   }
 
+  task coherency_hint_wire_mirror_exhaustiveness "Add TypeScript exhaustiveness guard to WireCoherencyHint switch in diagnostic-highlights.ts to prevent server↔shell kind drift" {
+    effort 0.5d
+    allocate team
+    depends !shell_diagnostic_highlights_extract
+    note "Source of debt: replay_test.test_mode.test_mode_diagnostic_inspector_e2e_tracking (2026-06-05). The shell's WireCoherencyHint union silently lagged the server's CoherencyHint union by three kinds (non-self-referential-annotation-contradicts, annotation-contradiction-relieved, circular-reasoning-contradiction); the mismatch caused a Playwright e2e timeout. Fix: add a TypeScript exhaustive never-default to the coherencyHintIds switch so future server hint kind additions produce a compile error rather than a silent runtime no-op."
+  }
+
   task shared_shell_extract_merge_slots_and_derive_slot_occupants "Extract mergeSlots + deriveSlotOccupants helpers into @a-conversa/shell once the audience view becomes the third caller" {
     effort 0.5d
     allocate team
