@@ -82,8 +82,18 @@ function coherencyHintIds(hint: WireCoherencyHint): readonly string[] {
       return [hint.edgeId, hint.nodeId, hint.annotationId];
     case 'non-self-referential-annotation-contradicts':
       return [hint.edgeId, hint.nodeId, hint.annotationId, hint.anchorNodeId];
-    default:
+    default: {
+      // Exhaustiveness guard: a new `WireCoherencyHint` kind makes this
+      // `never` assignment a compile error, so the missing `case` is
+      // caught at build time instead of silently swallowed (the
+      // `default: return []` here is exactly what masked the
+      // 2026-06-05 e2e timeout). The runtime tail stays defensive: this
+      // is a read-only inspector and `hint` may carry genuinely-untyped
+      // server-drift data, which must not white-screen the panel.
+      const _exhaustive: never = hint;
+      void _exhaustive;
       return [];
+    }
   }
 }
 
@@ -100,8 +110,16 @@ function affectedIds(entry: WireDiagnostic): readonly string[] {
       return [entry.nodeId];
     case 'coherency-hint':
       return coherencyHintIds(entry.hint);
-    default:
+    default: {
+      // Exhaustiveness guard over `WireDiagnostic['kind']` (see
+      // `coherencyHintIds`). A new top-level wire kind without a `case`
+      // fails to compile; genuinely-untyped runtime drift still renders
+      // safely (no ids) rather than crashing the read-only panel — the
+      // `'other'` fallback group surfaces the raw discriminant.
+      const _exhaustive: never = entry;
+      void _exhaustive;
       return [];
+    }
   }
 }
 

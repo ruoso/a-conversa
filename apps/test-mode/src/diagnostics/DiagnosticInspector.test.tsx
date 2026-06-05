@@ -186,6 +186,99 @@ describe('DiagnosticInspector — position change + stale guard', () => {
   });
 });
 
+describe('DiagnosticInspector — every coherency-hint kind routes its affected ids', () => {
+  // Refinement: tasks/refinements/shell-package/coherency_hint_wire_mirror_exhaustiveness.md
+  // The panel's `coherencyHintIds` switch dropped its silent `default: return []`
+  // (the catch-all that swallowed `non-self-referential-annotation-contradicts`
+  // and timed out the 2026-06-05 e2e). This pins that all six kinds render a
+  // non-empty affected-ids list — in particular the kind that regressed.
+  const HINT_W = '00000000-0000-4000-8000-0000000000a1';
+  const HINT_D = '00000000-0000-4000-8000-0000000000a2';
+  const HINT_C = '00000000-0000-4000-8000-0000000000a3';
+  const HINT_E = '00000000-0000-4000-8000-0000000000a4';
+  const HINT_N = '00000000-0000-4000-8000-0000000000a5';
+  const HINT_A = '00000000-0000-4000-8000-0000000000a6';
+  const HINT_SA = '00000000-0000-4000-8000-0000000000a7';
+  const HINT_TA = '00000000-0000-4000-8000-0000000000a8';
+  const HINT_IE = '00000000-0000-4000-8000-0000000000a9';
+  const HINT_ANCHOR = '00000000-0000-4000-8000-0000000000aa';
+
+  const HINTS: ReadonlyArray<{
+    readonly hint: Record<string, unknown>;
+    readonly expectedIds: readonly string[];
+  }> = [
+    {
+      hint: {
+        kind: 'incomplete-warrant-missing-bridges-to',
+        warrantNodeId: HINT_W,
+        dataNodeId: HINT_D,
+      },
+      expectedIds: [HINT_W, HINT_D],
+    },
+    {
+      hint: {
+        kind: 'incomplete-warrant-missing-bridges-from',
+        warrantNodeId: HINT_W,
+        claimNodeId: HINT_C,
+      },
+      expectedIds: [HINT_W, HINT_C],
+    },
+    {
+      hint: { kind: 'self-contradicts', edgeId: HINT_E, nodeId: HINT_N },
+      expectedIds: [HINT_E, HINT_N],
+    },
+    {
+      hint: {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: HINT_E,
+        sourceAnnotationId: HINT_SA,
+        targetAnnotationId: HINT_TA,
+        incomingEdgeId: HINT_IE,
+      },
+      expectedIds: [HINT_E, HINT_SA, HINT_TA, HINT_IE],
+    },
+    {
+      hint: {
+        kind: 'self-referential-annotation-contradicts',
+        edgeId: HINT_E,
+        nodeId: HINT_N,
+        annotationId: HINT_A,
+      },
+      expectedIds: [HINT_E, HINT_N, HINT_A],
+    },
+    {
+      hint: {
+        kind: 'non-self-referential-annotation-contradicts',
+        edgeId: HINT_E,
+        nodeId: HINT_N,
+        annotationId: HINT_A,
+        anchorNodeId: HINT_ANCHOR,
+      },
+      expectedIds: [HINT_E, HINT_N, HINT_A, HINT_ANCHOR],
+    },
+  ];
+
+  for (const { hint, expectedIds } of HINTS) {
+    it(`renders the affected ids for coherency-hint / ${String(hint.kind)}`, async () => {
+      global.fetch = vi.fn(() =>
+        Promise.resolve(jsonResponse({ diagnostics: [{ kind: 'coherency-hint', hint }] })),
+      );
+
+      render(<DiagnosticInspector sessionId={SESSION} position={11} />);
+
+      const advisory = await screen.findByTestId('test-mode-diagnostics-advisory');
+      const ids = advisory.querySelector('[data-testid="test-mode-diagnostics-entry-ids"]');
+      expect(ids).not.toBeNull();
+      expect(ids?.textContent ?? '').not.toBe('');
+      for (const id of expectedIds) {
+        expect(advisory.textContent).toContain(id);
+      }
+      // No silent swallow: the entry never lands in the "other" fallback group.
+      expect(screen.queryByTestId('test-mode-diagnostics-fallback')).toBeNull();
+    });
+  }
+});
+
 describe('DiagnosticInspector — unknown kind', () => {
   it('renders a generic fallback row without throwing', async () => {
     global.fetch = vi.fn(() =>

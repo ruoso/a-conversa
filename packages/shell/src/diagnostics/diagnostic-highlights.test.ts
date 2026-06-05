@@ -17,6 +17,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
+import type { WireCoherencyHint } from './diagnostic-highlights.js';
 
 import {
   affectedEntities,
@@ -208,6 +209,158 @@ describe('diagnosticIdentityKey — round-trip parity with the server', () => {
     expect(diagnosticIdentityKey(self1)).toBe('coherency-hint\0self-contradicts\0e-1');
     expect(diagnosticIdentityKey(to1)).not.toBe(diagnosticIdentityKey(self1));
     expect(diagnosticIdentityKey(from1)).not.toBe(diagnosticIdentityKey(self1));
+  });
+});
+
+// ---------------------------------------------------------------
+// Exhaustiveness guard — coherency_hint_wire_mirror_exhaustiveness.
+// ---------------------------------------------------------------
+//
+// Refinement: tasks/refinements/shell-package/coherency_hint_wire_mirror_exhaustiveness.md
+//   The four `WireDiagnostic` / `WireCoherencyHint` switches in
+//   `diagnostic-highlights.ts` carry an explicit `never`-default. These
+//   pins assert (a) every one of the six known hint kinds is routed to a
+//   non-empty key + entity projection (the positive contract) and (b)
+//   the guard bites — a hypothetical seventh kind fails to type-check at
+//   the `never`-default (the negative contract, checked by `tsc` via
+//   `@ts-expect-error`).
+
+/** Wrap a `WireCoherencyHint` in a `coherency-hint` `DiagnosticPayload`. */
+function coherencyHintPayload(hint: WireCoherencyHint): DiagnosticPayload {
+  return {
+    sessionId: SESSION,
+    kind: 'coherency-hint',
+    severity: 'advisory',
+    status: 'fired',
+    sequence: 9,
+    diagnostic: { kind: 'coherency-hint', hint },
+  };
+}
+
+/** One fixture per `WireCoherencyHint` kind (all six), with the exact
+ *  identity key and affected-entity projection each must produce. */
+const ALL_COHERENCY_HINTS: ReadonlyArray<{
+  readonly hint: WireCoherencyHint;
+  readonly key: string;
+  readonly nodes: readonly string[];
+  readonly edges: readonly string[];
+}> = [
+  {
+    hint: {
+      kind: 'incomplete-warrant-missing-bridges-to',
+      warrantNodeId: 'w-1',
+      dataNodeId: 'd-1',
+    },
+    key: 'coherency-hint\0incomplete-warrant-missing-bridges-to\0w-1\0d-1',
+    nodes: ['w-1', 'd-1'],
+    edges: [],
+  },
+  {
+    hint: {
+      kind: 'incomplete-warrant-missing-bridges-from',
+      warrantNodeId: 'w-1',
+      claimNodeId: 'c-1',
+    },
+    key: 'coherency-hint\0incomplete-warrant-missing-bridges-from\0w-1\0c-1',
+    nodes: ['w-1', 'c-1'],
+    edges: [],
+  },
+  {
+    hint: { kind: 'self-contradicts', edgeId: 'e-1', nodeId: 'n-1' },
+    key: 'coherency-hint\0self-contradicts\0e-1',
+    nodes: ['n-1'],
+    edges: ['e-1'],
+  },
+  {
+    hint: {
+      kind: 'annotation-of-annotation-chain',
+      edgeId: 'e-1',
+      sourceAnnotationId: 'sa-1',
+      targetAnnotationId: 'ta-1',
+      incomingEdgeId: 'ie-1',
+    },
+    key: 'coherency-hint\0annotation-of-annotation-chain\0e-1',
+    nodes: ['sa-1', 'ta-1'],
+    edges: ['e-1', 'ie-1'],
+  },
+  {
+    hint: {
+      kind: 'self-referential-annotation-contradicts',
+      edgeId: 'e-1',
+      nodeId: 'n-1',
+      annotationId: 'a-1',
+    },
+    key: 'coherency-hint\0self-referential-annotation-contradicts\0e-1',
+    nodes: ['n-1', 'a-1'],
+    edges: ['e-1'],
+  },
+  {
+    hint: {
+      kind: 'non-self-referential-annotation-contradicts',
+      edgeId: 'e-1',
+      nodeId: 'n-1',
+      annotationId: 'a-1',
+      anchorNodeId: 'anc-1',
+    },
+    key: 'coherency-hint\0non-self-referential-annotation-contradicts\0e-1',
+    nodes: ['n-1', 'a-1', 'anc-1'],
+    edges: ['e-1'],
+  },
+];
+
+describe('WireCoherencyHint exhaustiveness — every known kind is routed', () => {
+  it('covers all six WireCoherencyHint kinds (no silent default swallows one)', () => {
+    expect(ALL_COHERENCY_HINTS).toHaveLength(6);
+    expect(new Set(ALL_COHERENCY_HINTS.map((f) => f.hint.kind)).size).toBe(6);
+  });
+
+  for (const fixture of ALL_COHERENCY_HINTS) {
+    it(`${fixture.hint.kind} → kind-prefixed non-empty key + non-empty affected entities`, () => {
+      const payload = coherencyHintPayload(fixture.hint);
+
+      const key = diagnosticIdentityKey(payload);
+      expect(key).toBe(fixture.key);
+      expect(key.length).toBeGreaterThan(0);
+      expect(key.startsWith('coherency-hint\0')).toBe(true);
+
+      const entities = affectedEntities(payload);
+      expect(entities.nodes).toEqual(fixture.nodes);
+      expect(entities.edges).toEqual(fixture.edges);
+      // Every coherency hint touches at least one entity.
+      expect(entities.nodes.length + entities.edges.length).toBeGreaterThan(0);
+    });
+  }
+
+  it('the guard bites — a hypothetical seventh kind fails to type-check at the never-default', () => {
+    type ExtendedHintKind = WireCoherencyHint['kind'] | 'hypothetical-future-kind';
+
+    // A local mirror of the production switch over an *extended* union: the
+    // six real cases route, and the extra 'hypothetical-future-kind' falls
+    // to the default. The `@ts-expect-error` asserts the `never` assignment
+    // refuses to compile while the extra member is unhandled — if the guard
+    // ever stopped catching drift (the member narrowed to `never`), the
+    // assignment would compile, the suppression would go unused, and `tsc`
+    // would fail the build. That is the regression this pins.
+    function route(kind: ExtendedHintKind): string {
+      switch (kind) {
+        case 'incomplete-warrant-missing-bridges-to':
+        case 'incomplete-warrant-missing-bridges-from':
+        case 'self-contradicts':
+        case 'annotation-of-annotation-chain':
+        case 'self-referential-annotation-contradicts':
+        case 'non-self-referential-annotation-contradicts':
+          return kind;
+        default: {
+          // @ts-expect-error — 'hypothetical-future-kind' is not `never`, so
+          // this assignment must fail to compile (proving the guard's value).
+          const _exhaustive: never = kind;
+          return String(_exhaustive);
+        }
+      }
+    }
+
+    expect(route('self-contradicts')).toBe('self-contradicts');
+    expect(route('hypothetical-future-kind')).toBe('hypothetical-future-kind');
   });
 });
 

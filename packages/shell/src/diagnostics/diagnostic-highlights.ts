@@ -225,6 +225,22 @@ export const EMPTY_DIAGNOSTIC_HIGHLIGHTS: DiagnosticHighlightIndex = Object.free
 // impossible.
 
 /**
+ * Compile-time exhaustiveness guard for the `WireDiagnostic` /
+ * `WireCoherencyHint` switches below. Every switch over these
+ * discriminated unions routes its `default` here: the `never` parameter
+ * makes adding a wire kind without a matching `case` a build error at
+ * each consumer (predecessor Decision §5 accepted that this mirror can
+ * drift from the server union; this turns the second drift class —
+ * "Wire union grows, a switch lags" — into a `tsc` failure instead of a
+ * silent no-op). Unreachable for the six known kinds; throws if ever
+ * hit at runtime. Reuses the in-tree idiom at
+ * `apps/moderator/src/graph/resolutionPlan.ts:196`.
+ */
+function assertNever(value: never): never {
+  throw new Error(`diagnostic-highlights: unrouted wire kind ${JSON.stringify(value)}`);
+}
+
+/**
  * Compute the canonical identity key for a `DiagnosticPayload`. MUST
  * produce the same string as the server's `identityKeyFor` for the
  * same canonical diagnostic — a drift breaks `fired` / `cleared`
@@ -248,6 +264,8 @@ export function diagnosticIdentityKey(payload: DiagnosticPayload): string {
       return `dangling-claim\0${diagnostic.nodeId}`;
     case 'coherency-hint':
       return coherencyHintIdentityKey(diagnostic.hint);
+    default:
+      return assertNever(diagnostic);
   }
 }
 
@@ -265,6 +283,8 @@ function coherencyHintIdentityKey(hint: WireCoherencyHint): string {
       return `coherency-hint\0self-referential-annotation-contradicts\0${hint.edgeId}`;
     case 'non-self-referential-annotation-contradicts':
       return `coherency-hint\0non-self-referential-annotation-contradicts\0${hint.edgeId}`;
+    default:
+      return assertNever(hint);
   }
 }
 
@@ -301,6 +321,8 @@ export function affectedEntities(payload: DiagnosticPayload): {
       return { nodes: [diagnostic.nodeId], edges: [] };
     case 'coherency-hint':
       return coherencyHintAffectedEntities(diagnostic.hint);
+    default:
+      return assertNever(diagnostic);
   }
 }
 
@@ -327,6 +349,8 @@ function coherencyHintAffectedEntities(hint: WireCoherencyHint): {
         nodes: [hint.nodeId, hint.annotationId, hint.anchorNodeId],
         edges: [hint.edgeId],
       };
+    default:
+      return assertNever(hint);
   }
 }
 

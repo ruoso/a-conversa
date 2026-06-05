@@ -182,6 +182,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or methodology vocabulary accuracy. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: when the v1 surfaces are string-complete, review the `testMode.diagnosticInspector.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
 
+### 2026-06-05 — Promote `WireCoherencyHint` shapes + `HintKind` to `@a-conversa/shared-types`?
+
+- **Source**: closer for `shell_package.coherency_hint_wire_mirror_exhaustiveness` (Decision §3).
+- **Question**: should the server's `HintKind` union and the matching `WireCoherencyHint` member interfaces be promoted to `@a-conversa/shared-types` so server and shell import one canonical union, making shell↔server drift structurally impossible (obsoleting both the exhaustiveness guard's residual gap and the `coherency_hint_server_kind_parity_test` leaf)?
+- **Why parked**: this is a larger architectural refactor than a 0.5d task — it touches the server's diagnostics emission, requires a new `@a-conversa/shared-types` entry, and is exactly the shared-types promotion the predecessor's Decision §5 explicitly declined to pre-register (it warrants its own ADR). Not agent-resolvable without a deliberate architectural call.
+- **Suggested resolution**: if and when the team decides to grow `@a-conversa/shared-types`, include `HintKind` + `WireCoherencyHint` in that scope. If the parity test (`coherency_hint_server_kind_parity_test`) proves insufficient (e.g. a second wire union drifts), revisit this decision. Until then the parity test is the cost-effective boundary.
+
 ### 2026-06-05 — Reconcile ADR 0026's `replay-test` reservation with the `test-mode` / `replay_ui` split
 
 - **Source**: closer for `replay_test.test_mode.test_mode_app` (Decision §1).
