@@ -83,17 +83,24 @@ export function LandingRoute(): ReactElement {
         left exactly as the demo leaves shipped it (`landing_hero_and_method`
         constraint 3); this task only positions the narrative sections around
         it. Cross-breakpoint layout is owned by `landing_responsive_a11y`.
+
+        At `lg` the section takes a *definite* viewport height
+        (`100dvh` minus the container's 3rem vertical padding) rather than a
+        fixed `rem` floor, so the graph — `flex-1` inside the demo — grows to
+        fill the screen height. A definite height (not just `min-h`) is what
+        lets the nested `h-full` chain resolve so the canvas actually expands;
+        `min-h-[36rem]` stays as the short-viewport floor.
       */}
         <section
           data-testid="landing-walkthrough"
           aria-label={t('landing.demo.embedRegionLabel')}
-          className="min-h-[36rem] lg:min-h-[44rem]"
+          className="min-h-[36rem] lg:h-[calc(100dvh-3rem)]"
         >
           <Suspense
             fallback={
               <div
                 data-testid="walkthrough-demo-loading"
-                className="flex min-h-[36rem] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 lg:min-h-[44rem]"
+                className="flex min-h-[36rem] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 lg:h-[calc(100dvh-3rem)]"
               >
                 {t('auth.login.checking')}
               </div>
