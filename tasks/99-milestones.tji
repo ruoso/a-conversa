@@ -97,7 +97,7 @@ task milestones "Milestones" {
 
   task m_audits "M8-audits: Post-implementation audits cleared" {
     milestone
-    depends post_implementation_audits
+    depends post_implementation_audits, moderator_ui.mod_keyboard_shortcuts, participant_ui.part_diagnostics_view, participant_ui.part_history_view, audience.aud_segment_markers, participant_ui.part_graph_view.part_e2e_user_pool_expansion_v2
     note "Gate-check / deferred-until-trigger leaves (see tasks/95-post-implementation-audits.tji) are all resolved — each has either fired its trigger and shipped, or been descoped. These leaves are parked out of the active M0–M8 work because the orchestrator can only re-defer them until their structural trigger (a second/third caller, an upstream decision) materialises; grouping them here keeps them tracked without re-surfacing them as ready work every cycle. Does NOT gate M9 — production readiness does not depend on these refactors landing."
   }
 
@@ -109,7 +109,7 @@ task milestones "Milestones" {
 
   task m_first_show_recorded "M10: First YouTube show recorded" {
     milestone
-    depends !m_replay_mvp, !m_deployment_ready, moderator_ui.mod_keyboard_shortcuts, participant_ui.part_diagnostics_view, participant_ui.part_history_view, audience.aud_segment_markers, participant_ui.part_graph_view.part_e2e_user_pool_expansion_v2
+    depends !m_replay_mvp, !m_deployment_ready
     note "The proof-of-concept YouTube show is recorded using the platform end-to-end. Validates the format on real participants and an audience. Show-readiness polish (operator keyboard shortcuts, participant diagnostics + history views, audience segment/chapter markers) gates this milestone — not v1-MVP-essential, but wanted before recording a real show."
   }
 }
