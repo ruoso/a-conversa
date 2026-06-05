@@ -50,6 +50,7 @@ export default function App(): ReactElement {
       <Route path="/m/*" element={<SurfaceHost surfaceId="moderator" routerBasePath="/m" />} />
       <Route path="/p/*" element={<SurfaceHost surfaceId="participant" routerBasePath="/p" />} />
       <Route path="/a/*" element={<SurfaceHost surfaceId="audience" routerBasePath="/a" />} />
+      <Route path="/t/*" element={<SurfaceHost surfaceId="test-mode" routerBasePath="/t" />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -10,6 +10,7 @@
     { "path": "apps/server" },
     { "path": "apps/moderator" },
     { "path": "apps/participant" },
-    { "path": "apps/audience" }
+    { "path": "apps/audience" },
+    { "path": "apps/test-mode" }
   ]
 }

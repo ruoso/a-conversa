@@ -348,6 +348,8 @@
     "participant.myAgreementsPane.paneAriaLabel",
     "audience.placeholder.title",
     "audience.placeholder.body",
+    "testMode.placeholder.title",
+    "testMode.placeholder.body",
     "audience.privateSession.title",
     "audience.privateSession.body",
     "moderator.contextMenu.node.captureDefeater",

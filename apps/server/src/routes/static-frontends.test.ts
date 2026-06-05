@@ -186,6 +186,36 @@ describe('static-frontends plugin — root served at /', () => {
     expect(styleUrls[0]).toMatch(/^\/_surfaces\/audience\/assets\/audience-[A-Za-z0-9_-]+\.css$/);
   });
 
+  it('GET /_surfaces/manifest.json lists the test-mode surface with hash-busted URLs', async () => {
+    // The test-mode entry is the fourth wired surface (after moderator,
+    // participant, and audience). Per
+    // `tasks/refinements/replay_test/test_mode_app.md` the entry's
+    // filenames mirror the audience + participant + moderator shape —
+    // pin the same prefix + extension regex against the test-mode URL
+    // so a regression in the discovery or in the build's hashing fails
+    // here just like for the other three surfaces. The CI / dev story:
+    // `pnpm -F @a-conversa/test-mode build` is a prerequisite for this
+    // case.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/_surfaces/manifest.json',
+      headers: { accept: 'application/json' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(response.headers['cache-control']).toMatch(/no-cache/);
+    const body = response.json<{
+      surfaces?: { 'test-mode'?: { moduleUrl?: string; styleUrls?: string[] } };
+    }>();
+    expect(body.surfaces?.['test-mode']?.moduleUrl).toMatch(
+      /^\/_surfaces\/test-mode\/test-mode-[A-Za-z0-9_-]+\.js$/,
+    );
+    const styleUrls = body.surfaces?.['test-mode']?.styleUrls ?? [];
+    expect(styleUrls).toHaveLength(1);
+    expect(styleUrls[0]).toMatch(/^\/_surfaces\/test-mode\/assets\/test-mode-[A-Za-z0-9_-]+\.css$/);
+  });
+
   it('GET <discovered moderator module URL> returns the surface bundle', async () => {
     // The actual filename is unknown a priori (it carries a content
     // hash). Read the manifest, then fetch the URL it advertises.

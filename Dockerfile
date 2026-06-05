@@ -49,6 +49,7 @@ COPY apps/root/package.json          ./apps/root/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
+COPY apps/test-mode/package.json     ./apps/test-mode/package.json
 COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
@@ -126,6 +127,7 @@ COPY apps/root/package.json          ./apps/root/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
+COPY apps/test-mode/package.json     ./apps/test-mode/package.json
 COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
@@ -171,6 +173,7 @@ COPY --from=build /app/apps/root/dist              ./apps/root/dist
 COPY --from=build /app/apps/moderator/dist         ./apps/moderator/dist
 COPY --from=build /app/apps/participant/dist       ./apps/participant/dist
 COPY --from=build /app/apps/audience/dist          ./apps/audience/dist
+COPY --from=build /app/apps/test-mode/dist         ./apps/test-mode/dist
 
 # Drop privileges. The `node` user (uid 1000) ships with the official
 # image and owns nothing under /app — that's fine for the read-only

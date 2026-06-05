@@ -1,0 +1,25 @@
+/* Global stylesheet for the test-mode surface.
+ *
+ * Refinement: tasks/refinements/replay_test/test_mode_app.md
+ * ADRs:       0005 (Tailwind with shared tokens), 0026 (micro-frontend pivot).
+ *
+ * Imports Tailwind v4 utilities (the `@tailwindcss/vite` plugin in
+ * `vite.config.ts` compiles the bundle's class candidates). The body /
+ * html / #root reset claims the full viewport so the surface's future
+ * full-height layouts (the timeline scrubber + projected graph viewport)
+ * see real height.
+ */
+
+@import 'tailwindcss';
+
+/* Per tasks/refinements/shell-package/extract_facet_pill.md — Tailwind
+ * scans the shared shell source so PILL_*_CLASSNAME literals (and any
+ * other shell-side Tailwind class strings) get JIT'd. */
+@source '../../../packages/shell/src/**/*.{ts,tsx}';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

@@ -413,6 +413,29 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Test-mode skeleton e2e (replay_test.test_mode.test_mode_app,
+    // refinement `tasks/refinements/replay_test/test_mode_app.md`).
+    // Drives a logged-in browser to `/t/sessions/<uuid>` and asserts
+    // the test-mode surface's placeholder route renders, plus an
+    // unauthenticated-deflection scenario proving the
+    // `requiredAuthLevel: 'authenticated'` gate bounces an anonymous
+    // visitor to the host login. Mirrors the
+    // `chromium-participant-skeleton` shape — single locale en-US
+    // (cross-locale text is covered at the catalog-parity layer),
+    // `ignoreHTTPSErrors` for the OIDC redirect, and the bootstrap auth
+    // jar via `setup-auth`. Future test-mode leaves widen the
+    // `testMatch` the way `chromium-participant-skeleton` did.
+    {
+      name: 'chromium-test-mode-skeleton',
+      testMatch: /test-mode-skeleton-smoke\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Cross-surface lobby + start-debate spec — three real browser
     // contexts (alice + ben + maria) prove the moderator-lobby's
     // Enter-session click after both debaters self-claim through

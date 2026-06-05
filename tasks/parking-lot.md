@@ -161,3 +161,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: edge inheritance semantics on interpretive-split are a methodology product decision — should reading nodes start with the parent's relational context or be blank? No ADR records the intended behavior. Implementing inheritance without that decision risks encoding the wrong product contract.
 - **Suggested resolution**: confirm with the methodology owner whether reading nodes should inherit the parent's committed edges on split. If yes, spec a `methodology_interpretive_split_edge_inheritance` task covering the `propose.ts` edge-emission logic, `replay.ts` projection arm, frontend projectors in both canvases, and updated Playwright cover in `full-session-walkthrough.spec.ts` AC-5.
 
+### 2026-06-05 — Reconcile ADR 0026's `replay-test` reservation with the `test-mode` / `replay_ui` split
+
+- **Source**: closer for `replay_test.test_mode.test_mode_app` (Decision §1).
+- **Question**: ADR 0026 reserved the name `replay-test` for a single combined surface (`apps/replay-test/`, `/_surfaces/replay-test/`). The WBS split the stream into two: replay lives as a variant of the audience surface (`replay_ui`), and the standalone operator tool is named `test-mode`. ADR 0026's §2/§4 wording still references the old `replay-test` name. Should an Amendment line be appended to ADR 0026 to record that the `replay-test` reservation is superseded?
+- **Why parked**: doc-hygiene call — the split is correctly encoded in the WBS and in the refinement's Decision §1; the ADR amendment is a human authoring judgment (what the amendment should say, whether to update §2 and §4 or add a new §, etc.).
+- **Suggested resolution**: append an Amendment to `docs/adr/0026-micro-frontend-root-app.md` noting that the `replay-test` reservation is superseded by the `test-mode` / audience-variant split, referencing Decision §1 of this refinement.
+

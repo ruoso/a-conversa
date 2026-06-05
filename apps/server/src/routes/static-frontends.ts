@@ -191,6 +191,7 @@ export const ROOT_DIST_DIR_ENV = 'ROOT_DIST_DIR';
 export const MODERATOR_DIST_DIR_ENV = 'MODERATOR_DIST_DIR';
 export const PARTICIPANT_DIST_DIR_ENV = 'PARTICIPANT_DIST_DIR';
 export const AUDIENCE_DIST_DIR_ENV = 'AUDIENCE_DIST_DIR';
+export const TEST_MODE_DIST_DIR_ENV = 'TEST_MODE_DIST_DIR';
 
 /**
  * Compile-time location of this module. Used to resolve the default
@@ -245,6 +246,10 @@ export function resolveParticipantDistDir(env: NodeJS.ProcessEnv = process.env):
 
 export function resolveAudienceDistDir(env: NodeJS.ProcessEnv = process.env): string {
   return resolveWorkspaceDistDir(AUDIENCE_DIST_DIR_ENV, 'audience', env);
+}
+
+export function resolveTestModeDistDir(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveWorkspaceDistDir(TEST_MODE_DIST_DIR_ENV, 'test-mode', env);
 }
 
 /**
@@ -308,6 +313,19 @@ export function resolveDefaultSurfaces(
       moduleFilePattern: /^audience-[A-Za-z0-9_-]+\.js$/,
       styleFilePatterns: [/^assets\/audience-[A-Za-z0-9_-]+\.css$/],
       label: 'audience',
+    },
+    {
+      surfaceId: 'test-mode',
+      urlPrefix: '/_surfaces/test-mode/',
+      distDir: resolveTestModeDistDir(env),
+      // Vite library mode emits the entry as `test-mode-<hash>.js` at
+      // the dist root and the CSS as `assets/test-mode-<hash>.css` —
+      // see `apps/test-mode/vite.config.ts`. Same hash regex as the
+      // moderator + participant + audience (base64-url, tolerant of
+      // Rollup's hash-length tuning).
+      moduleFilePattern: /^test-mode-[A-Za-z0-9_-]+\.js$/,
+      styleFilePatterns: [/^assets\/test-mode-[A-Za-z0-9_-]+\.css$/],
+      label: 'test-mode',
     },
   ];
 }

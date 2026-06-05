@@ -1046,6 +1046,12 @@
       "body": "Esta sessão não está disponível para visitantes anônimos. Se você tem uma conta que pode vê-la, entre para tentar novamente."
     }
   },
+  "testMode": {
+    "placeholder": {
+      "title": "Modo de teste",
+      "body": "Carregando…"
+    }
+  },
   "snapshotList": {
     "regionAriaLabel": "Instantâneos da sessão",
     "loading": "Carregando instantâneos…",

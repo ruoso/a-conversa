@@ -1046,6 +1046,12 @@
       "body": "This session is not available to anonymous visitors. If you have an account that can view it, sign in to retry."
     }
   },
+  "testMode": {
+    "placeholder": {
+      "title": "Test mode",
+      "body": "Loading…"
+    }
+  },
   "snapshotList": {
     "regionAriaLabel": "Session snapshots",
     "loading": "Loading snapshots…",
