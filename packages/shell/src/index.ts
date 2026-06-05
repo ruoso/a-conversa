@@ -139,10 +139,13 @@ export {
 
 // ─── snapshot-list ───────────────────────────────────────────────────────
 export {
+  resolveSnapshotPosition,
+  SnapshotJumpList,
   SnapshotList,
   useSessionSnapshots,
   type SessionSnapshots,
   type SessionSnapshotsStatus,
+  type SnapshotJumpListProps,
   type SnapshotListProps,
   type SnapshotListStatus,
   type SnapshotRecord,

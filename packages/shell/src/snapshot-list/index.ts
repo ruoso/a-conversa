@@ -3,6 +3,8 @@
 // Refinement: tasks/refinements/replay_test/snapshot_list_ui.md
 
 export { SnapshotList, type SnapshotListProps, type SnapshotListStatus } from './SnapshotList.js';
+export { SnapshotJumpList, type SnapshotJumpListProps } from './SnapshotJumpList.js';
+export { resolveSnapshotPosition } from './resolveSnapshotPosition.js';
 export {
   useSessionSnapshots,
   type SessionSnapshots,
