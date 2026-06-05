@@ -392,6 +392,7 @@ task backend "Backend" {
     task get_at_position "GET /sessions/:id/state?position=... — projected state at log position" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.replay_primitive.project_at_position
     }
     task list_snapshots "GET /sessions/:id/snapshots" {

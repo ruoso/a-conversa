@@ -138,6 +138,48 @@ export async function readSessionEventsPage(
   return { events, nextCursor };
 }
 
+/** Parameters for a full-log read. */
+export interface ReadSessionEventLogParams {
+  /** Owning session id. */
+  readonly sessionId: string;
+}
+
+/**
+ * Read a session's entire event log in ascending `sequence` order
+ * (replay order), unpaginated.
+ *
+ * Where `readSessionEventsPage` serves the cursor-paginated HTTP log
+ * surface, this helper backs the replay endpoints that must hand the
+ * *whole* log to the replay primitive in one pass: `projectAtPosition`
+ * validates the requested position against the true head sequence
+ * (`replayHeadSequence(events)`), which needs every event, not just the
+ * prefix up to the position — reading a truncated slice would make an
+ * out-of-range position indistinguishable from the head. A single
+ * ascending `SELECT` (no `limit + 1` look-ahead, no cursor) is simpler
+ * than looping the paginated helper and is independently unit-testable.
+ *
+ * Rows map to the wire-ready camelCase `Event` envelope via the same
+ * `rowToEvent` mapping the paginated helper uses; an empty log returns
+ * `[]`. Per ADR 0021 the rows are trusted on read (validated on write).
+ *
+ * The caller is responsible for the visibility gate — this helper does
+ * not check who may see the session.
+ */
+export async function readSessionEventLog(
+  executor: SessionEventReadExecutor,
+  params: ReadSessionEventLogParams,
+): Promise<Event[]> {
+  const { sessionId } = params;
+  const result = await executor.query<SessionEventRow>(
+    `SELECT id, session_id, sequence, kind, actor, payload, created_at
+     FROM session_events
+     WHERE session_id = $1
+     ORDER BY sequence ASC`,
+    [sessionId],
+  );
+  return result.rows.map(rowToEvent);
+}
+
 /**
  * Snake-case row shape for a snapshot-marker read. A snapshot is a
  * regular `session_events` row with `kind = 'snapshot-created'`; its

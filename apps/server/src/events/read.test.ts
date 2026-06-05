@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 
 import {
+  readSessionEventLog,
   readSessionEventsPage,
   readSessionSnapshots,
   type SessionEventReadExecutor,
@@ -204,6 +205,71 @@ describe('readSessionEventsPage', () => {
 
       expect(page.events).toEqual([]);
       expect(page.nextCursor).toBeNull();
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+});
+
+describe('readSessionEventLog', () => {
+  it('returns the full log in ascending sequence order', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      const sessionId = await seedSessionWithEvents(db, 5);
+
+      const events = await readSessionEventLog(asExecutor(db), { sessionId });
+
+      expect(events.map((e) => e.sequence)).toEqual([1, 2, 3, 4, 5]);
+      // The mapped envelope is the wire shape: camelCase, ISO createdAt.
+      expect(events[0]?.sessionId).toBe(sessionId);
+      expect(events[0]?.kind).toBe('proposal');
+      expect(typeof events[0]?.createdAt).toBe('string');
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+
+  it('returns an empty array for a session with no events', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      const sessionId = await seedSessionWithEvents(db, 0);
+
+      const events = await readSessionEventLog(asExecutor(db), { sessionId });
+
+      expect(events).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+
+  it('reads by session id alone — it does not gate visibility', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+      // A private session is invisible at the HTTP layer, but the read
+      // helper returns its events regardless: the visibility gate is the
+      // caller's responsibility (it runs before this read).
+      const userRes = await db.query<{ id: string }>(
+        `INSERT INTO users (oauth_subject, screen_name) VALUES ($1, $2) RETURNING id`,
+        ['authelia:log-priv', 'log-priv-user'],
+      );
+      const userId = userRes.rows[0]!.id;
+      const sessionRes = await db.query<{ id: string }>(
+        `INSERT INTO sessions (host_user_id, privacy, topic) VALUES ($1, 'private', $2) RETURNING id`,
+        [userId, 'private topic'],
+      );
+      const sessionId = sessionRes.rows[0]!.id;
+      await db.query(
+        `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+         VALUES ($1, 1, 'proposal', $2, $3::jsonb)`,
+        [sessionId, userId, JSON.stringify({ n: 1 })],
+      );
+
+      const events = await readSessionEventLog(asExecutor(db), { sessionId });
+
+      expect(events.map((e) => e.sequence)).toEqual([1]);
     } finally {
       await db.close();
     }

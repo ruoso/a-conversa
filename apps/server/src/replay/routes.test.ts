@@ -108,6 +108,47 @@ async function insertSnapshot(
   );
 }
 
+// Seed a minimal *projectable* event log — a valid sequence the replay
+// primitive can apply (session-created → participant-joined →
+// node-created), all actored by `hostId` (a real users row, satisfying
+// the `session_events.actor` FK). Unlike `insertEvents` (which seeds
+// opaque `proposal` rows for the raw-log read), these events must be
+// real so `projectAtPosition` builds a non-empty projection.
+// headSequence = 3; the node appears only at position >= 3.
+const PROJECTED_NODE_ID = '66666666-6666-4666-8666-666666666666';
+
+async function insertProjectableLog(db: PGlite, sessionId: string, hostId: string): Promise<void> {
+  const ev = async (
+    sequence: number,
+    kind: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> => {
+    await db.query(
+      `INSERT INTO session_events (session_id, sequence, kind, actor, payload)
+       VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      [sessionId, sequence, kind, hostId, JSON.stringify(payload)],
+    );
+  };
+  await ev(1, 'session-created', {
+    host_user_id: hostId,
+    privacy: 'public',
+    topic: 'public debate',
+    created_at: '2026-05-10T12:00:00Z',
+  });
+  await ev(2, 'participant-joined', {
+    user_id: hostId,
+    role: 'moderator',
+    screen_name: 'alice',
+    joined_at: '2026-05-10T12:00:01Z',
+  });
+  await ev(3, 'node-created', {
+    node_id: PROJECTED_NODE_ID,
+    wording: 'Claim A',
+    created_by: hostId,
+    created_at: '2026-05-10T12:00:02Z',
+  });
+}
+
 interface EventsBody {
   events?: Array<{ sequence?: number; sessionId?: string; payload?: { n?: number } }>;
   nextCursor?: number | null;
@@ -743,6 +784,286 @@ describe('GET /sessions/:id/snapshots/:snapshotId', () => {
     const response = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/snapshots/${SNAP_ONE}?after=2`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+});
+
+interface StateBody {
+  sessionId?: string;
+  sequence?: number;
+  projection?: {
+    lastAppliedSequence?: number;
+    sessionState?: string;
+    nodes?: unknown[];
+    participants?: unknown[];
+  };
+}
+
+describe('GET /sessions/:id/state', () => {
+  let db: PGlite;
+  let app: FastifyInstance;
+
+  const UNKNOWN_ID = '00000000-0000-4000-8000-ffffffff0001';
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await applyMigrations(db);
+    app = await __buildTestReplayApp({ pool: asPool(db), sessionTokenSecret: TEST_SECRET });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await db.close();
+  });
+
+  it('returns 200 + the projected state at position = headSequence for a visible caller', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertProjectableLog(db, sessionId, alice); // headSequence = 3
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=3`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<StateBody>();
+    expect(body.sessionId).toBe(sessionId);
+    // sequence === position === projection.lastAppliedSequence.
+    expect(body.sequence).toBe(3);
+    expect(body.projection?.lastAppliedSequence).toBe(3);
+    // The node created at seq 3 is present in the full-log projection.
+    expect(body.projection?.nodes?.length).toBe(1);
+    expect(body.projection?.participants?.length).toBe(1);
+  });
+
+  it('returns the empty baseline projection at position 0', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertProjectableLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<StateBody>();
+    expect(body.sequence).toBe(0);
+    expect(body.projection?.lastAppliedSequence).toBe(0);
+    expect(body.projection?.sessionState).toBe('open');
+    expect(body.projection?.nodes).toEqual([]);
+    expect(body.projection?.participants).toEqual([]);
+  });
+
+  it('returns the position-0 baseline for a brand-new session with no events', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'brand-new');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<StateBody>();
+    expect(body.sequence).toBe(0);
+    expect(body.projection?.lastAppliedSequence).toBe(0);
+    expect(body.projection?.nodes).toEqual([]);
+  });
+
+  it('returns a strict-prefix projection at a mid-log position (node not yet applied)', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertProjectableLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    // position = 2 applies session-created + participant-joined but NOT
+    // the node at seq 3.
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=2`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<StateBody>();
+    expect(body.sequence).toBe(2);
+    expect(body.projection?.lastAppliedSequence).toBe(2);
+    expect(body.projection?.nodes).toEqual([]);
+    expect(body.projection?.participants?.length).toBe(1);
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=0`,
+    });
+
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns 404 not-found when the session id does not exist', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${UNKNOWN_ID}/state?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const ben = await insertUser(db, 'authelia:ben', 'ben');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertProjectableLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: ben }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    // The existence-leak rule: 404, identical to the unknown-id case.
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 200 for a private session visible to its host', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertProjectableLog(db, sessionId, alice);
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=3`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<StateBody>();
+    expect(body.projection?.lastAppliedSequence).toBe(3);
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/not-a-uuid/state?position=0`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is missing', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is negative', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=-1`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 when position is non-integer', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=1.5`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 (out-of-range) when position > headSequence, carrying the valid range', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertProjectableLog(db, sessionId, alice); // headSequence = 3
+
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=99`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{
+      error?: { code?: string; position?: number; headSequence?: number };
+    }>();
+    expect(body.error?.code).toBe('validation-failed');
+    // The error carries the valid 0..headSequence range it computed.
+    expect(body.error?.position).toBe(99);
+    expect(body.error?.headSequence).toBe(3);
+  });
+
+  it('returns 400 when an unknown query key is present', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    const token = await signSessionToken({ sub: alice }, TEST_SECRET);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/state?position=0&bogus=1`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
 

@@ -33,8 +33,14 @@ import fp from 'fastify-plugin';
 import { ApiError } from '../errors.js';
 import { errorEnvelopeRef } from '../openapi.js';
 import { getDefaultPool, type DbPool } from '../db.js';
-import { readSessionEventsPage, readSessionSnapshots } from '../events/read.js';
+import {
+  readSessionEventLog,
+  readSessionEventsPage,
+  readSessionSnapshots,
+} from '../events/read.js';
+import { projectAtPosition, ReplayPositionError } from '../projection/at-position.js';
 import { canSeeSession } from '../sessions/visibility.js';
+import { serializeProjectionForWire } from '../ws/handlers/index.js';
 
 /**
  * Stable `$id` for the shared `EventEnvelope` schema — the wire-ready
@@ -224,6 +230,59 @@ export const sessionSnapshotsResponseRef = {
 } as const;
 
 /**
+ * Stable `$id` for the `SessionStateResponse` wrapper — the shape
+ * `GET /sessions/:id/state` returns: `{ sessionId, sequence, projection }`.
+ * Structurally identical (field names + structure) to the WS `snapshot`
+ * payload (`snapshotStatePayloadSchema` in `packages/shared-types`), so a
+ * consumer can reuse WS-snapshot handling code unchanged; the two are kept
+ * parallel rather than literally shared because the WS schema is Zod in a
+ * different validation system and this one feeds the OpenAPI generator.
+ */
+export const SESSION_STATE_RESPONSE_SCHEMA_ID = 'SessionStateResponse';
+
+export const sessionStateResponseSchema = {
+  $id: SESSION_STATE_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['sessionId', 'sequence', 'projection'],
+  additionalProperties: false,
+  properties: {
+    sessionId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The session the projection describes.',
+    },
+    sequence: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        'The log position the projection was replayed to — equal to the requested ' +
+        '`position` and to `projection.lastAppliedSequence`. `0` is the empty baseline ' +
+        '(pre-history); `N` is the state after the event whose `sequence === N`.',
+    },
+    projection: {
+      // Opaque on purpose — an open object, for the same reason the WS
+      // schema uses `z.unknown()`: the projection is built by a pure
+      // function over schema-validated events (ADR 0021), so re-validating
+      // its output is redundant and would couple the route to every facet
+      // field. The serializer's unit tests pin the inner wire shape; this
+      // schema keeps only the outer envelope honest.
+      type: 'object',
+      additionalProperties: true,
+      description:
+        'The materialized projection at `sequence`, with the in-memory `Projection` ' +
+        'class`s Maps flattened to plain objects — byte-identical to the WS `snapshot` ' +
+        'payload`s `projection` field (single source of truth: ' +
+        '`serializeProjectionForWire`).',
+    },
+  },
+} as const;
+
+/** The `$ref` clients use to point at the `SessionStateResponse` schema. */
+export const sessionStateResponseRef = {
+  $ref: `${SESSION_STATE_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Path-params schema for `:id`. A non-UUID `:id` is rejected with 400
  * `validation-failed` by the Fastify validator before the handler runs.
  */
@@ -306,6 +365,34 @@ const sessionSnapshotsQuerySchema = {
 } as const;
 
 /**
+ * Query-string schema for the projected-state read. `position` is the
+ * required event-sequence position to replay to; ajv coerces the query
+ * string (`"5" → 5`). A missing, non-integer, or negative `position` is
+ * rejected with 400 `validation-failed` by the validator. A position
+ * above the log's head sequence passes the schema but is rejected at
+ * replay time with a 400 (see the handler). `additionalProperties:
+ * false` documents the single-axis contract; the route-scoped
+ * `preValidation` hook is what actually rejects an unknown query key on
+ * the wire (ajv's `removeAdditional` would otherwise strip it silently).
+ */
+const sessionStateQuerySchema = {
+  type: 'object',
+  required: ['position'],
+  additionalProperties: false,
+  properties: {
+    position: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        'The log position to project to (event-sequence space). `0` returns the empty ' +
+        'baseline projection (pre-history); `N` returns the state after the event whose ' +
+        '`sequence === N`. Required — there is no implicit "current state" default. A ' +
+        'position above the log`s head sequence is rejected with 400 (out of range).',
+    },
+  },
+} as const;
+
+/**
  * Options accepted by `replayRoutesPlugin`. Mirrors the sessions
  * plugin's pool-injection contract: production passes `{}` and the
  * plugin lazily resolves the default pool on the first request; tests
@@ -346,6 +433,9 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
   }
   if (app.getSchema(SESSION_SNAPSHOTS_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionSnapshotsResponseSchema);
+  }
+  if (app.getSchema(SESSION_STATE_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionStateResponseSchema);
   }
 
   // Lazy DB-pool resolution — the first request triggers
@@ -625,6 +715,129 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
       }
 
       return reply.code(200).send(record);
+    },
+  );
+
+  app.get(
+    '/api/sessions/:id/state',
+    {
+      preHandler: app.authenticate,
+      // Only `position` is accepted. The schema's `additionalProperties:
+      // false` documents that, but Fastify's ajv runs `removeAdditional:
+      // true`, so an unknown query param is silently stripped rather than
+      // rejected. This route-scoped `preValidation` hook restores the 400
+      // the single-axis contract requires — same shape as the snapshot
+      // routes, but it preserves `position` (the one accepted key).
+      preValidation: async (request) => {
+        const unknownKeys = Object.keys(request.query as Record<string, unknown>).filter(
+          (key) => key !== 'position',
+        );
+        if (unknownKeys.length > 0) {
+          throw new ApiError(400, 'validation-failed', 'Request validation failed', {
+            issues: unknownKeys.map((key) => ({
+              keyword: 'additionalProperties',
+              instancePath: '',
+              schemaPath: '#/additionalProperties',
+              params: { additionalProperty: key },
+              message: 'must NOT have additional properties',
+            })),
+          });
+        }
+      },
+      schema: {
+        tags: ['replay'],
+        summary: "Fetch a session's projected state at a log position",
+        description:
+          'Returns the session`s materialized projection — the derived state — as it stood ' +
+          'after applying every event up to and including log position `?position=N`. Where ' +
+          '`GET /sessions/:id/events` returns the raw event log (the source of truth), this ' +
+          'endpoint returns the projected view: a thin HTTP wrapper over the replay ' +
+          'primitive (read the log, replay to `N`, serialize the `Projection`). The 200 body ' +
+          '`{ sessionId, sequence, projection }` is byte-identical in field names and ' +
+          'structure to the WS `snapshot` payload, so a consumer can reuse WS-snapshot ' +
+          'handling code unchanged; `sequence === position === projection.lastAppliedSequence`.' +
+          '\n\n' +
+          'Position is event-sequence space: `position = 0` returns the empty baseline ' +
+          'projection (pre-history — valid for any visible session, including a brand-new one ' +
+          'with no events); `position = N` returns the state after the event whose ' +
+          '`sequence === N`; `position = headSequence` returns the full-log projection. ' +
+          '`position` is required (no implicit "current state" default).\n\n' +
+          'Visibility is exactly the session`s own: public sessions are visible to every ' +
+          'authenticated user; private sessions only to the host or a current/past ' +
+          'participant. When the session does not exist OR exists but is invisible to the ' +
+          'caller, the server returns 404 `not-found` — the two cases are deliberately ' +
+          'indistinguishable to avoid leaking the existence of private sessions. The gate ' +
+          'runs before the log read, so a private session never reaches the replay.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
+          '`validation-failed` when `:id` is not a UUID, `position` is missing / non-integer ' +
+          '/ negative, an unknown query param is sent, or `position` is above the log`s head ' +
+          'sequence (out of range — the 400 carries the valid `0..headSequence` range).',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        querystring: sessionStateQuerySchema,
+        response: {
+          200: sessionStateResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — the middleware guarantees `authUser` is set on every
+      // request that reaches a handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+      // ajv coerced the query string to an integer >= 0 (the schema's job);
+      // an out-of-range position is still possible and is caught below.
+      const query = request.query as { position: number };
+      const { position } = query;
+
+      const pool = ensurePool();
+
+      // Visibility gate runs BEFORE the log read — an invisible session
+      // never reaches the read or the replay. Zero visibility → 404
+      // (whether the id is unused or exists-but-invisible, per the
+      // existence-leak rule). A session's projected state is exactly as
+      // visible as the session itself.
+      if (!(await canSeeSession(pool, sessionId, userId))) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      // Read the ENTIRE log ascending and hand it to the replay primitive.
+      // The whole log (not just the prefix up to `position`) is required:
+      // `projectAtPosition` validates `position` against the true head
+      // sequence, so a truncated read would make an out-of-range position
+      // indistinguishable from the head (refinement Decisions §2).
+      const events = await readSessionEventLog(pool, { sessionId });
+      try {
+        const projection = projectAtPosition(events, sessionId, position);
+        return reply.code(200).send({
+          sessionId,
+          sequence: position,
+          projection: serializeProjectionForWire(projection),
+        });
+      } catch (err) {
+        if (err instanceof ReplayPositionError) {
+          // The position is outside the log's range — a client-input
+          // error, not a server fault. Re-thrown as 400 carrying the valid
+          // `0..headSequence` range the error already computed.
+          throw new ApiError(400, 'validation-failed', err.message, {
+            position: err.position,
+            headSequence: err.headSequence,
+          });
+        }
+        throw err;
+      }
     },
   );
 };
