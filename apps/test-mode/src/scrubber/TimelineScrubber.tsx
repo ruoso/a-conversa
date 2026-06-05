@@ -36,6 +36,8 @@ import {
 } from '@a-conversa/shell';
 import { GraphView } from '@a-conversa/graph-view';
 
+import { EventInspector } from '../inspector/EventInspector';
+
 export interface TimelineScrubberProps {
   /** The session whose log is loaded — the `GraphView` instance key and the
    * `SnapshotJumpList` fetch key. */
@@ -148,6 +150,8 @@ export function TimelineScrubber({
         </h2>
         <SnapshotJumpList sessionId={sessionId} onJump={setPosition} />
       </section>
+
+      <EventInspector events={events} position={position} />
     </main>
   );
 }

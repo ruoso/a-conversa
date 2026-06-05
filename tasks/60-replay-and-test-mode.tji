@@ -103,6 +103,7 @@ task replay_test "Replay and test mode" {
     task test_mode_event_inspector "Inspect the event at the current scrubber position" {
       effort 1d
       allocate team
+      complete 100
       depends !test_mode_timeline_scrubber
     }
     task test_mode_changed_highlights "Highlight what changed at each scrubber step" {

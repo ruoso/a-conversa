@@ -1070,6 +1070,20 @@
       "snapshotsAriaLabel": "Ir a una instantánea",
       "snapshotsHeading": "Instantáneas"
     },
+    "inspector": {
+      "regionAriaLabel": "Inspector de eventos",
+      "heading": "Evento",
+      "sequenceLabel": "Secuencia",
+      "kindLabel": "Tipo",
+      "actorLabel": "Actor",
+      "createdAtLabel": "Creado el",
+      "idLabel": "ID del evento",
+      "sessionIdLabel": "ID de la sesión",
+      "payloadLabel": "Contenido",
+      "systemActor": "sistema",
+      "baselineTitle": "Línea base",
+      "baselineBody": "Antes del primer evento — ningún evento en esta posición."
+    },
     "synthetic": {
       "regionAriaLabel": "Escenarios de sesión sintética",
       "heading": "Sesiones sintéticas",

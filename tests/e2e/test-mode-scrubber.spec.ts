@@ -71,6 +71,13 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     const prev = page.getByTestId('test-mode-scrubber-prev');
     const next = page.getByTestId('test-mode-scrubber-next');
 
+    // (d) The event inspector mounts as a sibling section reading the same
+    // lifted position (test_mode_event_inspector §4).
+    const inspector = page.getByTestId('test-mode-inspector');
+    const inspectorSeq = page.getByTestId('test-mode-inspector-sequence');
+    const inspectorKind = page.getByTestId('test-mode-inspector-kind');
+    await expect(inspector, 'the inspector section renders beside the scrubber').toBeVisible();
+
     // (b) The surface opens at the head: next is disabled, prev is enabled.
     const head = Number(await status.getAttribute('data-head'));
     expect(head, 'the walkthrough head sequence is a deep, non-baseline position').toBeGreaterThan(
@@ -80,10 +87,20 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     await expect(next).toBeDisabled();
     await expect(prev).toBeEnabled();
 
+    // (d) At the head the inspector shows the head event: its sequence tracks
+    // the position and its raw `kind` discriminant renders.
+    await expect(inspectorSeq).toHaveText(String(head));
+    await expect(page.getByTestId('test-mode-inspector-payload')).toBeVisible();
+    const headKind = (await inspectorKind.textContent())?.trim() ?? '';
+    expect(headKind, 'the head event renders a non-empty kind discriminant').not.toBe('');
+
     // (a) Stepping prev moves the position-status readout back by one.
     await prev.click();
     await expect(status).toHaveAttribute('data-position', String(head - 1));
     await expect(next).toBeEnabled();
+
+    // (d) The inspector tracks the step: it now shows the previous event.
+    await expect(inspectorSeq).toHaveText(String(head - 1));
 
     // Stepping next returns to the head, re-disabling next.
     await next.click();
@@ -97,6 +114,11 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     await expect(status).toHaveAttribute('data-position', '0');
     await expect(prev).toBeDisabled();
     await expect(next).toBeEnabled();
+
+    // (d) At the baseline stop the inspector shows its baseline readout (no
+    // event has sequence 0) and no envelope fields (§3).
+    await expect(page.getByTestId('test-mode-inspector-baseline')).toBeVisible();
+    await expect(inspectorSeq).toHaveCount(0);
 
     // (c) Inherited snapshot-jump debt: the snapshot list renders the
     // walkthrough's snapshot row; clicking it jumps the scrubber to the

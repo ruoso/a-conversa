@@ -1070,6 +1070,20 @@
       "snapshotsAriaLabel": "Jump to a snapshot",
       "snapshotsHeading": "Snapshots"
     },
+    "inspector": {
+      "regionAriaLabel": "Event inspector",
+      "heading": "Event",
+      "sequenceLabel": "Sequence",
+      "kindLabel": "Kind",
+      "actorLabel": "Actor",
+      "createdAtLabel": "Created at",
+      "idLabel": "Event ID",
+      "sessionIdLabel": "Session ID",
+      "payloadLabel": "Payload",
+      "systemActor": "system",
+      "baselineTitle": "Baseline",
+      "baselineBody": "Before the first event — no event at this position."
+    },
     "synthetic": {
       "regionAriaLabel": "Synthetic session scenarios",
       "heading": "Synthetic sessions",
