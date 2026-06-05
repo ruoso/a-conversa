@@ -225,6 +225,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task coherency_hint_server_kind_parity_test "Assert WireCoherencyHint['kind'] set equals server HintKind set to catch server-union-grows-but-Wire-mirror-lags drift" {
     effort 0.5d
     allocate team
+    complete 100
     depends !coherency_hint_wire_mirror_exhaustiveness
     note "Source of debt: tasks/refinements/shell-package/coherency_hint_wire_mirror_exhaustiveness.md (Residual gap / Decision §3). The exhaustiveness guard added in coherency_hint_wire_mirror_exhaustiveness closes Wire-union-grows-but-a-switch-lags drift but not server-union-grows-but-Wire-mirror-lags drift. This task closes the remaining gap: a committed type-level + value-level test in apps/test-mode asserting the shell's WireCoherencyHint['kind'] set is mutually exclusive-or-equal with the server's HintKind set (apps/server/src/diagnostics/coherency-hint-detection.ts:128). apps/test-mode is the natural home — it already depends on @a-conversa/shell and can take a test-only typed import of the server's exported HintKind without adding a runtime server↔shell dependency edge. Registered in commit for coherency_hint_wire_mirror_exhaustiveness (2026-06-05)."
   }
