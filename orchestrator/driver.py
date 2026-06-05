@@ -29,12 +29,15 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import shutil
 import string
 import subprocess
 import sys
+import threading
 import time
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -655,6 +658,26 @@ def wait_until_reset(reset_at: datetime, buffer_seconds: int = 30) -> None:
 # fails loudly rather than burning hours in a retry loop.
 TRANSIENT_BACKOFF_SECONDS: list[int] = [30, 60, 120, 300, 600]
 
+# Inactivity timeout: if the CLI emits no stream event for this long, the turn
+# is treated as wedged ("stuck"). The driver interrupts the process and resumes
+# the session so completed work is preserved (see AgentTimeoutError handling in
+# run_agent_with_retry). Per-event, not per-turn — a genuinely busy agent emits
+# tool calls/results well inside the window, so long-but-productive turns are
+# never killed. Override with AGENT_INACTIVITY_TIMEOUT_MIN (minutes).
+AGENT_INACTIVITY_TIMEOUT = timedelta(
+    minutes=float(os.environ.get("AGENT_INACTIVITY_TIMEOUT_MIN", "30"))
+)
+
+# Max consecutive stuck-turn interrupts before we give up, so a session that
+# wedges immediately on every resume can't loop forever.
+MAX_TIMEOUT_RETRIES = 5
+
+# Max consecutive failures of a single driver iteration before giving up. Any
+# unexpected exception inside an iteration is treated as a retry of that whole
+# iteration (re-asking the orchestrator); this caps the retry loop so a
+# deterministic breakage fails loudly instead of spinning forever.
+MAX_ITERATION_RETRIES = 5
+
 # Prompt carried by a resumed turn. The session already holds the prior
 # context, so we only nudge the agent to pick up where the interrupted turn
 # left off rather than re-sending the original (full) prompt.
@@ -671,6 +694,18 @@ class TransientApiError(RuntimeError):
     disconnect mid-stream, transient 5xx, etc.). Distinct from
     SessionLimitError because the retry strategy is exponential backoff
     rather than waiting for a wall-clock reset."""
+
+    def __init__(self, message: str, session_id: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        self.session_id = session_id
+
+
+class AgentTimeoutError(RuntimeError):
+    """Raised when the CLI emitted no stream event within
+    AGENT_INACTIVITY_TIMEOUT — the turn appears wedged. Carries the session id
+    so the retry wrapper can interrupt and resume the session rather than
+    recompute from scratch."""
 
     def __init__(self, message: str, session_id: Optional[str] = None):
         super().__init__(message)
@@ -1043,9 +1078,12 @@ def run_agent_with_retry(
     `--resume` replaying a recorded log)."""
     attempt = 0
     transient_attempts = 0
+    timeout_attempts = 0
     next_prompt = prompt
 
-    def _resume_from(e: "SessionLimitError | TransientApiError") -> None:
+    def _resume_from(
+        e: "SessionLimitError | TransientApiError | AgentTimeoutError",
+    ) -> None:
         nonlocal next_prompt, resume_session
         if e.session_id:
             resume_session = e.session_id
@@ -1057,6 +1095,26 @@ def run_agent_with_retry(
     while True:
         try:
             return run_agent(next_prompt, log_path, model, resume_session)
+        except AgentTimeoutError as e:
+            if timeout_attempts >= MAX_TIMEOUT_RETRIES:
+                print_wrapped(
+                    f"{RED}!! agent stuck — interrupt/resume retries exhausted "
+                    f"({timeout_attempts} attempts) — giving up{RESET}"
+                )
+                raise RuntimeError(
+                    f"agent stuck (no output for "
+                    f"{AGENT_INACTIVITY_TIMEOUT}) after {timeout_attempts} "
+                    f"interrupt/resume attempts; see {log_path}"
+                ) from e
+            attempt += 1
+            timeout_attempts += 1
+            _archive_failed_log(log_path, attempt)
+            _resume_from(e)
+            print_wrapped(
+                f"{YELLOW}⚠  agent stuck — no output for "
+                f"{AGENT_INACTIVITY_TIMEOUT}; interrupted and resuming "
+                f"(attempt {timeout_attempts}/{MAX_TIMEOUT_RETRIES}){RESET}"
+            )
         except SessionLimitError as e:
             attempt += 1
             _archive_failed_log(log_path, attempt)
@@ -1118,12 +1176,51 @@ def run_agent(
         text=True,
         bufsize=1,
     )
+
+    # Drain stdout on a background thread into a queue so the main loop can
+    # apply an inactivity timeout (a blocking `for raw in proc.stdout` offers
+    # no way to wake up when the agent goes silent). The reader pushes each
+    # raw line, then a None sentinel on EOF.
+    line_q: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def _reader() -> None:
+        assert proc.stdout is not None
+        try:
+            for raw in proc.stdout:
+                line_q.put(raw)
+        finally:
+            line_q.put(None)
+
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+
+    def _stop_proc() -> None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    inactivity_s = AGENT_INACTIVITY_TIMEOUT.total_seconds()
+    rc: Optional[int] = None
+    timed_out = False
     try:
         with log_path.open("w") as logf:
             logf.write(f"---PROMPT---\n{prompt}\n\n---STREAM---\n")
             logf.flush()
-            assert proc.stdout is not None
-            for raw in proc.stdout:
+            while True:
+                try:
+                    raw = line_q.get(timeout=inactivity_s)
+                except queue.Empty:
+                    # No event for the whole window — the turn is wedged.
+                    timed_out = True
+                    _stop_proc()
+                    logf.write(
+                        f"\n---TIMEOUT---\nno output for {inactivity_s:.0f}s\n"
+                    )
+                    break
+                if raw is None:
+                    break  # EOF — the process closed its stream
                 logf.write(raw)
                 logf.flush()
                 line = raw.strip()
@@ -1146,15 +1243,16 @@ def run_agent(
                     transient_message = normalized.transient_message
                 if normalized.session_id is not None:
                     session_id = normalized.session_id
-            rc = proc.wait()
-            logf.write(f"\n---RC---\n{rc}\n")
+            if not timed_out:
+                rc = proc.wait()
+                logf.write(f"\n---RC---\n{rc}\n")
     except KeyboardInterrupt:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        _stop_proc()
         raise
+    if timed_out:
+        raise AgentTimeoutError(
+            f"no output for {inactivity_s:.0f}s; see {log_path}", session_id
+        )
     if rc != 0:
         if session_reset is not None:
             raise SessionLimitError(session_reset, session_message, session_id)
@@ -1746,70 +1844,106 @@ def main() -> int:
         last_output = sub_stdout
         iteration = resume_iter + 1
 
+    consecutive_failures = 0
     while True:
-        # 1. Orchestrator turn
-        orch_prompt = build_orchestrator_prompt(
-            SYSTEM_PROMPT_PATH.read_text(), context_summary, last_output, iteration
-        )
-        orch_log = LOG_DIR / f"iter-{iteration:04d}-orchestrator.log"
-        print_wrapped(banner(f"iter {iteration} · orchestrator"))
-        orch_model = AGENT.model_for("orchestrator")
-        print_wrapped(
-            f"  {DIM}log: {orch_log} · model: "
-            f"{AGENT.display_model(orch_model)}{RESET}"
-        )
-        orch_stdout = run_agent_with_retry(orch_prompt, orch_log, orch_model)
+        # The whole iteration is wrapped so that any unexpected breakage
+        # (orchestrator emitting no valid envelope, a sub-agent dispatch
+        # raising, a verification helper throwing, etc.) is treated as the
+        # need to retry the iteration rather than tearing the driver down.
+        # SystemExit (deliberate fixer-budget exhaustion) and KeyboardInterrupt
+        # propagate; the session-limit / transient / stuck-agent cases are
+        # already handled one layer down in run_agent_with_retry.
         try:
-            envelope = parse_envelope(orch_stdout)
-        except ValueError as e:
-            print(f"{RED}!! orchestrator produced no valid envelope: {e}{RESET}", file=sys.stderr)
-            return 1
-        for line in fmt_envelope(envelope):
-            print_wrapped(line)
-
-        # 2. Stop?
-        if "stop" in envelope:
-            print_wrapped(banner(f"orchestrator stopped: {envelope['stop']}"))
-            return 0
-
-        # 3. Spawn sub-agent
-        next_spec = envelope["next"]
-        template_name = next_spec["template"]
-        template_vars = next_spec.get("vars", {})
-        task_id = template_vars.get("task_id", "")
-        save_dispatch_manifest(iteration, template_name, template_vars)
-        template = load_template(template_name)
-        sub_prompt = render_template(template, template_vars)
-        sub_log = LOG_DIR / f"iter-{iteration:04d}-{template_name}.log"
-        sub_title = f"iter {iteration} · {template_name}"
-        if task_id:
-            sub_title += f" · {task_id}"
-        sub_model = AGENT.model_for(template_name)
-        print_wrapped(banner(sub_title))
-        print_wrapped(
-            f"  {DIM}log: {sub_log} · model: "
-            f"{AGENT.display_model(sub_model)}{RESET}"
-        )
-        for line in fmt_vars_passed(template_vars):
-            print_wrapped(line)
-        sub_stdout = run_agent_with_retry(sub_prompt, sub_log, sub_model)
-        for line in fmt_returned(sub_stdout):
-            print_wrapped(line)
-
-        # 3b. Post-implementer deterministic chain: verification → (fixer
-        # loop) → closer. The orchestrator no longer dispatches closer
-        # directly; the driver owns this whole tail so test-suite execution
-        # is a deterministic Python step rather than an LLM-judged one.
-        if template_name == "implementer":
-            sub_stdout = run_post_implementer_chain(
-                iteration, template_vars, sub_stdout
+            # 1. Orchestrator turn
+            orch_prompt = build_orchestrator_prompt(
+                SYSTEM_PROMPT_PATH.read_text(), context_summary, last_output, iteration
             )
+            orch_log = LOG_DIR / f"iter-{iteration:04d}-orchestrator.log"
+            print_wrapped(banner(f"iter {iteration} · orchestrator"))
+            orch_model = AGENT.model_for("orchestrator")
+            print_wrapped(
+                f"  {DIM}log: {orch_log} · model: "
+                f"{AGENT.display_model(orch_model)}{RESET}"
+            )
+            orch_stdout = run_agent_with_retry(orch_prompt, orch_log, orch_model)
+            # A malformed/absent envelope is unexpected breakage — let it fall
+            # through to the retry handler below rather than hard-exiting.
+            envelope = parse_envelope(orch_stdout)
+            for line in fmt_envelope(envelope):
+                print_wrapped(line)
 
-        # 4. Carry forward
-        context_summary = envelope.get("context_summary", "")
-        save_context_summary(context_summary)
-        last_output = sub_stdout
-        iteration += 1
+            # 2. Stop?
+            if "stop" in envelope:
+                print_wrapped(banner(f"orchestrator stopped: {envelope['stop']}"))
+                return 0
+
+            # 3. Spawn sub-agent
+            next_spec = envelope["next"]
+            template_name = next_spec["template"]
+            template_vars = next_spec.get("vars", {})
+            task_id = template_vars.get("task_id", "")
+            save_dispatch_manifest(iteration, template_name, template_vars)
+            template = load_template(template_name)
+            sub_prompt = render_template(template, template_vars)
+            sub_log = LOG_DIR / f"iter-{iteration:04d}-{template_name}.log"
+            sub_title = f"iter {iteration} · {template_name}"
+            if task_id:
+                sub_title += f" · {task_id}"
+            sub_model = AGENT.model_for(template_name)
+            print_wrapped(banner(sub_title))
+            print_wrapped(
+                f"  {DIM}log: {sub_log} · model: "
+                f"{AGENT.display_model(sub_model)}{RESET}"
+            )
+            for line in fmt_vars_passed(template_vars):
+                print_wrapped(line)
+            sub_stdout = run_agent_with_retry(sub_prompt, sub_log, sub_model)
+            for line in fmt_returned(sub_stdout):
+                print_wrapped(line)
+
+            # 3b. Post-implementer deterministic chain: verification → (fixer
+            # loop) → closer. The orchestrator no longer dispatches closer
+            # directly; the driver owns this whole tail so test-suite execution
+            # is a deterministic Python step rather than an LLM-judged one.
+            if template_name == "implementer":
+                sub_stdout = run_post_implementer_chain(
+                    iteration, template_vars, sub_stdout
+                )
+
+            # 4. Carry forward
+            context_summary = envelope.get("context_summary", "")
+            save_context_summary(context_summary)
+            last_output = sub_stdout
+            iteration += 1
+            consecutive_failures = 0
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:  # noqa: BLE001 — any breakage → retry the iteration
+            consecutive_failures += 1
+            traceback.print_exc()
+            if consecutive_failures > MAX_ITERATION_RETRIES:
+                print(
+                    f"{RED}!! iteration {iteration} failed "
+                    f"{consecutive_failures} consecutive times — giving up: "
+                    f"{e}{RESET}",
+                    file=sys.stderr,
+                )
+                return 1
+            delay = TRANSIENT_BACKOFF_SECONDS[
+                min(consecutive_failures - 1, len(TRANSIENT_BACKOFF_SECONDS) - 1)
+            ]
+            print_wrapped(
+                f"{YELLOW}⚠  unexpected error in iteration {iteration} "
+                f"(retry {consecutive_failures}/{MAX_ITERATION_RETRIES}): "
+                f"{e}{RESET}"
+            )
+            print_wrapped(f"{YELLOW}⏸  backing off {delay}s before retry{RESET}")
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                print_wrapped(f"{RED}⏵  backoff interrupted{RESET}")
+                raise
+            print_wrapped(f"{GREEN}⏵  retrying iteration {iteration}{RESET}")
 
 
 if __name__ == "__main__":
