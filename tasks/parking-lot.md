@@ -189,6 +189,20 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: this is a larger architectural refactor than a 0.5d task — it touches the server's diagnostics emission, requires a new `@a-conversa/shared-types` entry, and is exactly the shared-types promotion the predecessor's Decision §5 explicitly declined to pre-register (it warrants its own ADR). Not agent-resolvable without a deliberate architectural call.
 - **Suggested resolution**: if and when the team decides to grow `@a-conversa/shared-types`, include `HintKind` + `WireCoherencyHint` in that scope. If the parity test (`coherency_hint_server_kind_parity_test`) proves insufficient (e.g. a second wire union drifts), revisit this decision. Until then the parity test is the cost-effective boundary.
 
+### 2026-06-05 — i18n native review — audience.replay.playback.* block (pt-BR, es-419)
+
+- **Source**: closer for `replay_test.replay_ui.replay_playback_controls` (Acceptance §4; implementer return summary).
+- **Question**: the pt-BR and es-419 translations for the new `audience.replay.playback.*` catalog block (play / pause / step-back / step-forward labels and the position readout format) were machine-drafted; they need native-speaker review for accuracy and register.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: when the v1 surfaces are string-complete, review the `audience.replay.playback.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
+### 2026-06-05 — Real-time replay: timestamp-cadence playback toggle
+
+- **Source**: closer for `replay_test.replay_ui.replay_playback_controls` (Decision §4; implementer return summary).
+- **Question**: should the replay viewer eventually offer a "real-time" mode that schedules each event step by the delta between consecutive event timestamps (scaled by the speed multiplier), rather than the current constant per-event wall-clock interval?
+- **Why parked**: not agent-implementable without a product call. Decision §4 explicitly rejected timestamp-delta cadence for v1 (dead-air from human think-time gaps; requires a new timestamp-delta seam). The per-event cadence is the correct v1 behavior; a real-time toggle is speculative future scope.
+- **Suggested resolution**: if the methodology owner or show producers decide real-time pacing is wanted after seeing the per-event replay in action, spec a `replay_realtime_cadence_toggle` task covering the timestamp-delta scheduling logic in `useReplayPlayback`, a UI toggle, and updated Vitest/Playwright cover.
+
 ### 2026-06-05 — Reconcile ADR 0026's `replay-test` reservation with the `test-mode` / `replay_ui` split
 
 - **Source**: closer for `replay_test.test_mode.test_mode_app` (Decision §1).

@@ -260,4 +260,62 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
       await anonContext.close();
     }
   });
+
+  test('(5) playback controls: step + play/pause move the position over the replay', async ({
+    browser,
+  }) => {
+    // Refinement: replay_playback_controls (Acceptance §3 — reachable
+    // behavior on the already-mounted authenticated replay surface). The
+    // controls render into the `ready` branch the surface already shipped, so
+    // the "not yet reachable" e2e deferral does not apply.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      await loginAs(page, { username: 'alice' });
+      const sessionId = await generateSyntheticSession(page);
+
+      await page.goto(`/a/replay/${sessionId}`);
+
+      // The surface lands on the head frame with the controls present.
+      const controls = page.getByTestId('audience-replay-controls');
+      await expect(controls, 'the playback controls render in the ready branch').toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('audience-replay-play')).toBeVisible();
+      await expect(page.getByTestId('audience-replay-step-back')).toBeVisible();
+      await expect(page.getByTestId('audience-replay-step-forward')).toBeVisible();
+
+      const positionEl = page.getByTestId('audience-replay-position');
+      const readPosition = async (): Promise<number> =>
+        Number(await positionEl.getAttribute('data-position'));
+      const head = Number(await positionEl.getAttribute('data-head'));
+      expect(head, 'the synthetic log has a multi-event head to traverse').toBeGreaterThan(1);
+      // Head-landing default (ADR 0045): the cursor opens at the head.
+      expect(await readPosition()).toBe(head);
+
+      // Step back then forward: the readout decrements then re-increments.
+      await page.getByTestId('audience-replay-step-back').click();
+      expect(await readPosition()).toBe(head - 1);
+      await page.getByTestId('audience-replay-step-forward').click();
+      expect(await readPosition()).toBe(head);
+
+      // Play restarts from the start (Decision §5) and auto-advances over
+      // wall-clock time.
+      await page.getByTestId('audience-replay-play').click();
+      await expect
+        .poll(readPosition, {
+          timeout: 15_000,
+          message: 'play auto-advances the position past the baseline',
+        })
+        .toBeGreaterThan(0);
+
+      // Pause (toggle the same control) freezes the position.
+      await page.getByTestId('audience-replay-play').click();
+      const paused = await readPosition();
+      await page.waitForTimeout(2_500);
+      expect(await readPosition(), 'pause stops the auto-advance').toBe(paused);
+    } finally {
+      await context.close();
+    }
+  });
 });

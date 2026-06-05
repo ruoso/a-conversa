@@ -120,7 +120,7 @@ function renderRoute(auth: AuthContextValue = authenticatedAuth): void {
 }
 
 describe('AudienceReplayRoute', () => {
-  it('(a) ready: mounts the package GraphView with the graph root and the full log at head', async () => {
+  it('(a) ready: mounts the playback container — graph at head + the play/step controls', async () => {
     const log = makeLog();
     mockLog = { status: 'ready', events: log, retry: vi.fn() };
     renderRoute();
@@ -128,12 +128,22 @@ describe('AudienceReplayRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
     });
-    // Head render (Decision §3): the *entire* assembled log is handed to
-    // the renderer — no position filtering in this leaf.
+    // Head-landing default (Constraint §3 / ADR 0045): the cursor seeds at
+    // the head, so the renderer is fed the whole-log prefix (every event has
+    // `sequence <= head`). The container filters, so the array is a new
+    // identity — assert by length, not reference.
     expect(capturedGraphProps).not.toBeNull();
     expect(capturedGraphProps?.events).toHaveLength(log.length);
-    expect(capturedGraphProps?.events).toBe(log);
     expect(capturedGraphProps?.instanceKey).toBe(SESSION_ID);
+
+    // The playback controls render only in the `ready` branch: play/pause +
+    // step-back + step-forward + the position readout (head-seeded).
+    expect(screen.getByTestId('audience-replay-play')).toBeTruthy();
+    expect(screen.getByTestId('audience-replay-step-back')).toBeTruthy();
+    expect(screen.getByTestId('audience-replay-step-forward')).toBeTruthy();
+    const status = screen.getByTestId('audience-replay-position');
+    expect(status.getAttribute('data-position')).toBe(String(log.length));
+    expect(status.getAttribute('data-head')).toBe(String(log.length));
   });
 
   it('(b) loading: renders the loading affordance', () => {

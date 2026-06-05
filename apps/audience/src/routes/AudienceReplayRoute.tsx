@@ -33,8 +33,8 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useSessionEventLog } from '@a-conversa/shell';
-import { GraphView } from '@a-conversa/graph-view';
 
+import { ReplayPlaybackContainer } from '../replay/ReplayPlaybackContainer.js';
 import { PrivateSessionCta } from './PrivateSessionCta.js';
 
 export function AudienceReplayRoute(): ReactElement {
@@ -95,17 +95,15 @@ export function AudienceReplayRoute(): ReactElement {
     );
   }
 
-  // status === 'ready' — render the reconstructed graph at the log *head*
-  // (the complete session). Passing the full assembled log is equivalent to
-  // filtering at `replayHeadSequence(events)` (Decision §3); there is no
-  // position UI in this leaf — the scrubber/playback machinery is owned by
-  // the downstream `replay_playback_controls` family. The viewport-filling
-  // `h-screen w-screen` sizing mirrors the live route (AudienceLiveRoute).
-  return (
-    <div className="relative h-screen w-screen">
-      <GraphView events={events} instanceKey={sessionId ?? ''} />
-    </div>
-  );
+  // status === 'ready' — mount the playback container. It seeds the position
+  // cursor at the log *head* (`replayHeadSequence`), so the no-interaction
+  // view still shows the complete session (ADR 0045's head-landing default),
+  // and layers the play / pause / step controls over the viewport-filling
+  // `@a-conversa/graph-view` renderer. The position/step/auto-advance
+  // machinery lives entirely in `ReplayPlaybackContainer`
+  // (replay_playback_controls). The load / auth / CTA branches above stay
+  // untouched (Constraint §7).
+  return <ReplayPlaybackContainer sessionId={sessionId ?? ''} events={events} />;
 }
 
 export default AudienceReplayRoute;

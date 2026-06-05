@@ -1049,7 +1049,15 @@
       "loading": "Loading replay…",
       "unavailableTitle": "Replay unavailable",
       "unavailableBody": "This replay could not be loaded. Please try again.",
-      "retry": "Retry"
+      "retry": "Retry",
+      "playback": {
+        "regionAriaLabel": "Replay playback controls",
+        "play": "Play",
+        "pause": "Pause",
+        "stepBack": "Step back",
+        "stepForward": "Step forward",
+        "positionStatus": "Position {position, number} of {head, number}"
+      }
     }
   },
   "testMode": {
