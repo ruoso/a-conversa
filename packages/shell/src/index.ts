@@ -137,6 +137,17 @@ export {
   type AxiomMarkBadgeProps,
 } from './axiom-marks/index.js';
 
+// ─── snapshot-list ───────────────────────────────────────────────────────
+export {
+  SnapshotList,
+  useSessionSnapshots,
+  type SessionSnapshots,
+  type SessionSnapshotsStatus,
+  type SnapshotListProps,
+  type SnapshotListStatus,
+  type SnapshotRecord,
+} from './snapshot-list/index.js';
+
 // ─── annotations ─────────────────────────────────────────────────────────
 export {
   EMPTY_ANNOTATIONS,

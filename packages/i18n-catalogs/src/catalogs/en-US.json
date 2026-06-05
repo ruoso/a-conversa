@@ -1046,6 +1046,14 @@
       "body": "This session is not available to anonymous visitors. If you have an account that can view it, sign in to retry."
     }
   },
+  "snapshotList": {
+    "regionAriaLabel": "Session snapshots",
+    "loading": "Loading snapshots…",
+    "error": "Couldn't load snapshots.",
+    "retry": "Retry",
+    "empty": "No snapshots in this session yet.",
+    "rowAriaLabel": "Jump to snapshot {label} at position {position, number}"
+  },
   "diagnostics": {
     "cycle": {
       "title": "Cycle in supports",

@@ -1046,6 +1046,14 @@
       "body": "Esta sessão não está disponível para visitantes anônimos. Se você tem uma conta que pode vê-la, entre para tentar novamente."
     }
   },
+  "snapshotList": {
+    "regionAriaLabel": "Instantâneos da sessão",
+    "loading": "Carregando instantâneos…",
+    "error": "Não foi possível carregar os instantâneos.",
+    "retry": "Tentar novamente",
+    "empty": "Ainda não há instantâneos nesta sessão.",
+    "rowAriaLabel": "Ir para o instantâneo {label} na posição {position, number}"
+  },
   "diagnostics": {
     "cycle": {
       "title": "Ciclo em apoios",

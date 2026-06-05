@@ -121,6 +121,7 @@ task replay_test "Replay and test mode" {
     task snapshot_list_ui "Snapshot list view" {
       effort 1d
       allocate team
+      complete 100
       depends !snapshot_creation_ui
     }
     task snapshot_jump_ui "Jump-to-snapshot action across replay and test mode" {
