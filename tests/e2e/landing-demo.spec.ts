@@ -33,6 +33,9 @@
 
 import AxeBuilder from '@axe-core/playwright';
 
+import { CATALOGS } from '@a-conversa/i18n-catalogs';
+
+import { lookup } from './fixtures/locales';
 import { expect, test } from './fixtures/no-scrollbars';
 
 // The declared WCAG rule-tag set the axe scan asserts against (ADR 0040):
@@ -491,6 +494,163 @@ test.describe('landing walkthrough demo', () => {
       await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
 
       await expect(page.getByTestId('walkthrough-play-toggle')).toBeDisabled();
+    } finally {
+      await context.close();
+    }
+  });
+
+  // ===========================================================================
+  // Golden-path through-to-finale walk — the capstone owned by `landing_e2e`.
+  //
+  // The five `depends` predecessors each landed a *thin* inline pin above and
+  // deferred exactly one scenario here: the **fuller stepped journey through to
+  // the final graph state with the matching localized caption** (see the
+  // "stays owned by `landing_e2e`" comments at the thin pins, e.g. :30-32,
+  // :111-112, :210-211, :301-302). These three tests pay that debt down.
+  //
+  // We drive the demo through the public control surface (scrubber on desktop,
+  // next-segment on mobile) and assert on the DOM seam only — the step-status
+  // `data-position` and the caption's `data-beat` + visible title (ADR 0039:
+  // the graph paints to `<canvas>` with no `window.cy` hook). The expected
+  // per-beat title is resolved from `CATALOGS['en-US']` via the shared `lookup`
+  // helper, so a copy edit updates the assertion rather than reddening a stale
+  // literal (ADR 0024 / Decision D2).
+  // ===========================================================================
+
+  // The nine ordered narration beats (slug + 1-based anchor position) — the
+  // walk's anchors, mirroring `apps/root/src/walkthrough/narration.ts`'s
+  // `WALKTHROUGH_BEATS`. The finale anchors at position 266, the
+  // `walkthroughEvents.length` total (also the scrubber's `max`).
+  const BEAT_WALK = [
+    { slug: 'opening', position: 6 },
+    { slug: 'decompose', position: 27 },
+    { slug: 'consensus', position: 42 },
+    { slug: 'counter', position: 56 },
+    { slug: 'contradiction', position: 86 },
+    { slug: 'classification', position: 100 },
+    { slug: 'axiom', position: 147 },
+    { slug: 'interpretive_split', position: 196 },
+    { slug: 'finale', position: 266 },
+  ] as const;
+
+  // The expected visible caption title for a beat slug, resolved from the
+  // en-US catalog (the `chromium-landing` project's locale). Catalog-backed,
+  // never hardcoded (constraint 3 / Decision D2).
+  const captionTitleFor = (slug: string): string =>
+    lookup(CATALOGS['en-US'], `landing.demo.caption.${slug}.title`);
+
+  // Acceptance criterion 1: desktop through-to-finale beat walk. From an
+  // anonymous `/`, scrub the full demo across all nine beat anchors in order;
+  // at each anchor assert the step-status position lands on the anchor, the
+  // caption's active beat is the expected slug, and the caption's visible title
+  // matches the en-US narration catalog — ending on `finale` / position 266.
+  test('anonymous / walks the desktop demo through every beat to the finale caption', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+
+      const scrubber = page.getByTestId('walkthrough-scrubber');
+      const status = page.getByTestId('walkthrough-step-status');
+      const caption = page.getByTestId('walkthrough-caption');
+      const captionTitle = caption.locator('#walkthrough-caption-title');
+      await expect(scrubber).toBeVisible({ timeout: 15_000 });
+
+      for (const beat of BEAT_WALK) {
+        // Drive through the public control surface — set the scrubber to the
+        // beat anchor (constraint 4).
+        await scrubber.fill(String(beat.position));
+
+        // (a) the step-status position lands on the anchor.
+        await expect(status).toHaveAttribute('data-position', String(beat.position), {
+          timeout: 5_000,
+        });
+        // (b) the caption's active beat is the expected slug.
+        await expect(caption).toHaveAttribute('data-beat', beat.slug, { timeout: 5_000 });
+        // (c) the caption's visible title matches the en-US catalog copy.
+        await expect(captionTitle).toHaveText(captionTitleFor(beat.slug), { timeout: 5_000 });
+      }
+
+      // The walk ended on the final graph state with its matching caption.
+      await expect(status).toHaveAttribute('data-position', '266');
+      await expect(caption).toHaveAttribute('data-beat', 'finale');
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Acceptance criterion 2: mobile compact through-to-finale beat walk. At the
+  // phone viewport, repeatedly activate `walkthrough-next` on the compact
+  // variant; assert the step-status advances anchor-to-anchor (6 → 27 → … →
+  // 266) and the caption tracks each beat's slug + localized title through to
+  // the terminal `finale`.
+  test('anonymous / walks the mobile compact demo through every beat to the finale caption', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: PHONE_VIEWPORT,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo-compact')).toBeVisible({ timeout: 15_000 });
+
+      const status = page.getByTestId('walkthrough-step-status');
+      const caption = page.getByTestId('walkthrough-caption');
+      const captionTitle = caption.locator('#walkthrough-caption-title');
+
+      const assertBeat = async (beat: (typeof BEAT_WALK)[number]): Promise<void> => {
+        await expect(status).toHaveAttribute('data-position', String(beat.position), {
+          timeout: 5_000,
+        });
+        await expect(caption).toHaveAttribute('data-beat', beat.slug, { timeout: 5_000 });
+        await expect(captionTitle).toHaveText(captionTitleFor(beat.slug), { timeout: 5_000 });
+      };
+
+      // The compact variant opens on the first beat anchor (position 6).
+      await assertBeat(BEAT_WALK[0]);
+
+      // Next-segment jumps a whole beat at a time, through to the finale.
+      for (let i = 1; i < BEAT_WALK.length; i += 1) {
+        await page.getByTestId('walkthrough-next').click();
+        await assertBeat(BEAT_WALK[i]!);
+      }
+
+      // The terminal beat: finale at position 266 with its matching caption.
+      await expect(status).toHaveAttribute('data-position', '266');
+      await expect(caption).toHaveAttribute('data-beat', 'finale');
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Acceptance criterion 3: the positive side of the public/home split. An
+  // anonymous `/` renders `route-landing` (the marketing surface) and settles
+  // on `/` — it never bounces to `/login` or `/home`. The negative side
+  // (anonymous `/home` → login; authenticated `/` → `/home`) is owned by
+  // `auth-flow.spec.ts` scenarios 6 + 7 and is deliberately not re-driven here
+  // (Decision D3).
+  test('anonymous / renders the marketing surface and does not bounce off /', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      // The marketing surface renders for the anonymous visitor.
+      await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
+
+      // The page settled on `/` — no redirect to `/login` or `/home`.
+      expect(new URL(page.url()).pathname).toBe('/');
     } finally {
       await context.close();
     }

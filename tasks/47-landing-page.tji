@@ -176,6 +176,7 @@ task landing_page "Public landing page" {
   task landing_e2e "Playwright cover for the public landing + walkthrough demo" {
     effort 1d
     allocate team
+    complete 100
     depends !landing_hero_and_method, !landing_opensource_and_cta, !walkthrough_demo_narration, !landing_demo_mobile_fallback, !landing_responsive_a11y
     note -8<-
       Playwright spec: an anonymous visit to `/` renders the narrative

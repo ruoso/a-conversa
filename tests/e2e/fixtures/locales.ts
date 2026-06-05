@@ -37,8 +37,13 @@ export interface LocaleExpectations {
  * Walk into a nested catalog by dotted key, with a clear error if the
  * key is missing. Keeps the matrix builder strict so a refactor of
  * the catalog shape surfaces here at typecheck/test time.
+ *
+ * Exported so other e2e specs (e.g. the landing walkthrough's caption-text
+ * walk in `landing-demo.spec.ts`) can resolve a catalog string the same
+ * drift-proof way — a copy edit updates the assertion automatically rather
+ * than reddening a stale literal.
  */
-function lookup(catalog: unknown, dottedKey: string): string {
+export function lookup(catalog: unknown, dottedKey: string): string {
   const parts = dottedKey.split('.');
   let current: unknown = catalog;
   for (const part of parts) {
