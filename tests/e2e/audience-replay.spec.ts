@@ -426,4 +426,50 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
       await context.close();
     }
   });
+
+  test('(8) speed control: defaults to 1×, selecting 2× is reflected, play advances', async ({
+    browser,
+  }) => {
+    // Refinement: replay_speed_controls (Acceptance §4 — reachable behavior on
+    // the already-mounted authenticated replay surface). The speed selector
+    // renders into the same `ready` controls cluster test (5) drives, so the
+    // "not yet reachable" e2e deferral does not apply. Per-step cadence timing
+    // is pinned by the Vitest fake-timer tests; the e2e asserts only that the
+    // chosen speed is applied and playback advances, mirroring test (5) to stay
+    // non-flaky.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      await loginAs(page, { username: 'alice' });
+      const sessionId = await generateSyntheticSession(page);
+
+      await page.goto(`/a/replay/${sessionId}`);
+
+      await expect(page.getByTestId('audience-replay-controls')).toBeVisible({ timeout: 15_000 });
+      const speed = page.getByTestId('audience-replay-speed');
+      await expect(speed, 'the speed selector renders in the ready branch').toBeVisible();
+      // Defaults to the shipped 1× cadence.
+      await expect(speed).toHaveValue('1');
+
+      // Selecting 2× is reflected in the control (and the `data-speed` seam).
+      const positionEl = page.getByTestId('audience-replay-position');
+      await speed.selectOption('2');
+      await expect(speed).toHaveValue('2');
+      await expect(positionEl).toHaveAttribute('data-speed', '2');
+
+      // Playback still advances at the chosen speed (restart from the baseline,
+      // Decision §5) — asserted by progress, not wall-clock cadence.
+      const readPosition = async (): Promise<number> =>
+        Number(await positionEl.getAttribute('data-position'));
+      await page.getByTestId('audience-replay-play').click();
+      await expect
+        .poll(readPosition, {
+          timeout: 15_000,
+          message: 'play auto-advances the position at the selected 2× speed',
+        })
+        .toBeGreaterThan(0);
+    } finally {
+      await context.close();
+    }
+  });
 });

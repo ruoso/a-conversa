@@ -224,3 +224,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: explicitly rejected for v1 in Decision §3 — the task is "load replay *starting at* a URL-supplied position" (a one-way deep-link *in*), not a two-way sync that mirrors the live cursor. Two-way sync churns browser history on every seek/auto-advance tick and is a distinct, unrequested feature. Not agent-implementable without a deliberate product call to expand scope.
 - **Suggested resolution**: if the methodology owner or show producers decide shareable "current frame" links are wanted, spec a `replay_url_position_writeback` task covering position-change → `replaceState` in `AudienceReplayRoute`, integration with React Router's `useNavigate`, and Playwright cover asserting the URL tracks the seek bar thumb.
 
+
+### 2026-06-05 — i18n native review — audience.replay.playback.speedAriaLabel + speedOption (pt-BR, es-419)
+
+- **Source**: closer for `replay_test.replay_ui.replay_speed_controls` (Acceptance §5; implementer return summary).
+- **Question**: the pt-BR and es-419 translations for the two new `audience.replay.playback.*` keys (`speedAriaLabel` and the ICU `speedOption` format) were machine-drafted; they need native-speaker review for accuracy and register.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: when the v1 surfaces are string-complete, review the `speedAriaLabel` and `speedOption` entries in the `audience.replay.playback.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.

@@ -50,6 +50,7 @@ task replay_test "Replay and test mode" {
     task replay_speed_controls "Playback speed controls (0.5x, 1x, 2x, etc.)" {
       effort 1d
       allocate team
+      complete 100
       depends !replay_playback_controls
     }
     task replay_seek_bar "Seek bar showing position in the event log" {

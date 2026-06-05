@@ -43,7 +43,17 @@ import {
 } from '@a-conversa/shell';
 import { GraphView } from '@a-conversa/graph-view';
 
-import { useReplayPlayback } from './useReplayPlayback.js';
+import { DEFAULT_PLAYBACK_INTERVAL_MS, useReplayPlayback } from './useReplayPlayback.js';
+
+/**
+ * The fixed playback-speed ladder (replay_speed_controls Decision §3). One
+ * named constant so the `<select>` option list and the Vitest fixture share a
+ * single source of truth — 0.5× (slow-study), 1× (default), 2× (skim),
+ * 4× (fast-skim). The cadence is derived as
+ * `DEFAULT_PLAYBACK_INTERVAL_MS / speed` (Decision §2 — higher speed = shorter
+ * interval), so `1×` is exactly today's shipped cadence (Constraint §3).
+ */
+export const SPEED_OPTIONS = [0.5, 1, 2, 4] as const;
 
 export interface ReplayPlaybackContainerProps {
   /** The session whose log is replayed — the `GraphView` instance key. */
@@ -81,6 +91,15 @@ export function ReplayPlaybackContainer({
     initialPosition != null ? clampPosition(initialPosition, events) : replayHeadSequence(events),
   );
 
+  // The playback-speed multiplier, lifted alongside `position` as sibling UI
+  // state (replay_speed_controls Decision §1). Default `1×` is the shipped
+  // behavior; the derived `intervalMs` feeds the one timer the hook owns. Speed
+  // is orthogonal to position — it changes the auto-advance *cadence*, never the
+  // position arithmetic (Constraint §2), and survives the restart-from-end
+  // affordance untouched (Decision §6).
+  const [speed, setSpeed] = useState<number>(1);
+  const intervalMs = DEFAULT_PLAYBACK_INTERVAL_MS / speed;
+
   // Guard the lifted setter so every writer — the step buttons and the
   // auto-advance loop — lands a clamped, navigable position (Constraint §1).
   const updatePosition = (next: number): void => {
@@ -91,6 +110,7 @@ export function ReplayPlaybackContainer({
     events,
     position,
     setPosition: updatePosition,
+    intervalMs,
   });
 
   const head = replayHeadSequence(events);
@@ -124,6 +144,14 @@ export function ReplayPlaybackContainer({
   // verbatim (Decision §1).
   const onScrub = (event: ChangeEvent<HTMLInputElement>): void => {
     updatePosition(Number(event.target.value));
+  };
+  // The speed selector is a single-choice setting (Decision §4 — a native
+  // `<select>`, not an action button row): selecting a multiplier sets `speed`,
+  // which re-derives `intervalMs`. The hook's `[isPlaying, intervalMs]` effect
+  // swaps the live interval cleanly, so a mid-play change takes effect at once
+  // without leaking the old timer or losing position (Constraint §4).
+  const onSpeedChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+    setSpeed(Number(event.target.value));
   };
 
   const playLabel = isPlaying
@@ -183,12 +211,27 @@ export function ReplayPlaybackContainer({
           className="h-2 min-w-[12rem] flex-1 cursor-pointer"
         />
 
+        <select
+          data-testid="audience-replay-speed"
+          value={String(speed)}
+          onChange={onSpeedChange}
+          aria-label={t('audience.replay.playback.speedAriaLabel')}
+          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {SPEED_OPTIONS.map((multiplier) => (
+            <option key={multiplier} value={multiplier}>
+              {t('audience.replay.playback.speedOption', { speed: multiplier })}
+            </option>
+          ))}
+        </select>
+
         <p
           role="status"
           aria-live="polite"
           data-testid="audience-replay-position"
           data-position={position}
           data-head={head}
+          data-speed={speed}
           className="whitespace-nowrap text-sm tabular-nums text-slate-600"
         >
           {t('audience.replay.playback.positionStatus', { position, head })}

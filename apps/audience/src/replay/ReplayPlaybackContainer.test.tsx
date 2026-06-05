@@ -35,7 +35,7 @@ vi.mock('@a-conversa/graph-view', () => ({
 }));
 
 // Imported after the mock is registered so it binds the stub.
-const { ReplayPlaybackContainer } = await import('./ReplayPlaybackContainer');
+const { ReplayPlaybackContainer, SPEED_OPTIONS } = await import('./ReplayPlaybackContainer');
 const { DEFAULT_PLAYBACK_INTERVAL_MS } = await import('./useReplayPlayback');
 
 const INTERVAL = DEFAULT_PLAYBACK_INTERVAL_MS;
@@ -91,6 +91,15 @@ function play(): HTMLButtonElement {
 }
 function seek(): HTMLInputElement {
   return screen.getByTestId<HTMLInputElement>('audience-replay-seek');
+}
+function speedSelect(): HTMLSelectElement {
+  return screen.getByTestId<HTMLSelectElement>('audience-replay-speed');
+}
+function speedSeam(): string | null {
+  return status().getAttribute('data-speed');
+}
+function setSpeed(multiplier: number): void {
+  fireEvent.change(speedSelect(), { target: { value: String(multiplier) } });
 }
 
 beforeEach(async () => {
@@ -347,5 +356,143 @@ describe('ReplayPlaybackContainer — play loop (fake timers)', () => {
         vi.advanceTimersByTime(INTERVAL * 3);
       });
     }).not.toThrow();
+  });
+});
+
+describe('ReplayPlaybackContainer — speed controls', () => {
+  // replay_speed_controls (Acceptance §1 — selector presence + default). The
+  // ready render shows a speed selector listing the fixed multiplier ladder
+  // with `1×` selected by default; selecting an option updates the reflected
+  // value and the `data-speed` seam.
+  it('renders a speed selector listing the multiplier ladder, defaulting to 1×', () => {
+    renderContainer(SIX_EVENTS);
+
+    const select = speedSelect();
+    // One option per multiplier — the option list and the fixture share the
+    // single `SPEED_OPTIONS` source (Decision §3).
+    expect(select.options).toHaveLength(SPEED_OPTIONS.length);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(
+      SPEED_OPTIONS.map((m) => String(m)),
+    );
+    // Default is the shipped 1× behavior.
+    expect(select.value).toBe('1');
+    expect(speedSeam()).toBe('1');
+  });
+
+  it('selecting a different multiplier updates the reflected value and the seam', () => {
+    renderContainer(SIX_EVENTS);
+
+    setSpeed(2);
+    expect(speedSelect().value).toBe('2');
+    expect(speedSeam()).toBe('2');
+
+    setSpeed(0.5);
+    expect(speedSelect().value).toBe('0.5');
+    expect(speedSeam()).toBe('0.5');
+  });
+});
+
+describe('ReplayPlaybackContainer — speed scales the cadence (fake timers)', () => {
+  // replay_speed_controls (Acceptance §2). The multiplier scales the
+  // auto-advance cadence: 2× steps once per `INTERVAL / 2`, 0.5× once per
+  // `2 × INTERVAL`. Asserted by advancing the fake clock a known amount and
+  // checking the resulting `data-position`.
+  it('advances twice as fast at 2× (one step per INTERVAL / 2)', () => {
+    vi.useFakeTimers();
+    renderContainer(SIX_EVENTS);
+
+    setSpeed(2);
+    fireEvent.click(play()); // restart from 0 (Decision §5)
+    expect(position()).toBe('0');
+
+    // Half the base interval is one full step at 2×.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL / 2);
+    });
+    expect(position()).toBe('1');
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL / 2);
+    });
+    expect(position()).toBe('2');
+
+    // A full base interval is two steps at 2× — no stalling.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    expect(position()).toBe('4');
+  });
+
+  it('advances half as fast at 0.5× (one step per 2 × INTERVAL)', () => {
+    vi.useFakeTimers();
+    renderContainer(SIX_EVENTS);
+
+    setSpeed(0.5);
+    fireEvent.click(play()); // restart from 0
+    expect(position()).toBe('0');
+
+    // A full base interval is not yet a step at 0.5×.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    expect(position()).toBe('0');
+    // Two base intervals make one step.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    expect(position()).toBe('1');
+  });
+});
+
+describe('ReplayPlaybackContainer — mid-play speed change (fake timers)', () => {
+  // replay_speed_controls (Acceptance §3). Changing speed mid-play continues
+  // the run at the new cadence — no stop, no leaked/double timer, no lost
+  // position — and the self-terminate-at-head behavior still holds.
+  it('switching to 2× mid-play continues at the faster cadence with a single live timer', () => {
+    vi.useFakeTimers();
+    renderContainer(SIX_EVENTS);
+
+    fireEvent.click(play()); // restart from 0 at 1×
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    expect(position()).toBe('1');
+    expect(vi.getTimerCount()).toBe(1);
+
+    // Speed up mid-run: the run does not stop, and exactly one interval is live
+    // (the old one was cleared on re-subscribe — no leak, Constraint §4).
+    setSpeed(2);
+    expect(play().getAttribute('aria-pressed')).toBe('true');
+    expect(vi.getTimerCount()).toBe(1);
+
+    // Now stepping at INTERVAL / 2; no double-advance per base interval.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL / 2);
+    });
+    expect(position()).toBe('2');
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL / 2);
+    });
+    expect(position()).toBe('3');
+  });
+
+  it('self-terminates at the head at 2× with its timer cleared', () => {
+    vi.useFakeTimers();
+    renderContainer(SIX_EVENTS);
+
+    setSpeed(2);
+    fireEvent.click(play()); // restart from 0
+    // Six steps at INTERVAL / 2 reach the head, then the loop self-pauses.
+    act(() => {
+      vi.advanceTimersByTime((INTERVAL / 2) * HEAD);
+    });
+    expect(position()).toBe(String(HEAD));
+    expect(play().getAttribute('aria-pressed')).toBe('false');
+    expect(vi.getTimerCount()).toBe(0);
+
+    // Further ticks do not advance past the head.
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL * 3);
+    });
+    expect(position()).toBe(String(HEAD));
   });
 });

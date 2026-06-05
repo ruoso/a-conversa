@@ -414,6 +414,8 @@
     "audience.replay.playback.stepForward",
     "audience.replay.playback.positionStatus",
     "audience.replay.playback.seekAriaLabel",
+    "audience.replay.playback.speedAriaLabel",
+    "audience.replay.playback.speedOption",
     "moderator.contextMenu.node.captureDefeater",
     "moderator.captureDefeater.exit.ariaLabel",
     "moderator.captureDefeater.exit.tooltip",

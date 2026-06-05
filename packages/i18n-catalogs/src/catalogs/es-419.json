@@ -1057,7 +1057,9 @@
         "stepBack": "Paso anterior",
         "stepForward": "Paso siguiente",
         "positionStatus": "Posición {position, number} de {head, number}",
-        "seekAriaLabel": "Ir a una posición de evento"
+        "seekAriaLabel": "Ir a una posición de evento",
+        "speedAriaLabel": "Velocidad de reproducción",
+        "speedOption": "{speed, number}×"
       }
     }
   },
