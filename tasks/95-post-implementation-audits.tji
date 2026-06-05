@@ -19,9 +19,10 @@ task post_implementation_audits "Post-implementation audits" {
   task extract_annotation_detail_view "Lift annotation detail body into @a-conversa/shell once a third surface (audience or moderator panel-style drill-down) becomes the caller" {
     effort 0.5d
     allocate team
+    complete 100
     depends participant_ui.part_graph_view.part_entity_detail_panel_annotation_view
     note -8<-
-      Refinement: tasks/refinements/shell-package/extract_annotation_detail_view.md
+      Refinement: tasks/refinements/post_implementation_audits/extract_annotation_detail_view.md
 
       Moved out of shell_package into post_implementation_audits on 2026-05-30: this leaf is
       gated on a SECOND caller materializing (a moderator-side or audience-side panel-style
