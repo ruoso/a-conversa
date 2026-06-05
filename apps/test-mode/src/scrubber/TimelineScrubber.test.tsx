@@ -32,6 +32,11 @@ vi.mock('@a-conversa/graph-view', () => ({
   GraphView: ({ events }: { events: readonly Event[]; instanceKey: string }) => (
     <div data-testid="graph-view-stub" data-event-count={events.length} />
   ),
+  // The changes-panel sibling projects both prefixes through `projectGraph`;
+  // its readout is pinned by `changes/ChangeHighlights.test.tsx`, so here the
+  // stub returns an empty projection — the scrubber tests assert only the
+  // graph prefix and the navigation controls.
+  projectGraph: () => ({ nodes: [], edges: [] }),
 }));
 
 // Stub the connected snapshot list (it fetches on mount); the list-render →

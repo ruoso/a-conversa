@@ -1084,6 +1084,20 @@
       "baselineTitle": "Línea base",
       "baselineBody": "Antes del primer evento — ningún evento en esta posición."
     },
+    "changes": {
+      "regionAriaLabel": "Qué cambió en este paso",
+      "heading": "Cambios",
+      "baselineTitle": "Línea base",
+      "baselineBody": "Antes del primer evento — todavía no se ha proyectado nada.",
+      "emptyTitle": "Sin cambios en el grafo",
+      "emptyBody": "Este paso dejó el grafo proyectado sin cambios.",
+      "nodesAddedLabel": "Nodos agregados",
+      "nodesRemovedLabel": "Nodos eliminados",
+      "nodesChangedLabel": "Nodos modificados",
+      "edgesAddedLabel": "Aristas agregadas",
+      "edgesRemovedLabel": "Aristas eliminadas",
+      "edgesChangedLabel": "Aristas modificadas"
+    },
     "synthetic": {
       "regionAriaLabel": "Escenarios de sesión sintética",
       "heading": "Sesiones sintéticas",

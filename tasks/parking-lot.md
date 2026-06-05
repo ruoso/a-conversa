@@ -161,6 +161,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: edge inheritance semantics on interpretive-split are a methodology product decision — should reading nodes start with the parent's relational context or be blank? No ADR records the intended behavior. Implementing inheritance without that decision risks encoding the wrong product contract.
 - **Suggested resolution**: confirm with the methodology owner whether reading nodes should inherit the parent's committed edges on split. If yes, spec a `methodology_interpretive_split_edge_inheritance` task covering the `propose.ts` edge-emission logic, `replay.ts` projection arm, frontend projectors in both canvases, and updated Playwright cover in `full-session-walkthrough.spec.ts` AC-5.
 
+### 2026-06-05 — i18n native review — testMode.changes.* block (pt-BR, es-419)
+
+- **Source**: closer for `replay_test.test_mode.test_mode_changed_highlights` (refinement Acceptance §4; implementer return summary parking-lot note).
+- **Question**: the pt-BR and es-419 translations for the new `testMode.changes.*` catalog block (section heading, bucket labels for added/removed/changed nodes and edges, baseline/empty messages) were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or methodology vocabulary accuracy. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review.
+- **Suggested resolution**: when the v1 surfaces are string-complete, review the `testMode.changes.*` block in `packages/i18n-catalogs/src/catalogs/pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
 ### 2026-06-05 — Reconcile ADR 0026's `replay-test` reservation with the `test-mode` / `replay_ui` split
 
 - **Source**: closer for `replay_test.test_mode.test_mode_app` (Decision §1).

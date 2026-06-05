@@ -78,6 +78,11 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     const inspectorKind = page.getByTestId('test-mode-inspector-kind');
     await expect(inspector, 'the inspector section renders beside the scrubber').toBeVisible();
 
+    // (e) The changed-highlights panel mounts as the fourth sibling reading
+    // the same lifted position (test_mode_changed_highlights §1).
+    const changes = page.getByTestId('test-mode-changes');
+    await expect(changes, 'the changes panel renders beside the scrubber').toBeVisible();
+
     // (b) The surface opens at the head: next is disabled, prev is enabled.
     const head = Number(await status.getAttribute('data-head'));
     expect(head, 'the walkthrough head sequence is a deep, non-baseline position').toBeGreaterThan(
@@ -107,9 +112,36 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     await expect(status).toHaveAttribute('data-position', String(head));
     await expect(next).toBeDisabled();
 
+    const range = page.getByTestId('test-mode-scrubber-range');
+
+    // (e) Stepping the position re-renders the changes panel; the change it
+    // reports for a step is consistent with the event the inspector shows at
+    // that step. Scan the early log for a node-created event (a debate graph
+    // always has them): at that stop the inspector kind is `node-created` and
+    // the changes panel lists exactly that node id under "nodes added".
+    const nodesAdded = page.getByTestId('test-mode-changes-nodes-added');
+    let createdNodeId: string | null = null;
+    for (let position = 1; position <= 60 && createdNodeId === null; position += 1) {
+      await range.fill(String(position));
+      await expect(status).toHaveAttribute('data-position', String(position));
+      const kind = (await inspectorKind.textContent())?.trim() ?? '';
+      if (kind !== 'node-created') {
+        continue;
+      }
+      const payloadText =
+        (await page.getByTestId('test-mode-inspector-payload').textContent()) ?? '{}';
+      const payload = JSON.parse(payloadText) as { node_id?: string };
+      createdNodeId = payload.node_id ?? null;
+      await expect(
+        nodesAdded,
+        'the node-created step lists its node under "nodes added"',
+      ).toBeVisible();
+      await expect(nodesAdded).toContainText(createdNodeId ?? '');
+    }
+    expect(createdNodeId, 'the walkthrough log contains a node-created step').not.toBeNull();
+
     // (a) Dragging the range to the baseline disables prev (boundary), and
     // (b) prev is disabled at position 0.
-    const range = page.getByTestId('test-mode-scrubber-range');
     await range.fill('0');
     await expect(status).toHaveAttribute('data-position', '0');
     await expect(prev).toBeDisabled();
@@ -119,6 +151,12 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     // event has sequence 0) and no envelope fields (§3).
     await expect(page.getByTestId('test-mode-inspector-baseline')).toBeVisible();
     await expect(inspectorSeq).toHaveCount(0);
+
+    // (e) At the baseline the changes panel shows its own baseline branch and
+    // no change buckets render (test_mode_changed_highlights §5).
+    await expect(page.getByTestId('test-mode-changes-baseline')).toBeVisible();
+    await expect(nodesAdded).toHaveCount(0);
+    await expect(page.getByTestId('test-mode-changes-nodes-changed')).toHaveCount(0);
 
     // (c) Inherited snapshot-jump debt: the snapshot list renders the
     // walkthrough's snapshot row; clicking it jumps the scrubber to the

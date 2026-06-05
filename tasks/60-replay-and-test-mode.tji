@@ -109,6 +109,7 @@ task replay_test "Replay and test mode" {
     task test_mode_changed_highlights "Highlight what changed at each scrubber step" {
       effort 2d
       allocate team
+      complete 100
       depends !test_mode_timeline_scrubber
     }
     task test_mode_diagnostic_inspector "Inspect structural diagnostics at any position" {

@@ -36,6 +36,7 @@ import {
 } from '@a-conversa/shell';
 import { GraphView } from '@a-conversa/graph-view';
 
+import { ChangeHighlights } from '../changes/ChangeHighlights';
 import { EventInspector } from '../inspector/EventInspector';
 
 export interface TimelineScrubberProps {
@@ -152,6 +153,8 @@ export function TimelineScrubber({
       </section>
 
       <EventInspector events={events} position={position} />
+
+      <ChangeHighlights events={events} position={position} />
     </main>
   );
 }

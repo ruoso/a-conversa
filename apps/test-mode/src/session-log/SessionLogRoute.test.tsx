@@ -37,6 +37,10 @@ vi.mock('@a-conversa/graph-view', () => ({
   GraphView: ({ events }: { events: readonly Event[]; instanceKey: string }) => (
     <div data-testid="graph-view-stub" data-event-count={events.length} />
   ),
+  // The scrubber mounts the changes-panel sibling, which projects through
+  // `projectGraph`; an empty-projection stub keeps this mock complete (the
+  // panel's own readout is pinned by `changes/ChangeHighlights.test.tsx`).
+  projectGraph: () => ({ nodes: [], edges: [] }),
 }));
 
 vi.mock('@a-conversa/shell', async (importOriginal) => {

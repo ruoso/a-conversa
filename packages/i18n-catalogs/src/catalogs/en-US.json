@@ -1084,6 +1084,20 @@
       "baselineTitle": "Baseline",
       "baselineBody": "Before the first event — no event at this position."
     },
+    "changes": {
+      "regionAriaLabel": "What changed at this step",
+      "heading": "Changes",
+      "baselineTitle": "Baseline",
+      "baselineBody": "Before the first event — nothing has been projected yet.",
+      "emptyTitle": "No graph change",
+      "emptyBody": "This step left the projected graph unchanged.",
+      "nodesAddedLabel": "Nodes added",
+      "nodesRemovedLabel": "Nodes removed",
+      "nodesChangedLabel": "Nodes changed",
+      "edgesAddedLabel": "Edges added",
+      "edgesRemovedLabel": "Edges removed",
+      "edgesChangedLabel": "Edges changed"
+    },
     "synthetic": {
       "regionAriaLabel": "Synthetic session scenarios",
       "heading": "Synthetic sessions",
