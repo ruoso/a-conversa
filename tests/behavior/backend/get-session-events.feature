@@ -67,3 +67,30 @@ Feature: GET /sessions/:id/events — paginated event log
     When I GET the events for session "00000000-0000-4000-8000-ffffffff0001"
     Then the response status is 404
     And the response body's error.code is "not-found"
+
+  # --- ADR 0045: anonymous public-session replay (two auth postures on one route) ---
+
+  Scenario: An anonymous caller replays a public, ENDED session (200, ascending order)
+    Given a public session with topic "Concluded debate" exists for that user at "2026-05-09T10:00:00.000Z"
+    And the most recently created session is ended
+    And the most recently created session has 3 events
+    When I GET the events for the most recently created session anonymously
+    Then the response status is 200
+    And the response body's events array has 3 entries
+    And the response body's events[0].sequence is 1
+    And the response body's events[2].sequence is 3
+    And the response body's nextCursor is null
+
+  Scenario: An anonymous caller replays a public, live session (200)
+    Given a public session with topic "Open debate" exists for that user at "2026-05-09T10:00:00.000Z"
+    And the most recently created session has 2 events
+    When I GET the events for the most recently created session anonymously
+    Then the response status is 200
+    And the response body's events array has 2 entries
+
+  Scenario: An anonymous caller is denied a private session (404, existence-non-leak)
+    Given a private session with topic "Alice's private" exists for user "alice"
+    And the most recently created session has 2 events
+    When I GET the events for the most recently created session anonymously
+    Then the response status is 404
+    And the response body's error.code is "not-found"

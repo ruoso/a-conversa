@@ -20,18 +20,26 @@
 //       (rich persisted log, node-created events) owned by the
 //       authenticated caller loads at `/a/replay/<id>`; the graph root
 //       mounts and the Cytoscape canvas paints.
-//   (2) **Anonymous viewer → sign-in CTA.** A no-cookie context visiting
-//       `/a/replay/<id>` gets a 401 from the authenticated-only endpoint;
-//       the surface funnels the viewer to the `PrivateSessionCta` sign-in
-//       affordance (existence-non-leak; ADR 0045/0029).
+//   (2) **Anonymous viewer of a non-public session → sign-in CTA.** A
+//       no-cookie context visiting `/a/replay/<id>` for a PRIVATE session
+//       gets a 404 from the now-relaxed endpoint (existence-non-leak —
+//       private/absent are indistinguishable); the surface funnels the
+//       viewer to the `PrivateSessionCta` sign-in affordance (ADR 0045/0029).
 //   (3) **Locale prefix applied.** `/a/pt-BR/replay/<id>` renders a
 //       pt-BR-localized string, proving the audience `App`-level URL-locale
 //       negotiation flows through the replay route for free.
+//   (4) **Anonymous viewer of a PUBLIC session → graph renders (ADR 0045,
+//       `anonymous_public_session_log`).** Once the backend serves anonymous
+//       public reads, a no-cookie context replaying a public session mounts
+//       the graph with no sign-in wall — the deferred criterion 5 below,
+//       now reachable from the backend relaxation alone (the surface already
+//       gates on data-load status, not auth status).
 //
-// **Deferred (criterion 5).** Anonymous replay of a *public* session
-// without sign-in is not reachable until the events endpoint accepts
-// anonymous public reads; that Playwright coverage is scoped into
-// `backend.replay_endpoints.anonymous_public_session_log`.
+// **Criterion 5 paid down here.** Anonymous replay of a *public* session
+// without sign-in became reachable when
+// `backend.replay_endpoints.anonymous_public_session_log` relaxed the
+// events endpoint to 200 for an anonymous public read; test (4) below is
+// that coverage.
 //
 // **Auth + seeding.** The `chromium-audience-replay` project depends on the
 // shared `setup-auth` project. Scenarios that need a specific host allocate
@@ -86,6 +94,22 @@ async function generateSyntheticSession(page: Page): Promise<string> {
   return body.sessionId;
 }
 
+/**
+ * Flip a session's privacy to `public` via the host-only privacy toggle
+ * (`PATCH /api/sessions/:id/privacy`). The synthetic generator mints a
+ * PRIVATE session; an anonymous public-replay test needs it public.
+ * Must be called on a page whose context owns the session (the host).
+ */
+async function makeSessionPublic(page: Page, sessionId: string): Promise<void> {
+  const response = await page.request.patch(`/api/sessions/${sessionId}/privacy`, {
+    data: { privacy: 'public' },
+  });
+  expect(
+    response.status(),
+    'makeSessionPublic: PATCH /api/sessions/:id/privacy must return 200',
+  ).toBe(200);
+}
+
 test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
   test('(1) authenticated viewer: the replayed log renders the graph', async ({ browser }) => {
     const context = await freshContext(browser);
@@ -120,12 +144,17 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
     }
   });
 
-  test('(2) anonymous viewer: the endpoint 401s and the surface shows the sign-in CTA', async ({
+  test('(2) anonymous viewer of a PRIVATE session: 404 → not-found → the sign-in CTA', async ({
     browser,
   }) => {
     // A host first creates the session so it genuinely exists; the
-    // anonymous read is gated by the authenticated-only endpoint, not by
-    // the session's absence.
+    // anonymous read is gated by the session's PRIVATE privacy, not by
+    // its absence. `generateSyntheticSession()` mints a PRIVATE session
+    // (see `test-mode/routes.ts` — `privacy 'private'`), so the relaxed
+    // endpoint returns 404 `not-found` (existence-non-leak — private and
+    // absent are indistinguishable) and the surface shows the CTA. The
+    // "anonymous → sign-in wall" behavior keeps its pin; only the gating
+    // reason changed from a blanket 401 to a privacy-gated 404.
     const creatorContext = await freshContext(browser);
     const creatorPage = await creatorContext.newPage();
     let sessionId: string;
@@ -141,9 +170,10 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
     try {
       await anonPage.goto(`/a/replay/${sessionId}`);
 
-      // The authenticated-only endpoint 401s the anonymous request; the
-      // hook maps that to `error`, and the surface funnels the viewer to
-      // the sign-in wall (ADR 0045 — visibility-gated v1).
+      // The relaxed endpoint 404s the anonymous read of a private
+      // session; the hook maps 404 to `not-found`, and the surface
+      // funnels the viewer to the sign-in wall (ADR 0045 — visibility-
+      // gated v1).
       const cta = anonPage.getByTestId('audience-private-session-cta');
       await expect(cta, 'anonymous replay shows the sign-in CTA').toBeVisible({ timeout: 15_000 });
 
@@ -176,5 +206,58 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
 
     // `audience.replay.unavailableTitle` in pt-BR — the URL-locale witness.
     await expect(unavailable).toContainText('Replay indisponível');
+  });
+
+  test('(4) anonymous viewer of a PUBLIC session: the replayed log renders the graph, no CTA', async ({
+    browser,
+  }) => {
+    // ADR 0045 — the deferred criterion 5 (`replay_mode_audience_surface`),
+    // paid down by `anonymous_public_session_log`. A host seeds a synthetic
+    // session (PRIVATE by default) and flips it PUBLIC; an anonymous
+    // (no-cookie) context replays it. The relaxed endpoint returns 200 to
+    // the anonymous public read → the hook flips to `ready` →
+    // `AudienceReplayRoute` mounts `<GraphView>` with no auth conditional.
+    const creatorContext = await freshContext(browser);
+    const creatorPage = await creatorContext.newPage();
+    let sessionId: string;
+    try {
+      await loginAs(creatorPage, { username: 'alice' });
+      sessionId = await generateSyntheticSession(creatorPage);
+      await makeSessionPublic(creatorPage, sessionId);
+    } finally {
+      await creatorContext.close();
+    }
+
+    const anonContext = await freshContext(browser);
+    const anonPage = await anonContext.newPage();
+    try {
+      await anonPage.goto(`/a/replay/${sessionId}`);
+
+      // 200 → `ready` → the shared `@a-conversa/graph-view` renderer mounts
+      // for an anonymous viewer — no sign-in required.
+      await expect(
+        anonPage.getByTestId('audience-graph-root'),
+        'the anonymous public replay mounts the graph renderer',
+      ).toBeVisible({ timeout: 15_000 });
+
+      // Cytoscape paints nodes/labels to `<canvas>` layers — the
+      // render-pipeline witness over the node-created events.
+      const canvasCount = await anonPage
+        .getByTestId('audience-graph-root')
+        .locator('canvas')
+        .count();
+      expect(canvasCount, 'the replayed graph paints a Cytoscape canvas').toBeGreaterThan(0);
+
+      // The sign-in wall is ABSENT — the public read needs no auth.
+      await expect(
+        anonPage.getByTestId('audience-private-session-cta'),
+        'no sign-in CTA for an anonymous public replay',
+      ).toHaveCount(0);
+
+      // The URL stays put — replay is an in-place public route.
+      expect(new URL(anonPage.url()).pathname).toBe(`/a/replay/${sessionId}`);
+    } finally {
+      await anonContext.close();
+    }
   });
 });

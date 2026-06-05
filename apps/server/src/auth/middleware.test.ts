@@ -131,6 +131,18 @@ async function buildApp(opts: { initialRows: UserRow[]; now?: () => number }): P
     captured.value = request.authUser;
     return { ok: true, authUser: request.authUser ?? null };
   });
+  app.get(
+    '/optional',
+    {
+      preHandler: app.optionalAuthenticate,
+    },
+    (request) => {
+      // The optional-auth posture: the preHandler ran but may have left
+      // `authUser` unset (no cookie / invalid cookie → anonymous).
+      captured.value = request.authUser;
+      return { ok: true, authUser: request.authUser ?? null };
+    },
+  );
   await app.ready();
   return {
     app,
@@ -326,6 +338,89 @@ describe('auth middleware — public route opt-in story', () => {
       method: 'GET',
       url: '/public',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ authUser: AuthUser | null }>();
+    expect(body.authUser).toBeNull();
+  });
+});
+
+describe('auth middleware — optionalAuthenticate (two-posture decorator)', () => {
+  let built: BuiltApp;
+
+  beforeEach(async () => {
+    built = await buildApp({
+      initialRows: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+    });
+  });
+
+  afterEach(async () => {
+    await built.app.close();
+  });
+
+  it('sets request.authUser and does not throw when the cookie is valid (authenticated posture)', async () => {
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/optional',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ ok: boolean; authUser: AuthUser | null }>();
+    expect(body.ok).toBe(true);
+    expect(body.authUser).toEqual({ id: ALICE_ID, screenName: 'alice' });
+  });
+
+  it('leaves request.authUser unset and never 401s when no cookie is present (anonymous posture)', async () => {
+    const response = await built.app.inject({ method: 'GET', url: '/optional' });
+    // The defining property: NO 401. The handler ran with an anonymous
+    // posture.
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ ok: boolean; authUser: AuthUser | null }>();
+    expect(body.ok).toBe(true);
+    expect(body.authUser).toBeNull();
+  });
+
+  it('degrades to anonymous (unset, no 401) when the cookie signature is tampered', async () => {
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const parts = token.split('.');
+    const fakeSig = Buffer.alloc(32, 0xab).toString('base64url');
+    const tampered = `${parts[0]}.${parts[1]}.${fakeSig}`;
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/optional',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${tampered}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ authUser: AuthUser | null }>();
+    expect(body.authUser).toBeNull();
+  });
+
+  it('degrades to anonymous (unset, no 401) when the cookie carries an expired token', async () => {
+    const past = 1_000;
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET, { now: () => past });
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/optional',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ authUser: AuthUser | null }>();
+    expect(body.authUser).toBeNull();
+  });
+
+  it('degrades to anonymous (unset, no 401) when the cookie is a malformed JWT string', async () => {
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/optional',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=not-a-jwt` },
     });
     expect(response.statusCode).toBe(200);
     const body = response.json<{ authUser: AuthUser | null }>();

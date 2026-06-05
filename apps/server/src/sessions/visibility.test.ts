@@ -40,7 +40,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canSeeSession, visibilityWhereFragment } from './visibility.js';
+import {
+  canReplaySessionAnonymously,
+  canSeeSession,
+  canSeeSessionAnonymously,
+  visibilityWhereFragment,
+} from './visibility.js';
 import type { VisibilityExecutor } from './visibility.js';
 
 interface SessionRow {
@@ -236,7 +241,7 @@ describe('canSeeSession', () => {
     expect(visible).toBe(false);
   });
 
-  it('issues exactly one parameterized SELECT against the executor', async () => {
+  it('issues exactly one parameterized SELECT against the executor (canSeeSession)', async () => {
     // The predicate is a single round-trip — no N+1, no fan-out. Pin
     // the contract so a future refactor that adds a second query
     // (e.g. a separate participant scan) surfaces here.
@@ -257,5 +262,115 @@ describe('canSeeSession', () => {
     expect(calls[0]?.text).toContain('FROM sessions');
     expect(calls[0]?.text).toContain('WHERE id = $1');
     expect(calls[0]?.text).toContain('LIMIT 1');
+  });
+});
+
+// ---------------------------------------------------------------------
+// Anonymous predicates — the live (`canSeeSessionAnonymously`) and the
+// replay (`canReplaySessionAnonymously`) gates. The ONLY semantic
+// difference is the `ended_at IS NULL` clause: the live gate excludes
+// ended sessions, the replay gate is ended-agnostic (ADR 0029 / 0045).
+// ---------------------------------------------------------------------
+
+interface AnonSessionRow {
+  id: string;
+  privacy: 'public' | 'private';
+  ended_at: string | null;
+}
+
+/**
+ * In-memory executor that mirrors BOTH anonymous predicates' SQL so the
+ * contrast on the ended case is testable through one fixture. Both
+ * emit `SELECT 1 AS visible FROM sessions WHERE id = $1 AND privacy =
+ * 'public' [AND ended_at IS NULL] LIMIT 1`; the live gate carries the
+ * `ended_at IS NULL` clause, the replay gate does not. The executor
+ * keys off `text.includes('ended_at')` to apply (or skip) that filter.
+ */
+function makeAnonExecutor(rows: AnonSessionRow[]): VisibilityExecutor {
+  const sessions = new Map(rows.map((r) => [r.id, r]));
+  return {
+    query: <TRow extends Record<string, unknown>>(
+      text: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<{ rows: TRow[] }> => {
+      const trimmed = text.trim();
+      if (
+        trimmed.startsWith('SELECT 1') &&
+        text.includes('FROM sessions') &&
+        text.includes('WHERE id = $1') &&
+        text.includes("privacy = 'public'")
+      ) {
+        const p = (params ?? []) as unknown[];
+        const sessionId = p[0] as string;
+        const session = sessions.get(sessionId);
+        if (session === undefined || session.privacy !== 'public') {
+          return Promise.resolve({ rows: [] as TRow[] });
+        }
+        const gatesEnded = text.includes('ended_at IS NULL');
+        if (gatesEnded && session.ended_at !== null) {
+          return Promise.resolve({ rows: [] as TRow[] });
+        }
+        return Promise.resolve({ rows: [{ visible: 1 }] as unknown as TRow[] });
+      }
+      return Promise.reject(new Error(`unexpected SQL in anon visibility executor: ${text}`));
+    },
+  };
+}
+
+const PUBLIC_ENDED_SESSION = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+describe('canReplaySessionAnonymously', () => {
+  it('returns true for a public, live (not-ended) session', async () => {
+    const executor = makeAnonExecutor([{ id: PUBLIC_SESSION, privacy: 'public', ended_at: null }]);
+    expect(await canReplaySessionAnonymously(executor, PUBLIC_SESSION)).toBe(true);
+  });
+
+  it('returns true for a public, ENDED session (replay is historical — ended-agnostic)', async () => {
+    const executor = makeAnonExecutor([
+      { id: PUBLIC_ENDED_SESSION, privacy: 'public', ended_at: '2026-05-09T11:00:00.000Z' },
+    ]);
+    expect(await canReplaySessionAnonymously(executor, PUBLIC_ENDED_SESSION)).toBe(true);
+  });
+
+  it('returns false for a private session', async () => {
+    const executor = makeAnonExecutor([
+      { id: PRIVATE_SESSION, privacy: 'private', ended_at: null },
+    ]);
+    expect(await canReplaySessionAnonymously(executor, PRIVATE_SESSION)).toBe(false);
+  });
+
+  it('returns false for an unknown session id (existence-non-leak)', async () => {
+    const executor = makeAnonExecutor([{ id: PUBLIC_SESSION, privacy: 'public', ended_at: null }]);
+    expect(await canReplaySessionAnonymously(executor, UNKNOWN_SESSION)).toBe(false);
+  });
+
+  it('differs from canSeeSessionAnonymously on the ENDED case (the load-bearing contrast)', async () => {
+    // Same public-but-ended session: the live gate hides it
+    // (`ended_at IS NULL` excludes it), the replay gate admits it.
+    const executor = makeAnonExecutor([
+      { id: PUBLIC_ENDED_SESSION, privacy: 'public', ended_at: '2026-05-09T11:00:00.000Z' },
+    ]);
+    expect(await canSeeSessionAnonymously(executor, PUBLIC_ENDED_SESSION)).toBe(false);
+    expect(await canReplaySessionAnonymously(executor, PUBLIC_ENDED_SESSION)).toBe(true);
+  });
+
+  it('issues exactly one parameterized SELECT with no ended_at clause', async () => {
+    const calls: Array<{ text: string; params?: ReadonlyArray<unknown> }> = [];
+    const tracingExecutor: VisibilityExecutor = {
+      query: <TRow extends Record<string, unknown>>(
+        text: string,
+        params?: ReadonlyArray<unknown>,
+      ): Promise<{ rows: TRow[] }> => {
+        calls.push({ text, ...(params !== undefined ? { params } : {}) });
+        return Promise.resolve({ rows: [{ visible: 1 }] as unknown as TRow[] });
+      },
+    };
+    await canReplaySessionAnonymously(tracingExecutor, PUBLIC_SESSION);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.params).toEqual([PUBLIC_SESSION]);
+    expect(calls[0]?.text).toContain("privacy = 'public'");
+    // The ended-agnostic delta — the replay predicate must NOT carry the
+    // live gate's `ended_at IS NULL` clause.
+    expect(calls[0]?.text).not.toContain('ended_at');
   });
 });

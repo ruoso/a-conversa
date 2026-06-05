@@ -40,7 +40,7 @@ import {
 } from '../events/read.js';
 import { projectAtPosition, ReplayPositionError } from '../projection/at-position.js';
 import { computeAllDiagnostics } from '../diagnostics/index.js';
-import { canSeeSession } from '../sessions/visibility.js';
+import { canReplaySessionAnonymously, canSeeSession } from '../sessions/visibility.js';
 import { serializeProjectionForWire } from '../ws/handlers/index.js';
 
 /**
@@ -533,7 +533,12 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
   app.get(
     '/api/sessions/:id/events',
     {
-      preHandler: app.authenticate,
+      // Two auth postures on one route (ADR 0045, mirroring ADR 0029's
+      // "one transport, two auth postures"). `optionalAuthenticate`
+      // resolves a valid cookie to `request.authUser` and degrades a
+      // missing/invalid cookie to anonymous WITHOUT 401-ing — the
+      // handler branches on `request.authUser` below.
+      preHandler: app.optionalAuthenticate,
       schema: {
         tags: ['events'],
         summary: "Fetch a session's persisted event log (paginated, replay order)",
@@ -543,18 +548,23 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
           'client can feed them through the replay primitive. This is distinct from ' +
           '`GET /sessions/:id/state?position=...`, which returns projected state at a ' +
           'log position.\n\n' +
-          'Visibility is exactly the session`s own: public sessions are visible to every ' +
-          'authenticated user; private sessions only to the host or a current/past ' +
-          'participant. When the session does not exist OR exists but is invisible to the ' +
-          'caller, the server returns 404 `not-found` — the two cases are deliberately ' +
-          'indistinguishable to avoid leaking the existence of private sessions.\n\n' +
+          'Serves two auth postures on one route (ADR 0045). An AUTHENTICATED caller ' +
+          'sees exactly the session`s own visibility: public sessions are visible to ' +
+          'every authenticated user; private sessions only to the host or a current/past ' +
+          'participant. An ANONYMOUS caller (no cookie, or an invalid/expired cookie) may ' +
+          "replay a public session — `privacy = 'public'`, ended or not, since replay is " +
+          'inherently historical. When the session does not exist OR exists but is ' +
+          'invisible to the caller, the server returns 404 `not-found` — the two cases are ' +
+          'deliberately indistinguishable to avoid leaking the existence of private ' +
+          'sessions (a private/absent session is 404 for an anonymous caller too).\n\n' +
           'Paginate with `?after=<sequence>` (exclusive cursor) and `?limit` (default ' +
           '100, max 1000). The response carries `nextCursor` — the sequence to pass as ' +
           'the next `?after`, or `null` at the head of the log. An empty page (a ' +
           'brand-new session, or a cursor past the head) is 200 with ' +
           '`{ events: [], nextCursor: null }`, not 404.\n\n' +
-          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
-          '`validation-failed` when `:id` is not a UUID or `after`/`limit` are out of range.',
+          'Returns 400 `validation-failed` when `:id` is not a UUID or `after`/`limit` ' +
+          'are out of range. This endpoint does not 401 — an unauthenticated request is ' +
+          'served the anonymous posture.',
         security: [{ cookieAuth: [] }],
         params: sessionIdParamsSchema,
         querystring: sessionEventsQuerySchema,
@@ -566,17 +576,9 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
       },
     },
     async (request, reply) => {
-      // Defensive — the middleware guarantees `authUser` is set on every
-      // request that reaches a handler with `preHandler: app.authenticate`.
+      // `optionalAuthenticate` either set `request.authUser` (a valid
+      // cookie) or left it unset (no cookie / invalid cookie → anonymous).
       const auth = request.authUser;
-      if (auth === undefined) {
-        throw new ApiError(
-          500,
-          'internal-error',
-          'auth middleware did not populate request.authUser',
-        );
-      }
-      const userId = auth.id;
 
       // Fastify's validator narrows params / query to the schema shapes.
       const params = request.params as { id: string };
@@ -590,9 +592,21 @@ const replayRoutesPluginAsync: FastifyPluginAsync<ReplayRoutesOptions> = async (
       // Visibility gate runs BEFORE the events read — an invisible
       // session never reaches the events query. Zero visibility → 404
       // (whether the id is unused or exists-but-invisible, per the
-      // existence-leak rule). Reuses `canSeeSession` verbatim — the
-      // events of a session are exactly as visible as the session itself.
-      if (!(await canSeeSession(pool, sessionId, userId))) {
+      // existence-leak rule).
+      //
+      // Two postures (ADR 0045):
+      //   - Authenticated → `canSeeSession` (public OR host OR participant
+      //     incl. historical) — the events of a session are exactly as
+      //     visible as the session itself.
+      //   - Anonymous → `canReplaySessionAnonymously` (public, ended or
+      //     not). A private or nonexistent session is 404, indistinguishable
+      //     from outside; a forged cookie lands here and is gated by the
+      //     strict `privacy = 'public'` filter.
+      const visible =
+        auth === undefined
+          ? await canReplaySessionAnonymously(pool, sessionId)
+          : await canSeeSession(pool, sessionId, auth.id);
+      if (!visible) {
         throw ApiError.notFound('session not found or not visible');
       }
 

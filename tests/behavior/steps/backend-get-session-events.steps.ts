@@ -87,6 +87,29 @@ async function injectEvents(
   };
 }
 
+// Anonymous GET — NO `cookie` header at all. Exercises the ADR 0045
+// optional-auth posture: the relaxed endpoint resolves an absent cookie
+// to the anonymous branch (`canReplaySessionAnonymously`) instead of
+// 401-ing.
+async function injectEventsAnonymous(
+  world: AConversaWorld,
+  sessionId: string,
+  search: string,
+): Promise<void> {
+  const s = scratch(world);
+  const app = s.replayApp;
+  assert.ok(app, 'replay app not initialized — Background step missing');
+  const response = await app.inject({
+    method: 'GET',
+    url: `/api/sessions/${sessionId}/events${search}`,
+  });
+  s.lastResponse = {
+    statusCode: response.statusCode,
+    body: response.body,
+    headers: response.headers,
+  };
+}
+
 // ============================================================
 // Givens
 // ============================================================
@@ -135,6 +158,15 @@ Given(
   },
 );
 
+Given('the most recently created session is ended', async function (this: AConversaWorld) {
+  // Stamp `ended_at` on the just-seeded session. The anonymous replay
+  // gate (`canReplaySessionAnonymously`) is ended-agnostic, so an
+  // ended public session still serves its log — the primary
+  // public-replay target (ADR 0045).
+  const sessionId = await mostRecentSessionId(this);
+  await this.db.query(`UPDATE sessions SET ended_at = now() WHERE id = $1`, [sessionId]);
+});
+
 // ============================================================
 // Whens
 // ============================================================
@@ -182,6 +214,15 @@ When(
     const token = await signSessionToken({ sub: userId }, TEST_SESSION_SECRET);
     const sessionId = await mostRecentSessionId(this);
     await injectEvents(this, sessionId, token, '');
+  },
+);
+
+When(
+  'I GET the events for the most recently created session anonymously',
+  async function (this: AConversaWorld) {
+    // No cookie minted, no cookie sent — the anonymous posture.
+    const sessionId = await mostRecentSessionId(this);
+    await injectEventsAnonymous(this, sessionId, '');
   },
 );
 

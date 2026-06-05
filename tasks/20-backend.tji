@@ -416,6 +416,7 @@ task backend "Backend" {
     task anonymous_public_session_log "Anonymous read of a public session's event log (replay surface)" {
       effort 1d
       allocate team
+      complete 100
       depends !get_session_log
       note "Registered by closer for replay_test.replay_ui.replay_mode_audience_surface (2026-06-05): relaxes GET /sessions/:id/events to two auth postures — anonymous → new canReplaySessionAnonymously predicate (privacy = 'public', ended-agnostic); authenticated → unchanged canSeeSession. Preserves existence-non-leak rule. Owns Cucumber scenarios (anon+public-ended→200; anon+public-live→200; anon+private→404; auth paths unchanged) and the deferred anonymous-public-replay Playwright spec from criterion 5 of the replay_mode_audience_surface refinement. Constrained by ADR 0045. Source: tasks/refinements/replay_test/replay_mode_audience_surface.md §Named follow-up."
     }

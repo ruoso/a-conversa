@@ -205,18 +205,87 @@ describe('GET /sessions/:id/events', () => {
     expect(body.nextCursor).toBeNull();
   });
 
-  it('returns 401 auth-required when no session cookie is present', async () => {
+  // ADR 0045 — two auth postures on one route. An anonymous (no-cookie)
+  // request no longer 401s; it is served the anonymous posture, gated by
+  // `canReplaySessionAnonymously` (public, ended-agnostic).
+  it('returns 200 + events for an anonymous caller on a public (live) session', async () => {
     const alice = await insertUser(db, 'authelia:alice', 'alice');
     const sessionId = await insertSession(db, alice, 'public', 'public debate');
+    await insertEvents(db, sessionId, alice, 3);
 
     const response = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/events`,
     });
 
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(200);
+    const body = response.json<EventsBody>();
+    expect(body.events?.map((e) => e.sequence)).toEqual([1, 2, 3]);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('returns 200 + events for an anonymous caller on a public ENDED session (replay is historical)', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'public', 'concluded debate');
+    await insertEvents(db, sessionId, alice, 2);
+    // End the session — the anonymous replay gate is ended-agnostic, so
+    // this must still serve the log (the live WS gate would NOT).
+    await db.query(`UPDATE sessions SET ended_at = now() WHERE id = $1`, [sessionId]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/events`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<EventsBody>();
+    expect(body.events?.map((e) => e.sequence)).toEqual([1, 2]);
+  });
+
+  it('returns 404 not-found for an anonymous caller on a PRIVATE session (existence-non-leak)', async () => {
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertEvents(db, sessionId, alice, 2);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/events`,
+    });
+
+    expect(response.statusCode).toBe(404);
     const body = response.json<{ error?: { code?: string } }>();
-    expect(body.error?.code).toBe('auth-required');
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 not-found for an anonymous caller on an unknown session id', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${UNKNOWN_ID}/events`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('degrades a forged/invalid cookie to the anonymous posture (404 on a private session, no 401)', async () => {
+    // A present-but-unverifiable cookie must NOT bypass the anonymous
+    // gate: it lands in the anonymous branch and is gated by the strict
+    // `privacy = 'public'` filter — a private session is 404, never 401.
+    const alice = await insertUser(db, 'authelia:alice', 'alice');
+    const sessionId = await insertSession(db, alice, 'private', "alice's private");
+    await insertEvents(db, sessionId, alice, 2);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/events`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=not-a-jwt` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
   });
 
   it('returns 404 not-found when the session id does not exist', async () => {

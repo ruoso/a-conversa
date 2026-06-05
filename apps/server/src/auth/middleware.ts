@@ -274,6 +274,43 @@ const authenticatePluginAsync: FastifyPluginAsync<AuthMiddlewareOptions> = (
     request.authUser = authUser;
   });
 
+  // Decorate the instance with the `optionalAuthenticate` function —
+  // sibling to `authenticate`, for routes that serve two auth postures
+  // on a single transport (ADR 0045's anonymous public-replay read; ADR
+  // 0029's "one transport, two auth postures"). It runs the same
+  // cookie-resolution chain via `authenticateRequest`, but NEVER throws:
+  //   - valid cookie  → set `request.authUser` (authenticated posture);
+  //   - missing cookie OR present-but-invalid cookie (expired / forged /
+  //     revoked / soft-deleted user — i.e. `authenticateRequest` → null)
+  //     → leave `request.authUser` unset and proceed (anonymous posture).
+  // The handler branches on `request.authUser === undefined`. This
+  // mirrors the WS upgrade gate's two anonymous branches
+  // (`ws/connection.ts` ~976 and ~992): a forged cookie does not bypass
+  // the anonymous-only data-layer visibility check — it simply lands in
+  // the anonymous branch and is gated there.
+  app.decorate(
+    'optionalAuthenticate',
+    async function optionalAuthenticate(request, _reply): Promise<void> {
+      const rawHeader = request.headers['cookie'];
+      const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+      const authUser = await authenticateRequest(
+        cookieHeader,
+        ensurePool(),
+        ensureSecret(),
+        nowOverride,
+      );
+      if (authUser === null) {
+        // No cookie, or a cookie that did not verify. Degrade to
+        // anonymous: leave `request.authUser` unset (the
+        // `exactOptionalPropertyTypes` distinction — omitted, not
+        // explicitly `undefined`; the handler reads it back as
+        // `undefined` either way) and do NOT throw a 401.
+        return;
+      }
+      request.authUser = authUser;
+    },
+  );
+
   return Promise.resolve();
 };
 

@@ -94,5 +94,19 @@ declare module 'fastify' {
      * handler renders the canonical envelope.
      */
     authenticate: AuthDecorator;
+
+    /**
+     * The OPTIONAL-auth decorator — sibling to `authenticate`. Routes
+     * that serve two auth postures on one transport (per ADR 0045/0029)
+     * attach this as their `preHandler`. It resolves the session cookie
+     * via the same `authenticateRequest` primitive: on a *valid* cookie
+     * it sets `request.authUser`; on a missing OR present-but-invalid
+     * cookie (expired / forged / revoked / soft-deleted user) it leaves
+     * `request.authUser` unset and **never throws 401**. The handler
+     * then branches on `request.authUser === undefined` to run the
+     * anonymous (data-layer gated) path. This is the HTTP analogue of
+     * the WS upgrade gate's optional posture.
+     */
+    optionalAuthenticate: AuthDecorator;
   }
 }

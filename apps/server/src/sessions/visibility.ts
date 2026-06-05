@@ -226,6 +226,55 @@ export async function canSeeSessionAnonymously(
 }
 
 /**
+ * Boolean predicate — can an ANONYMOUS caller REPLAY this session?
+ *
+ * Sibling to `canSeeSessionAnonymously`, but for the *replay* (HTTP
+ * event-log) seam rather than the live-WS seam. Per ADR 0045, the
+ * audience-replay surface widened `GET /sessions/:id/events` to two
+ * auth postures: an authenticated caller is gated by `canSeeSession`,
+ * an anonymous caller by this predicate.
+ *
+ *   `SELECT 1 FROM sessions WHERE id = $1 AND privacy = 'public'`
+ *
+ * The ONLY difference from `canSeeSessionAnonymously` is the **absence**
+ * of the `ended_at IS NULL` clause. Replay is inherently historical —
+ * an *ended* public session is the primary replay target, so gating on
+ * `ended_at IS NULL` (as the live predicate does) would wrongly hide
+ * exactly the sessions a public-replay link points at. The replay
+ * predicate is therefore strictly the live-anonymous predicate minus
+ * that one clause — the minimal, auditable delta (ADR 0045 Decision §2).
+ *
+ * The existence-non-leak rule is preserved: the predicate does NOT
+ * distinguish "doesn't exist" from "exists but not public" — both
+ * return `false`. The relaxed events handler renders both as the
+ * canonical `not-found` 404 (same phrasing the authenticated path uses),
+ * so a private or absent session is indistinguishable from outside.
+ *
+ * **No `users.deleted_at` consideration.** Anonymous callers have no
+ * users row to soft-delete; the predicate's null-user input is
+ * structural (the optional-auth decorator left `request.authUser`
+ * unset), not derived from a user lookup. A forged/expired cookie
+ * degrades to anonymous and is gated here all the same — it cannot
+ * bypass the strict `privacy = 'public'` filter.
+ *
+ * @param executor - a query-runner (the request's pool, or a
+ *   transaction client inside `withTransaction`).
+ * @param sessionId - the session id under question (UUID).
+ * @returns `true` iff the session exists AND has `privacy = 'public'`
+ *   (regardless of `ended_at`).
+ */
+export async function canReplaySessionAnonymously(
+  executor: VisibilityExecutor,
+  sessionId: string,
+): Promise<boolean> {
+  const result = await executor.query<{ visible: number }>(
+    `SELECT 1 AS visible FROM sessions WHERE id = $1 AND privacy = 'public' LIMIT 1`,
+    [sessionId],
+  );
+  return result.rows.length > 0;
+}
+
+/**
  * Re-export the `DbPool` type so consumers of this module don't need a
  * second import to type the executor argument when they already have a
  * pool in hand. Equivalent to importing `DbPool` from `../db.js`
