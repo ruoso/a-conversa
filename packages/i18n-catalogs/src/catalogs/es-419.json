@@ -1056,7 +1056,8 @@
         "pause": "Pausar",
         "stepBack": "Paso anterior",
         "stepForward": "Paso siguiente",
-        "positionStatus": "Posición {position, number} de {head, number}"
+        "positionStatus": "Posición {position, number} de {head, number}",
+        "seekAriaLabel": "Ir a una posición de evento"
       }
     }
   },

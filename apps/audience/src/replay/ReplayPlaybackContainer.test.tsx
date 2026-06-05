@@ -83,6 +83,9 @@ function disabled(testId: string): boolean {
 function play(): HTMLButtonElement {
   return screen.getByTestId<HTMLButtonElement>('audience-replay-play');
 }
+function seek(): HTMLInputElement {
+  return screen.getByTestId<HTMLInputElement>('audience-replay-seek');
+}
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
@@ -146,6 +149,73 @@ describe('ReplayPlaybackContainer — controls + stepping', () => {
     expect(disabled('audience-replay-step-back')).toBe(true);
     expect(disabled('audience-replay-step-forward')).toBe(false);
     expect(graphCount()).toBe(0);
+  });
+});
+
+describe('ReplayPlaybackContainer — seek bar', () => {
+  it('exposes a head-seeded range input with the log bounds', () => {
+    renderContainer(SIX_EVENTS);
+
+    const input = seek();
+    expect(input.min).toBe('0');
+    expect(input.max).toBe(String(HEAD));
+    expect(input.step).toBe('1');
+    // Controlled by `position` — opens at the head (ADR 0045 default).
+    expect(input.value).toBe(String(HEAD));
+  });
+
+  it('seeking to a mid value relocates the position and re-projects the graph', () => {
+    renderContainer(SIX_EVENTS);
+
+    fireEvent.change(seek(), { target: { value: '3' } });
+    expect(position()).toBe('3');
+    expect(seek().value).toBe('3');
+    // The graph re-renders from the position prefix (sequence <= 3).
+    expect(graphCount()).toBe(3);
+  });
+
+  it('clamps a value past the head or below the baseline', () => {
+    renderContainer(SIX_EVENTS);
+
+    // Beyond the head clamps to the head.
+    fireEvent.change(seek(), { target: { value: '99' } });
+    expect(position()).toBe(String(HEAD));
+    expect(graphCount()).toBe(HEAD);
+
+    // Below the baseline clamps to 0.
+    fireEvent.change(seek(), { target: { value: '-4' } });
+    expect(position()).toBe('0');
+    expect(graphCount()).toBe(0);
+  });
+
+  it('disables step-forward once the bar is dragged to the head', () => {
+    renderContainer(SIX_EVENTS);
+
+    // Move off the head, then drag the bar back to it.
+    fireEvent.change(seek(), { target: { value: '2' } });
+    expect(disabled('audience-replay-step-forward')).toBe(false);
+
+    fireEvent.change(seek(), { target: { value: String(HEAD) } });
+    expect(position()).toBe(String(HEAD));
+    expect(disabled('audience-replay-step-forward')).toBe(true);
+  });
+});
+
+describe('ReplayPlaybackContainer — seek bar tracks playback', () => {
+  it('the thumb advances by one event per play-loop tick', () => {
+    vi.useFakeTimers();
+    renderContainer(SIX_EVENTS);
+
+    // Play restarts from the baseline (Decision §5), so the thumb resets to 0.
+    fireEvent.click(play());
+    expect(seek().value).toBe('0');
+
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    // The bar is a live progress indicator — its value tracks the cursor.
+    expect(seek().value).toBe('1');
+    expect(position()).toBe('1');
   });
 });
 

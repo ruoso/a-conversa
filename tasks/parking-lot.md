@@ -210,3 +210,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: doc-hygiene call — the split is correctly encoded in the WBS and in the refinement's Decision §1; the ADR amendment is a human authoring judgment (what the amendment should say, whether to update §2 and §4 or add a new §, etc.).
 - **Suggested resolution**: append an Amendment to `docs/adr/0026-micro-frontend-root-app.md` noting that the `replay-test` reservation is superseded by the `test-mode` / audience-variant split, referencing Decision §1 of this refinement.
 
+### 2026-06-05 — Pause-on-grab UX alternative for audience replay seek bar
+
+- **Source**: closer for `replay_test.replay_ui.replay_seek_bar` (Decision §2; implementer return summary).
+- **Question**: should the replay seek bar auto-pause playback when the user grabs the thumb, then optionally resume on release? Some media players implement this to prevent the play loop from fighting the drag. The shipped behavior is "last-write-wins" — dragging simply writes a new `position` and the play loop continues from the new point.
+- **Why parked**: UX preference call with no demonstrated need; Decision §2 explicitly rejected pause-on-grab for v1 (extra interaction state for a 1d leaf; the shared `updatePosition` setter handles last-write-wins correctly without a race). Whether UX testing later reveals a need for pause-on-grab is a product judgment, not an agent-implementable deliverable.
+- **Suggested resolution**: if show producers or the methodology owner find the continuous-play-while-dragging behavior confusing in practice, spec a `replay_seek_bar_pause_on_grab` task covering a `grabbing` state bit in `ReplayPlaybackContainer`, pause-on-`pointerdown` / resume-on-`pointerup` logic, and updated Vitest + Playwright cover.
+

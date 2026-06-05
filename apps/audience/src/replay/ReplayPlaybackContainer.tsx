@@ -1,7 +1,14 @@
 // `<ReplayPlaybackContainer>` — the lifted-position owner for the audience
-// replay viewer's play / pause / step controls.
+// replay viewer's play / pause / step controls and the draggable seek bar.
 //
 // Refinement: tasks/refinements/replay_test/replay_playback_controls.md
+//   then tasks/refinements/replay_test/replay_seek_bar.md (Decision §1 —
+//   port the test-mode controlled `<input type="range">` into this controls
+//   cluster as a new writer of the lifted `position`, funnelled through the
+//   same `updatePosition`/`clampPosition` guard; controlled by `value={
+//   position}` so the thumb doubles as a live playback progress indicator.
+//   Constraint §5 — plain bar, no chapter ticks. Constraint §6 — the text
+//   readout stays as the a11y announce surface.)
 //   (Decision §1 — lift `position` into a route-local container mirroring
 //    test-mode's `SessionScrubberContainer`; render `GraphView` + the
 //    controls as siblings so the downstream `replay_seek_bar` /
@@ -22,7 +29,7 @@
 // `AudienceReplayRoute`'s `ready` branch mounts this in place of the static
 // head frame; the load / auth / CTA branches are unchanged (Constraint §7).
 
-import { useMemo, useState, type ReactElement } from 'react';
+import { useMemo, useState, type ChangeEvent, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Event } from '@a-conversa/shared-types';
@@ -92,6 +99,13 @@ export function ReplayPlaybackContainer({
       play();
     }
   };
+  // The seek bar is a new writer of `position`, funnelling through the same
+  // `updatePosition`/`clampPosition` guard as the buttons and the play loop
+  // (Constraint §1/§2). It ports the test-mode scrubber's range handler
+  // verbatim (Decision §1).
+  const onScrub = (event: ChangeEvent<HTMLInputElement>): void => {
+    updatePosition(Number(event.target.value));
+  };
 
   const playLabel = isPlaying
     ? t('audience.replay.playback.pause')
@@ -137,6 +151,18 @@ export function ReplayPlaybackContainer({
         >
           {t('audience.replay.playback.stepForward')}
         </button>
+
+        <input
+          type="range"
+          data-testid="audience-replay-seek"
+          min={0}
+          max={head}
+          step={1}
+          value={position}
+          onChange={onScrub}
+          aria-label={t('audience.replay.playback.seekAriaLabel')}
+          className="h-2 min-w-[12rem] flex-1 cursor-pointer"
+        />
 
         <p
           role="status"

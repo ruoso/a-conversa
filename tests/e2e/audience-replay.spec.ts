@@ -318,4 +318,56 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
       await context.close();
     }
   });
+
+  test('(6) seek bar: dragging relocates the position and the thumb tracks playback', async ({
+    browser,
+  }) => {
+    // Refinement: replay_seek_bar (Acceptance §3 — reachable behavior on the
+    // already-mounted authenticated replay surface). The seek bar renders into
+    // the same `ready` controls cluster test (5) drives, so the "not yet
+    // reachable" e2e deferral does not apply.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      await loginAs(page, { username: 'alice' });
+      const sessionId = await generateSyntheticSession(page);
+
+      await page.goto(`/a/replay/${sessionId}`);
+
+      // The surface lands on the head frame with the controls + seek bar.
+      await expect(page.getByTestId('audience-replay-controls')).toBeVisible({ timeout: 15_000 });
+      const seek = page.getByTestId('audience-replay-seek');
+      await expect(seek, 'the seek bar renders in the ready branch').toBeVisible();
+
+      const positionEl = page.getByTestId('audience-replay-position');
+      const readPosition = async (): Promise<number> =>
+        Number(await positionEl.getAttribute('data-position'));
+      const graphRoot = page.getByTestId('audience-graph-root');
+      const head = Number(await positionEl.getAttribute('data-head'));
+      expect(head, 'the synthetic log has a multi-event head to traverse').toBeGreaterThan(1);
+      expect(await readPosition()).toBe(head);
+
+      // Setting the controlled range to a mid value relocates the cursor; the
+      // readout and the rendered graph follow.
+      const mid = Math.floor(head / 2);
+      await seek.fill(String(mid));
+      await expect(positionEl, 'a mid seek relocates the position readout').toHaveAttribute(
+        'data-position',
+        String(mid),
+      );
+      await expect(graphRoot, 'the graph re-renders at the seeked prefix').toBeVisible();
+
+      // Pressing play (restart from the baseline) advances the seek value over
+      // wall-clock time — the thumb doubles as a progress indicator.
+      await page.getByTestId('audience-replay-play').click();
+      await expect
+        .poll(async () => Number(await seek.inputValue()), {
+          timeout: 15_000,
+          message: 'play advances the seek bar value past the baseline',
+        })
+        .toBeGreaterThan(0);
+    } finally {
+      await context.close();
+    }
+  });
 });
