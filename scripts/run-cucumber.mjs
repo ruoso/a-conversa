@@ -26,11 +26,23 @@
 //   and only forward it when the running node accepts it. Same script,
 //   green on both the Node 22+ dev machines and the Node 20 CI/Docker
 //   runtime.
+//
+//   Node 24 update: `--no-memory-protection-keys` alone no longer
+//   suppresses the crash on v24.x — the SIGSEGV moved into the WASM
+//   *code-GC* teardown path (`ThreadIsolation::UnregisterWasmAllocation`
+//   -> `JitPageReference::UnregisterAllocation`, assertion
+//   `allocations_.erase(addr) == 1`). `--no-wasm-code-gc` disables the
+//   WASM code garbage collector, so that teardown path never runs and the
+//   buggy assertion is never reached. It's an old, widely-available V8
+//   flag, but we probe it the same way so the Node 20 runtime (which
+//   neither needs nor is harmed by it) is unaffected. Both flags are
+//   forwarded when supported.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
 const MPK_FLAG = '--no-memory-protection-keys';
+const WASM_GC_FLAG = '--no-wasm-code-gc';
 
 // Probe: a no-op `node <flag> -e ''` exits 0 when the flag is known and
 // non-zero ("bad option") when it isn't. Cheap and version-agnostic.
@@ -47,6 +59,7 @@ const cucumberBin = fileURLToPath(
 
 const nodeArgs = [
   ...(nodeSupportsFlag(MPK_FLAG) ? [MPK_FLAG] : []),
+  ...(nodeSupportsFlag(WASM_GC_FLAG) ? [WASM_GC_FLAG] : []),
   cucumberBin,
   // Forward any extra CLI args (tag filters, specific feature paths, …).
   ...process.argv.slice(2),

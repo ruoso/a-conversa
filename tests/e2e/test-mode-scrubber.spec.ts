@@ -38,6 +38,8 @@
 // `setup-auth` project, so the context already carries the
 // `aconversa-session` cookie before the first navigation.
 
+import { readFile } from 'node:fs/promises';
+
 import { expect, test } from './fixtures/no-scrollbars';
 
 // The walkthrough fixture's snapshot lands at this log position (Segment 1
@@ -146,10 +148,61 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     const headKind = (await inspectorKind.textContent())?.trim() ?? '';
     expect(headKind, 'the head event renders a non-empty kind discriminant').not.toBe('');
 
+    // (g) Export panel (test_mode_export_position §3): the fourth reader-only
+    // sibling. At the head, clicking Export fetches the server-authoritative
+    // projected state (`GET /sessions/:id/state?position=head`) and renders it
+    // into the readout. The readout's `data-position` equals the live head and
+    // its text parses as the `{ sessionId, sequence, projection }` envelope
+    // with `sequence === head` and a non-empty projection (the full
+    // walkthrough projection) — never the panel's error readout.
+    const exportPanel = page.getByTestId('test-mode-export');
+    await expect(exportPanel, 'the export panel renders beside the scrubber').toBeVisible();
+    await page.getByTestId('test-mode-export-button').click();
+    const exportReadout = page.getByTestId('test-mode-export-readout');
+    await expect(exportReadout, 'the export settles to the readout at the head').toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(exportReadout).toHaveAttribute('data-position', String(head));
+    await expect(page.getByTestId('test-mode-export-error')).toHaveCount(0);
+    const headEnvelope = JSON.parse((await exportReadout.textContent()) ?? '{}') as {
+      sessionId: string;
+      sequence: number;
+      projection: Record<string, unknown>;
+    };
+    expect(headEnvelope.sequence, 'the exported envelope carries the head sequence').toBe(head);
+    expect(
+      Object.keys(headEnvelope.projection).length,
+      'the head export carries a non-empty server projection',
+    ).toBeGreaterThan(0);
+
+    // (g) Download: activating the download fires a browser download whose
+    // suggested filename encodes the session + head position and whose body
+    // parses back to the same envelope. (The readout assertion above is the
+    // load-bearing pin; this corroborates the file affordance.)
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByTestId('test-mode-export-download').click(),
+    ]);
+    expect(
+      download.suggestedFilename(),
+      'the download filename encodes the session + head position',
+    ).toBe(`session-${headEnvelope.sessionId}-position-${String(head)}.json`);
+    const downloadPath = await download.path();
+    const downloadedBody = JSON.parse(await readFile(downloadPath, 'utf8')) as { sequence: number };
+    expect(downloadedBody.sequence, 'the downloaded body is the same envelope').toBe(head);
+
     // (a) Stepping prev moves the position-status readout back by one.
     await prev.click();
     await expect(status).toHaveAttribute('data-position', String(head - 1));
     await expect(next).toBeEnabled();
+
+    // (g) Position-change reset (test_mode_export_position §4): moving the
+    // scrubber after an export clears the readout until Export is clicked
+    // again — the "never show a stale projection" guarantee.
+    await expect(
+      page.getByTestId('test-mode-export-readout'),
+      'moving the scrubber clears the prior export readout',
+    ).toHaveCount(0);
 
     // (d) The inspector tracks the step: it now shows the previous event.
     await expect(inspectorSeq).toHaveText(String(head - 1));
@@ -215,6 +268,22 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
       'the diagnostics panel settles to its clean empty state at position 0',
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('test-mode-diagnostics-error')).toHaveCount(0);
+
+    // (g) Export at position 0 (test_mode_export_position §3): the live
+    // endpoint serves the empty-baseline projection and the panel renders it
+    // (`sequence === 0`) rather than erroring — proving the export round-trip
+    // works at the baseline as well as the deep head.
+    await page.getByTestId('test-mode-export-button').click();
+    const baselineReadout = page.getByTestId('test-mode-export-readout');
+    await expect(baselineReadout, 'the export settles to the readout at position 0').toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(baselineReadout).toHaveAttribute('data-position', '0');
+    await expect(page.getByTestId('test-mode-export-error')).toHaveCount(0);
+    const baselineEnvelope = JSON.parse((await baselineReadout.textContent()) ?? '{}') as {
+      sequence: number;
+    };
+    expect(baselineEnvelope.sequence, 'the position-0 export carries sequence 0').toBe(0);
 
     // (c) Inherited snapshot-jump debt: the snapshot list renders the
     // walkthrough's snapshot row; clicking it jumps the scrubber to the

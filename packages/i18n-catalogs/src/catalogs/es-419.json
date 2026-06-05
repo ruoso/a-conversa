@@ -1104,6 +1104,16 @@
         "coherency-hint": "Sugerencia de coherencia"
       }
     },
+    "export": {
+      "regionAriaLabel": "Exportar el estado proyectado en esta posición",
+      "heading": "Exportar",
+      "intro": "Haz clic en Exportar para obtener el estado en esta posición.",
+      "exportButton": "Exportar",
+      "loading": "Exportando…",
+      "error": "No se pudo exportar el estado de esta posición.",
+      "retry": "Reintentar",
+      "download": "Descargar JSON"
+    },
     "changes": {
       "regionAriaLabel": "Qué cambió en este paso",
       "heading": "Cambios",

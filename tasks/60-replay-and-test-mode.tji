@@ -128,6 +128,7 @@ task replay_test "Replay and test mode" {
     task test_mode_export_position "Export the projected state at any position" {
       effort 1d
       allocate team
+      complete 100
       depends !test_mode_timeline_scrubber, backend.replay_endpoints.get_at_position
     }
   }

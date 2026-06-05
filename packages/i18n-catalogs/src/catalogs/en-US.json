@@ -1104,6 +1104,16 @@
         "coherency-hint": "Coherency hint"
       }
     },
+    "export": {
+      "regionAriaLabel": "Export the projected state at this position",
+      "heading": "Export",
+      "intro": "Click Export to fetch the state at this position.",
+      "exportButton": "Export",
+      "loading": "Exporting…",
+      "error": "Couldn't export the state for this position.",
+      "retry": "Retry",
+      "download": "Download JSON"
+    },
     "changes": {
       "regionAriaLabel": "What changed at this step",
       "heading": "Changes",

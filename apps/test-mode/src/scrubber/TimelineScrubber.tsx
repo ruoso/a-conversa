@@ -38,6 +38,7 @@ import { GraphView } from '@a-conversa/graph-view';
 
 import { ChangeHighlights } from '../changes/ChangeHighlights';
 import { DiagnosticInspector } from '../diagnostics/DiagnosticInspector';
+import { ExportPanel } from '../export/ExportPanel';
 import { EventInspector } from '../inspector/EventInspector';
 
 export interface TimelineScrubberProps {
@@ -158,6 +159,8 @@ export function TimelineScrubber({
       <ChangeHighlights events={events} position={position} />
 
       <DiagnosticInspector sessionId={sessionId} position={position} />
+
+      <ExportPanel sessionId={sessionId} position={position} />
     </main>
   );
 }
