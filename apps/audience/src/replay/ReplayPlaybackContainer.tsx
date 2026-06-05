@@ -50,17 +50,36 @@ export interface ReplayPlaybackContainerProps {
   readonly sessionId: string;
   /** The full ascending event log (from `useSessionEventLog`). */
   readonly events: readonly Event[];
+  /**
+   * The URL-supplied opening cursor (`?position=<sequence>` via
+   * `useAudienceLogPosition`), threaded from `AudienceReplayRoute`
+   * (replay_url_position_loading, Decision §1). `null`/`undefined` =
+   * absent/invalid → land on the head; `0` = the valid genesis deep-link.
+   * Seeds the initial cursor only — once mounted, the controls own
+   * `position` (Decision §4). The raw value is clamped against the loaded
+   * log (Decision §2 / ADR 0043), so an out-of-range param lands at the head.
+   */
+  readonly initialPosition?: number | null | undefined;
 }
 
 export function ReplayPlaybackContainer({
   sessionId,
   events,
+  initialPosition,
 }: ReplayPlaybackContainerProps): ReactElement {
   const { t } = useTranslation();
 
-  // Seed at the head: the surface opens on the fully-projected graph
-  // (Constraint §3 — ADR 0045's informative default frame).
-  const [position, setPosition] = useState<number>(() => replayHeadSequence(events));
+  // Seed the opening cursor once (Constraint §2 — `useState` initializer).
+  // A URL-supplied `initialPosition` overrides the head default, clamped into
+  // `[0, head]` so an out-of-range param degrades to the head frame
+  // (replay_url_position_loading Constraint §3 — `clampPosition` owns the
+  // bounds check, ADR 0043). The `!= null` test is deliberate: `0` is a valid
+  // genesis deep-link, and `0` is falsy, so a `|| head` fallback would be a
+  // bug (Constraint §4). Absent/invalid (`null`/`undefined`) falls back to the
+  // head — the fully-projected graph (Constraint §3 — ADR 0045's default).
+  const [position, setPosition] = useState<number>(() =>
+    initialPosition != null ? clampPosition(initialPosition, events) : replayHeadSequence(events),
+  );
 
   // Guard the lifted setter so every writer — the step buttons and the
   // auto-advance loop — lands a clamped, navigable position (Constraint §1).

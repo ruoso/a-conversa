@@ -105,11 +105,14 @@ afterEach(() => {
   capturedGraphProps = null;
 });
 
-function renderRoute(auth: AuthContextValue = authenticatedAuth): void {
+function renderRoute(
+  auth: AuthContextValue = authenticatedAuth,
+  entry = `/replay/${SESSION_ID}`,
+): void {
   render(
     <I18nProvider i18n={i18nInstance}>
       <AuthValueProvider value={auth}>
-        <MemoryRouter initialEntries={[`/replay/${SESSION_ID}`]}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/replay/:sessionId" element={<AudienceReplayRoute />} />
           </Routes>
@@ -187,5 +190,42 @@ describe('AudienceReplayRoute', () => {
     // leak posture funnels that viewer to the sign-in CTA, same as the
     // live route.
     expect(await screen.findByTestId('audience-private-session-cta')).toBeTruthy();
+  });
+
+  // replay_url_position_loading (Acceptance §2): the end-to-end unit pin that
+  // `useAudienceLogPosition()` is read at the route and threaded through to
+  // the container's seed. The real hook reads React Router's search params, so
+  // the `?position=` carried by `MemoryRouter`'s initial entry exercises the
+  // hook → prop → `useState` seeder chain (no extra mock).
+  it('(f) ?position=<mid>: seeds the container readout at the URL-supplied position', async () => {
+    const log = makeLog(); // sequences 1..3, head = 3
+    mockLog = { status: 'ready', events: log, retry: vi.fn() };
+    renderRoute(authenticatedAuth, `/replay/${SESSION_ID}?position=2`);
+
+    const status = await screen.findByTestId('audience-replay-position');
+    expect(status.getAttribute('data-position')).toBe('2');
+    expect(status.getAttribute('data-head')).toBe(String(log.length));
+    // The graph opens at the prefix `<= 2`, not the head.
+    expect(capturedGraphProps?.events).toHaveLength(2);
+  });
+
+  it('(g) no ?position: seeds at the head (the head-landing default is preserved)', async () => {
+    const log = makeLog();
+    mockLog = { status: 'ready', events: log, retry: vi.fn() };
+    renderRoute(authenticatedAuth); // default entry has no `?position`
+
+    const status = await screen.findByTestId('audience-replay-position');
+    expect(status.getAttribute('data-position')).toBe(String(log.length));
+    expect(capturedGraphProps?.events).toHaveLength(log.length);
+  });
+
+  it('(h) out-of-range ?position: clamps to the head', async () => {
+    const log = makeLog();
+    mockLog = { status: 'ready', events: log, retry: vi.fn() };
+    renderRoute(authenticatedAuth, `/replay/${SESSION_ID}?position=999999`);
+
+    const status = await screen.findByTestId('audience-replay-position');
+    expect(status.getAttribute('data-position')).toBe(String(log.length));
+    expect(capturedGraphProps?.events).toHaveLength(log.length);
   });
 });

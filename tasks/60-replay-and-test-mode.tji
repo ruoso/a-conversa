@@ -61,6 +61,7 @@ task replay_test "Replay and test mode" {
     task replay_url_position_loading "Load replay starting at URL-supplied position" {
       effort 0.5d
       allocate team
+      complete 100
       depends !replay_seek_bar, audience.aud_url_routing.aud_url_position_param
     }
     task replay_chapter_jumping "Jump to next/prev snapshot via chapter markers" {

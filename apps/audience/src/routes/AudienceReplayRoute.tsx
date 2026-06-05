@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useSessionEventLog } from '@a-conversa/shell';
 
+import { useAudienceLogPosition } from '../state/index.js';
 import { ReplayPlaybackContainer } from '../replay/ReplayPlaybackContainer.js';
 import { PrivateSessionCta } from './PrivateSessionCta.js';
 
@@ -41,6 +42,11 @@ export function AudienceReplayRoute(): ReactElement {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { t } = useTranslation();
   const { status, events, retry } = useSessionEventLog(sessionId ?? '');
+  // The route is the URL layer (it already reads `useParams`); read the
+  // `?position=<sequence>` deep-link here and thread it into the
+  // router-agnostic container as a prop (replay_url_position_loading
+  // Decision §1). `null` for absent/invalid; the container clamps the value.
+  const initialPosition = useAudienceLogPosition();
 
   if (status === 'loading') {
     return (
@@ -96,14 +102,21 @@ export function AudienceReplayRoute(): ReactElement {
   }
 
   // status === 'ready' — mount the playback container. It seeds the position
-  // cursor at the log *head* (`replayHeadSequence`), so the no-interaction
-  // view still shows the complete session (ADR 0045's head-landing default),
-  // and layers the play / pause / step controls over the viewport-filling
-  // `@a-conversa/graph-view` renderer. The position/step/auto-advance
-  // machinery lives entirely in `ReplayPlaybackContainer`
-  // (replay_playback_controls). The load / auth / CTA branches above stay
-  // untouched (Constraint §7).
-  return <ReplayPlaybackContainer sessionId={sessionId ?? ''} events={events} />;
+  // cursor from the URL `?position` deep-link when present, else the log
+  // *head* (`replayHeadSequence`), so the no-deep-link view still shows the
+  // complete session (ADR 0045's head-landing default), and layers the play /
+  // pause / step controls over the viewport-filling `@a-conversa/graph-view`
+  // renderer. The position/step/auto-advance machinery lives entirely in
+  // `ReplayPlaybackContainer` (replay_playback_controls); this route owns only
+  // the URL → prop read (replay_url_position_loading). The load / auth / CTA
+  // branches above stay untouched (Constraint §7).
+  return (
+    <ReplayPlaybackContainer
+      sessionId={sessionId ?? ''}
+      events={events}
+      initialPosition={initialPosition}
+    />
+  );
 }
 
 export default AudienceReplayRoute;

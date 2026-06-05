@@ -370,4 +370,60 @@ test.describe('Audience replay surface — /a/{locale}/replay/:id', () => {
       await context.close();
     }
   });
+
+  test('(7) deep-link: ?position seeds the opening frame; out-of-range lands on the head', async ({
+    browser,
+  }) => {
+    // Refinement: replay_url_position_loading (Acceptance §3 — reachable
+    // behavior on the already-mounted authenticated replay surface). The
+    // deep-link wires the shipped `?position` parser to the shipped playback
+    // container, so the "not yet reachable" e2e deferral does not apply.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      await loginAs(page, { username: 'alice' });
+      const sessionId = await generateSyntheticSession(page);
+
+      const positionEl = page.getByTestId('audience-replay-position');
+      const readPosition = async (): Promise<number> =>
+        Number(await positionEl.getAttribute('data-position'));
+      const seek = page.getByTestId('audience-replay-seek');
+
+      // First load with no `?position` to discover the head; the synthetic
+      // log's head is server-derived, so we learn the mid target from it.
+      await page.goto(`/a/replay/${sessionId}`);
+      await expect(positionEl).toBeVisible({ timeout: 15_000 });
+      const head = await readPosition();
+      expect(head, 'the synthetic log has a multi-event head to deep-link into').toBeGreaterThan(1);
+      const mid = Math.floor(head / 2);
+      expect(mid, 'a mid sequence is a distinct stop from the head').toBeGreaterThan(0);
+
+      // Deep-link to `?position=<mid>`: the surface opens with the cursor and
+      // the seek thumb at `<mid>`, and the graph renders the prefix — not the
+      // head frame.
+      await page.goto(`/a/replay/${sessionId}?position=${String(mid)}`);
+      await expect(
+        positionEl,
+        'the deep-link seeds the readout at the URL position',
+      ).toHaveAttribute('data-position', String(mid));
+      await expect(seek, 'the seek thumb reflects the URL-seeded position').toHaveValue(
+        String(mid),
+      );
+      await expect(
+        page.getByTestId('audience-graph-root'),
+        'the graph renders the deep-linked prefix',
+      ).toBeVisible();
+
+      // An out-of-range `?position` degrades to the head frame (clamped) —
+      // the informative complete-session default, no dead end.
+      await page.goto(`/a/replay/${sessionId}?position=${String(head + 1000)}`);
+      await expect(positionEl, 'an out-of-range deep-link clamps to the head').toHaveAttribute(
+        'data-position',
+        String(head),
+      );
+      await expect(seek).toHaveValue(String(head));
+    } finally {
+      await context.close();
+    }
+  });
 });

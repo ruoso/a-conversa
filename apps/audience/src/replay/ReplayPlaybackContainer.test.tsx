@@ -64,8 +64,14 @@ const SIX_EVENTS: Event[] = [
 ];
 const HEAD = 6;
 
-function renderContainer(events: readonly Event[]): RenderResult {
-  return render(<ReplayPlaybackContainer sessionId={SESSION} events={events} />);
+function renderContainer(events: readonly Event[], initialPosition?: number | null): RenderResult {
+  return render(
+    <ReplayPlaybackContainer
+      sessionId={SESSION}
+      events={events}
+      initialPosition={initialPosition}
+    />,
+  );
 }
 
 function status(): HTMLElement {
@@ -149,6 +155,53 @@ describe('ReplayPlaybackContainer — controls + stepping', () => {
     expect(disabled('audience-replay-step-back')).toBe(true);
     expect(disabled('audience-replay-step-forward')).toBe(false);
     expect(graphCount()).toBe(0);
+  });
+});
+
+describe('ReplayPlaybackContainer — initialPosition seeding', () => {
+  // replay_url_position_loading (Acceptance §1): the URL-supplied opening
+  // cursor seeds the initial `position`/prefix/seek thumb, clamped against the
+  // loaded log, with `0` distinct from absent.
+  it('seeds a mid-log initialPosition (readout, seek value, and prefix follow)', () => {
+    renderContainer(SIX_EVENTS, 3);
+
+    expect(position()).toBe('3');
+    expect(seek().value).toBe('3');
+    // The graph opens at the prefix `<= 3`, not the head.
+    expect(graphCount()).toBe(3);
+    // The head readout is still the full log; only the cursor moved.
+    expect(status().getAttribute('data-head')).toBe(String(HEAD));
+  });
+
+  it('seeds initialPosition={0} at the baseline (proves the `!= null` branch, not a falsy check)', () => {
+    renderContainer(SIX_EVENTS, 0);
+
+    expect(position()).toBe('0');
+    expect(seek().value).toBe('0');
+    // The pre-history baseline projects no events.
+    expect(graphCount()).toBe(0);
+    // At the baseline step-back is disabled; the seed is a real navigable stop.
+    expect(disabled('audience-replay-step-back')).toBe(true);
+  });
+
+  it('clamps an out-of-range initialPosition to the head (clampPosition is in the seeder path)', () => {
+    renderContainer(SIX_EVENTS, 999999);
+
+    expect(position()).toBe(String(HEAD));
+    expect(seek().value).toBe(String(HEAD));
+    expect(graphCount()).toBe(HEAD);
+  });
+
+  it('falls back to the head when initialPosition is null', () => {
+    renderContainer(SIX_EVENTS, null);
+    expect(position()).toBe(String(HEAD));
+    expect(graphCount()).toBe(HEAD);
+  });
+
+  it('falls back to the head when initialPosition is undefined', () => {
+    renderContainer(SIX_EVENTS, undefined);
+    expect(position()).toBe(String(HEAD));
+    expect(graphCount()).toBe(HEAD);
   });
 });
 

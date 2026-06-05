@@ -217,3 +217,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: UX preference call with no demonstrated need; Decision §2 explicitly rejected pause-on-grab for v1 (extra interaction state for a 1d leaf; the shared `updatePosition` setter handles last-write-wins correctly without a race). Whether UX testing later reveals a need for pause-on-grab is a product judgment, not an agent-implementable deliverable.
 - **Suggested resolution**: if show producers or the methodology owner find the continuous-play-while-dragging behavior confusing in practice, spec a `replay_seek_bar_pause_on_grab` task covering a `grabbing` state bit in `ReplayPlaybackContainer`, pause-on-`pointerdown` / resume-on-`pointerup` logic, and updated Vitest + Playwright cover.
 
+### 2026-06-05 — Two-way URL write-back during replay scrub (shareable "current frame" link)
+
+- **Source**: closer for `replay_test.replay_ui.replay_url_position_loading` (Decision §3; implementer return summary).
+- **Question**: should the replay viewer rewrite `?position=<sequence>` in the browser URL as the user scrubs or steps, so a copy-pasted URL always reflects the current frame?
+- **Why parked**: explicitly rejected for v1 in Decision §3 — the task is "load replay *starting at* a URL-supplied position" (a one-way deep-link *in*), not a two-way sync that mirrors the live cursor. Two-way sync churns browser history on every seek/auto-advance tick and is a distinct, unrequested feature. Not agent-implementable without a deliberate product call to expand scope.
+- **Suggested resolution**: if the methodology owner or show producers decide shareable "current frame" links are wanted, spec a `replay_url_position_writeback` task covering position-change → `replaceState` in `AudienceReplayRoute`, integration with React Router's `useNavigate`, and Playwright cover asserting the URL tracks the seek bar thumb.
+
