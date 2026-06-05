@@ -55,3 +55,54 @@ Feature: GET /sessions/:id/snapshots — list a session's snapshot markers
     When I GET the snapshots for session "00000000-0000-4000-8000-ffffffff0001"
     Then the response status is 404
     And the response body's error.code is "not-found"
+
+  # ----------------------------------------------------------------
+  # Create→list round-trip — the producer→consumer contract.
+  #
+  # The scenarios above seed snapshots directly as fixtures. These two
+  # prove the seam the `replay_test.snapshots` consumers stand on: a
+  # snapshot created through the REAL moderator write-path (the
+  # `label-snapshot` WS handler, step machinery reused from
+  # ws-label-snapshot.feature) is retrievable, in the same session,
+  # through GET /sessions/:id/snapshots — same snapshotId, same label,
+  # same logPosition. Both halves run against the one shared pglite
+  # world: the WS app writes the `snapshot-created` event; the replay
+  # app reads it back. The snapshottable seed lands MAX(sequence)=2, so
+  # the first labeled snapshot takes sequence 3 (and logPosition 3),
+  # the second takes sequence 4.
+  #
+  # Refinement: tasks/refinements/replay_test/snapshot_creation_ui.md
+  # ----------------------------------------------------------------
+
+  Scenario: A moderator-created snapshot is listable with matching identity (write-path → REST read)
+    Given a ws-auth-gated server is built against the pglite-backed pool
+    And the cucumber world has a valid session cookie for that user
+    And a snapshottable session for "alice" exists with id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa801"
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa801"
+    And the client sends a label-snapshot envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa801" with expectedSequence 2 and label "Chapter one"
+    Then the client receives a snapshot-labeled ack referencing the label-snapshot envelope
+    When I GET the snapshots for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa801"
+    Then the response status is 200
+    And the response body's snapshots array has 1 entry
+    And the response body's snapshots[0].label is "Chapter one"
+    And the response body's snapshots[0].logPosition is 3
+    And the response body's snapshots[0].snapshotId matches the snapshot-labeled ack
+
+  Scenario: Two moderator-created snapshots accumulate in logPosition-ascending order (write-path → REST read)
+    Given a ws-auth-gated server is built against the pglite-backed pool
+    And the cucumber world has a valid session cookie for that user
+    And a snapshottable session for "alice" exists with id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa802"
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa802"
+    And the client sends a label-snapshot envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa802" with expectedSequence 2 and label "Opening"
+    Then the client receives a snapshot-labeled ack referencing the label-snapshot envelope
+    When the client sends a label-snapshot envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa802" with expectedSequence 3 and label "Closing"
+    Then the client receives a snapshot-labeled ack referencing the label-snapshot envelope
+    When I GET the snapshots for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa802"
+    Then the response status is 200
+    And the response body's snapshots array has 2 entries
+    And the response body's snapshots[0].logPosition is 3
+    And the response body's snapshots[0].label is "Opening"
+    And the response body's snapshots[1].logPosition is 4
+    And the response body's snapshots[1].label is "Closing"

@@ -116,6 +116,7 @@ task replay_test "Replay and test mode" {
     task snapshot_creation_ui "Snapshot-creation UI (lives on moderator surface; produces shared snapshot record)" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task snapshot_list_ui "Snapshot list view" {
       effort 1d

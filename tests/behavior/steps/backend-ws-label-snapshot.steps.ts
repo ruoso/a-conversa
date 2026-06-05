@@ -60,6 +60,11 @@ interface LabelSnapshotScratch {
   // Per-feature carriers.
   wsLabelSnapshotMessageId?: string;
   wsLabelSnapshotFrames?: string[];
+  // The `snapshotId` from the most recent `snapshot-labeled` ack —
+  // captured so a cross-boundary round-trip scenario (the
+  // create→list contract in `list-session-snapshots.feature`) can
+  // assert the REST list returns the same id the write-path minted.
+  wsLabelSnapshotId?: string;
 }
 
 function scratch(world: AConversaWorld): LabelSnapshotScratch {
@@ -325,6 +330,9 @@ Then(
       typeof payload.snapshotId === 'string' && payload.snapshotId.length > 0,
       'expected payload.snapshotId to be a non-empty string',
     );
+    // Stash the minted id so a downstream REST read-back can pin
+    // producer→consumer record identity (see list-session-snapshots).
+    s.wsLabelSnapshotId = payload.snapshotId;
   },
 );
 
@@ -376,4 +384,5 @@ After(function (this: AConversaWorld) {
   const s = scratch(this);
   delete s.wsLabelSnapshotMessageId;
   delete s.wsLabelSnapshotFrames;
+  delete s.wsLabelSnapshotId;
 });

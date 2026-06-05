@@ -50,6 +50,10 @@ interface SnapshotsScratch {
     body: string;
     headers: Record<string, unknown>;
   };
+  // Set by the `snapshot-labeled` ack step in
+  // backend-ws-label-snapshot.steps.ts. The round-trip scenario reads
+  // it to pin REST-record identity against the write-path-minted id.
+  wsLabelSnapshotId?: string;
 }
 
 function scratch(world: AConversaWorld): SnapshotsScratch {
@@ -205,5 +209,27 @@ Then(
     assert.ok(Array.isArray(body.snapshots), 'response body lacks a `snapshots` array');
     const idx = Number.parseInt(idxRaw, 10);
     assert.equal(body.snapshots[idx]?.label, expected);
+  },
+);
+
+// The producer→consumer identity pin for the create→list round-trip:
+// the REST list must return the same `snapshotId` the WS write-path
+// minted (captured by the `snapshot-labeled` ack step). Closes the
+// seam the `replay_test.snapshots` consumers stand on.
+Then(
+  /^the response body's snapshots\[(\d+)\]\.snapshotId matches the snapshot-labeled ack$/,
+  function (this: AConversaWorld, idxRaw: string) {
+    const s = scratch(this);
+    const res = s.lastResponse;
+    assert.ok(res, 'no response captured');
+    const ackId = s.wsLabelSnapshotId;
+    assert.ok(
+      ackId,
+      'no snapshot-labeled ack snapshotId captured — a `snapshot-labeled ack` Then must precede',
+    );
+    const body = JSON.parse(res.body) as { snapshots?: Array<{ snapshotId?: string }> };
+    assert.ok(Array.isArray(body.snapshots), 'response body lacks a `snapshots` array');
+    const idx = Number.parseInt(idxRaw, 10);
+    assert.equal(body.snapshots[idx]?.snapshotId, ackId);
   },
 );
