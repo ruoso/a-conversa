@@ -21,6 +21,7 @@ import {
   BROADCAST_DIMENSIONS,
   COMPONENT_SPACING,
   DEFAULT_BROADCAST_DIMENSIONS,
+  LEVEL_SPACING_FACTOR,
   PADDING,
   SPACING_FACTOR,
   type ComponentSize,
@@ -140,6 +141,13 @@ describe('layout-options named exports', () => {
     // this assertion catches accidental changes in the meantime.
     expect(SPACING_FACTOR).toBe(1.45);
     expect(PADDING).toBe(60);
+  });
+
+  it('(8b) pins `COMPONENT_SPACING` to 80 and `LEVEL_SPACING_FACTOR` to 0.5', () => {
+    // Visual dials for the component packing + per-component vertical
+    // compression. Pinned so a retune is an intentional source diff.
+    expect(COMPONENT_SPACING).toBe(80);
+    expect(LEVEL_SPACING_FACTOR).toBe(0.5);
   });
 
   it('(9) pins `BROADCAST_DIMENSIONS` to {720p, 1080p, 1440p} and `DEFAULT_BROADCAST_DIMENSIONS` to 1080p', () => {
