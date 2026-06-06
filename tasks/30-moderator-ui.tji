@@ -700,11 +700,19 @@ task moderator_ui "Moderator UI" {
     task mod_global_keymap "Global keymap — kind shortcuts, propose, commit, snapshot, esc" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_global_keymap.md"
     }
     task mod_keymap_help_overlay "Keymap help overlay" {
       effort 0.5d
       allocate team
       depends !mod_global_keymap
+    }
+    task mod_proposal_selection_commit_chord "Proposal-selection model + Cmd/Ctrl+Shift+Enter commit-of-selected chord" {
+      effort 1.5d
+      allocate team
+      depends !mod_global_keymap, moderator_ui.mod_pending_proposals_pane
+      note "Source-of-debt: tasks/refinements/moderator-ui/mod_global_keymap.md (Decision §5). Deliverable: selected-proposal store slice + row-selection affordance on the pending-proposals pane, the dispatcher commit handler (commits selected proposal when commit gate is open; no-op otherwise), registry flip to reachable: true, and the deferred Playwright spec (Cmd/Ctrl+Shift+Enter → commit fires when all-agree)."
     }
   }
 

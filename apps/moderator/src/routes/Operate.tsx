@@ -98,8 +98,8 @@ import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { SnapshotActionButton } from '../layout/SnapshotActionButton';
 import { SnapshotLabelInputMount } from '../layout/SnapshotLabelInputMount';
+import { useGlobalKeymap } from '../layout/useGlobalKeymap';
 import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
-import { useSnapshotShortcut } from '../layout/useSnapshotShortcut';
 import { useCaptureStore } from '../stores/captureStore';
 import { attachCaptureKeymap } from '../layout/captureKeymap';
 import { WsClientProvider, useWsClient } from '@a-conversa/shell';
@@ -146,11 +146,13 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   const { sessionId } = props;
   const client = useWsClient();
   const { propose } = useProposeAction();
-  // F10 snapshot trigger — mount the Cmd/Ctrl+S shortcut once at route
-  // scope (Decision §8 of mod_snapshot_action.md keeps the binding
-  // alive whenever the moderator is on the operate page) and reflect
-  // the trigger flag onto the layout root as a stable Playwright seam.
-  useSnapshotShortcut();
+  // Global keymap — mount the action-chord dispatcher once at route
+  // scope (mod_global_keymap consolidates the F10 snapshot `Cmd/Ctrl+S`
+  // binding, formerly the standalone `useSnapshotShortcut`, into this
+  // single document-level listener). Keeps the binding alive whenever
+  // the moderator is on the operate page and reflects the snapshot
+  // trigger flag onto the layout root as a stable Playwright seam.
+  useGlobalKeymap();
   const isSnapshotLabelInputOpen = useSnapshotFlowStore((state) => state.isLabelInputOpen);
   // Read the mode to drive the bottom-strip slot swap. In decompose
   // mode the `textInput` slot mounts `<DecomposeComponentsGrid>`

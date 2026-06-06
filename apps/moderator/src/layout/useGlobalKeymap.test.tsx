@@ -1,9 +1,12 @@
-// Tests for `useSnapshotShortcut` — the document-level Cmd/Ctrl+S
-// keydown listener that opens the F10 snapshot-label flow.
+// Tests for `useGlobalKeymap` — the moderator's document-level
+// action-chord dispatcher.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_snapshot_action.md
+// Refinement: tasks/refinements/moderator-ui/mod_global_keymap.md
 //
-// Per ADR 0022 these are committed Vitest cases. They lock in:
+// Per ADR 0022 these are committed Vitest cases. They are the snapshot
+// binding cases migrated from the retired `useSnapshotShortcut.test.tsx`
+// (the binding behaviour is preserved byte-for-byte through the
+// consolidation) plus the deferral pin for the commit chord:
 //   (a) Cmd+S on a macOS-shaped event calls open(),
 //   (b) Ctrl+S on a non-macOS-shaped event calls open(),
 //   (c) bare `s` (no modifier) does NOT call open(),
@@ -12,24 +15,28 @@
 //   (f) event.repeat === true is ignored,
 //   (g) the listener detaches on unmount,
 //   (h) editable-target focus does NOT bail (open() fires even when
-//       an <input> is the active element — universal Cmd+S semantics).
+//       an <input> is the active element — universal Cmd+S semantics),
+//   (i) Cmd/Ctrl+Shift+Enter (the deferred commit chord) is a no-op in
+//       this task — the dispatcher has no commit handler yet. This pins
+//       the deferral so `mod_proposal_selection_commit_chord`'s first
+//       commit test fails-first against a real gap.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { act, type ReactElement } from 'react';
 
 import { resetSnapshotFlowStore, useSnapshotFlowStore } from './useSnapshotFlowStore';
-import { useSnapshotShortcut } from './useSnapshotShortcut';
+import { useGlobalKeymap } from './useGlobalKeymap';
 
 function HookProbe(): ReactElement {
-  useSnapshotShortcut();
+  useGlobalKeymap();
   return <span data-testid="hook-probe" />;
 }
 
 /**
  * Stub `navigator.platform` for the duration of a single test so the
- * hook's mac-vs-other branch resolves deterministically. Returns a
- * restore function to call in cleanup.
+ * dispatcher's mac-vs-other branch resolves deterministically. Returns
+ * a restore function to call in cleanup.
  */
 function stubPlatform(platform: string): () => void {
   const nav = globalThis.navigator;
@@ -61,7 +68,7 @@ afterEach(() => {
   resetSnapshotFlowStore();
 });
 
-describe('useSnapshotShortcut — macOS branch (Cmd+S)', () => {
+describe('useGlobalKeymap — snapshot, macOS branch (Cmd+S)', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('MacIntel');
@@ -105,7 +112,7 @@ describe('useSnapshotShortcut — macOS branch (Cmd+S)', () => {
   });
 });
 
-describe('useSnapshotShortcut — non-macOS branch (Ctrl+S)', () => {
+describe('useGlobalKeymap — snapshot, non-macOS branch (Ctrl+S)', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('Win32');
@@ -139,7 +146,7 @@ describe('useSnapshotShortcut — non-macOS branch (Ctrl+S)', () => {
   });
 });
 
-describe('useSnapshotShortcut — no-match bails', () => {
+describe('useGlobalKeymap — snapshot no-match bails', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('Win32');
@@ -181,7 +188,7 @@ describe('useSnapshotShortcut — no-match bails', () => {
   });
 });
 
-describe('useSnapshotShortcut — unmount lifecycle', () => {
+describe('useGlobalKeymap — unmount lifecycle', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('Win32');
@@ -200,7 +207,7 @@ describe('useSnapshotShortcut — unmount lifecycle', () => {
   });
 });
 
-describe('useSnapshotShortcut — editable-target focus does NOT bail', () => {
+describe('useGlobalKeymap — editable-target focus does NOT bail', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('Win32');
@@ -239,7 +246,7 @@ describe('useSnapshotShortcut — editable-target focus does NOT bail', () => {
   });
 });
 
-describe('useSnapshotShortcut — open() called once per physical press', () => {
+describe('useGlobalKeymap — snapshot open() called once per physical press', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = stubPlatform('Win32');
@@ -271,5 +278,36 @@ describe('useSnapshotShortcut — open() called once per physical press', () => 
       dispatchKeyDown({ key: 's', ctrlKey: true, repeat: true });
     });
     expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useGlobalKeymap — commit chord is deferred (i)', () => {
+  // The commit chord (`Cmd/Ctrl+Shift+Enter`) is registered in
+  // GLOBAL_KEYMAP but has NO live handler in this task (Decision §5).
+  // These cases pin the no-op so `mod_proposal_selection_commit_chord`
+  // adds its first commit test against a genuine gap.
+  it('(i-mac) Cmd+Shift+Enter is a no-op — does not open the snapshot flow', () => {
+    const restore = stubPlatform('MacIntel');
+    render(<HookProbe />);
+    let event!: KeyboardEvent;
+    act(() => {
+      event = dispatchKeyDown({ key: 'Enter', metaKey: true, shiftKey: true });
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
+    // No handler claims the chord, so it is not prevented either.
+    expect(event.defaultPrevented).toBe(false);
+    restore();
+  });
+
+  it('(i-other) Ctrl+Shift+Enter is a no-op — does not open the snapshot flow', () => {
+    const restore = stubPlatform('Win32');
+    render(<HookProbe />);
+    let event!: KeyboardEvent;
+    act(() => {
+      event = dispatchKeyDown({ key: 'Enter', ctrlKey: true, shiftKey: true });
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+    restore();
   });
 });

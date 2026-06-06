@@ -158,6 +158,7 @@
     "moderator.snapshotAction.label",
     "moderator.snapshotAction.ariaLabel",
     "moderator.snapshotAction.shortcutHint",
+    "moderator.globalKeymap.escLabel",
     "moderator.snapshotLabelInput.title",
     "moderator.snapshotLabelInput.fieldLabel",
     "moderator.snapshotLabelInput.placeholder",

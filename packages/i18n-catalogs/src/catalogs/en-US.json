@@ -475,6 +475,9 @@
       "ariaLabel": "Snapshot the current event-log position",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "globalKeymap": {
+      "escLabel": "Exit mode / clear target"
+    },
     "snapshotLabelInput": {
       "title": "Snapshot the current position",
       "fieldLabel": "Snapshot label",

@@ -259,3 +259,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Question**: should the participant change-history pane gain a free-text search box once rows carry searchable prose (e.g., a per-kind payload summary deferred by `part_history_list`)? The current `HistoryRow` has no free-text field — only `kind` and `actor` — so a search box today would be redundant with the chips.
 - **Why parked**: product call contingent on a prior product decision (whether to add per-kind payload summaries to `HistoryRow`). No deliverable for the agent until that upstream call is made.
 - **Suggested resolution**: if and when `HistoryRow` gains a searchable `summary` field, revisit adding a free-text search input to `ParticipantHistoryPane` as a follow-up to that enrichment task.
+
+### 2026-06-06 — i18n native review — moderator.globalKeymap.escLabel (pt-BR, es-419)
+
+- **Source**: closer for `moderator_ui.mod_keyboard_shortcuts.mod_global_keymap` (refinement Acceptance §native-speaker; implementer return summary).
+- **Question**: the pt-BR and es-419 translations for the new `moderator.globalKeymap.escLabel` key ("Exit mode / clear target") were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: review the `moderator.globalKeymap.escLabel` entry in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.

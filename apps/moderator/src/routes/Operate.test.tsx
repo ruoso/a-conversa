@@ -288,8 +288,10 @@ describe('Operate route — F10 snapshot trigger wiring (mod_snapshot_action)', 
       expect(document.querySelector('[data-testid="snapshot-action-button"]')).not.toBeNull();
     });
     expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
-    // happy-dom's default navigator.platform is empty — the hook's
-    // isMacPlatform() returns false, so it watches for Ctrl+S.
+    // happy-dom's default navigator.platform is empty — the dispatcher
+    // (useGlobalKeymap, which mod_global_keymap consolidated the
+    // Cmd/Ctrl+S binding into) resolves isMacPlatform() to false, so it
+    // watches for Ctrl+S.
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }),

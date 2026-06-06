@@ -213,8 +213,11 @@ test.describe('moderator snapshot trigger — sidebar button + Cmd/Ctrl+S shortc
 
     // Pick the platform-appropriate chord. Playwright's `keyboard.press`
     // dispatches the modifier + key as a single chord; the moderator's
-    // `useSnapshotShortcut` reads `event.metaKey` on macOS and
-    // `event.ctrlKey` elsewhere.
+    // action-chord dispatcher (`useGlobalKeymap` — mod_global_keymap
+    // consolidated the former standalone `useSnapshotShortcut` into it)
+    // reads `event.metaKey` on macOS and `event.ctrlKey` elsewhere. This
+    // test is the regression pin for that consolidation: the Cmd/Ctrl+S
+    // behaviour must remain unchanged through the dispatcher swap.
     const chord = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
     // Click the operate route's main element first so the chord lands
     // with focus inside the page (rather than the URL bar or a

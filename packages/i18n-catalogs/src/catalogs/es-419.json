@@ -475,6 +475,9 @@
       "ariaLabel": "Tomar una instantánea de la posición actual del registro de eventos",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "globalKeymap": {
+      "escLabel": "Salir del modo / limpiar objetivo"
+    },
     "snapshotLabelInput": {
       "title": "Tomar una instantánea de la posición actual",
       "fieldLabel": "Etiqueta de la instantánea",

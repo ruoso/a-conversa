@@ -475,6 +475,9 @@
       "ariaLabel": "Capturar um instantâneo da posição atual do log de eventos",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "globalKeymap": {
+      "escLabel": "Sair do modo / limpar alvo"
+    },
     "snapshotLabelInput": {
       "title": "Capturar um instantâneo da posição atual",
       "fieldLabel": "Rótulo do instantâneo",
