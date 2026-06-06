@@ -84,10 +84,20 @@
 // layer: the halo is a pure visual decoration, screen readers narrate
 // the underlying node via Cytoscape's own a11y plumbing.
 
-import { type ReactElement, type RefObject } from 'react';
+import { type CSSProperties, type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import { useCytoscapeOverlayPlacements, useSeenKeysGate } from './cytoscapeOverlayHooks.js';
+
+/**
+ * Style record for the halo `<span>`. The `--halo-zoom` custom property
+ * carries the live Cytoscape viewport zoom; the audience stylesheet
+ * sizes the halo as `calc(96px * var(--halo-zoom, 1))` so it scales with
+ * the node instead of staying a fixed 96px and ballooning when zoomed
+ * out. The intersection type keeps strict TypeScript happy about the
+ * `--*` key.
+ */
+type HaloStyle = CSSProperties & Record<'--halo-zoom', string>;
 
 export interface AudienceWithdrawalHaloOverlayProps {
   /**
@@ -116,6 +126,8 @@ interface WithdrawalHaloPlacement {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /** Cytoscape viewport zoom at commit time; drives `--halo-zoom`. */
+  readonly zoom: number;
 }
 
 export function AudienceWithdrawalHaloOverlay({
@@ -138,18 +150,20 @@ export function AudienceWithdrawalHaloOverlay({
     >
       {placements.map((p) => {
         const isNew = isNewDisputedNode(p.id);
+        const haloStyle: HaloStyle = {
+          position: 'absolute',
+          left: `${String(p.x)}px`,
+          top: `${String(p.y)}px`,
+          transform: 'translate(-50%, -50%)',
+          '--halo-zoom': String(p.zoom),
+        };
         return (
           <span
             key={p.id}
             data-withdrawal-anim=""
             data-element-id={p.id}
             className={isNew ? 'aud-withdrawal' : ''}
-            style={{
-              position: 'absolute',
-              left: `${String(p.x)}px`,
-              top: `${String(p.y)}px`,
-              transform: 'translate(-50%, -50%)',
-            }}
+            style={haloStyle}
           />
         );
       })}
@@ -159,6 +173,7 @@ export function AudienceWithdrawalHaloOverlay({
 
 function commitWithdrawalPlacements(cy: Core): readonly WithdrawalHaloPlacement[] {
   const next: WithdrawalHaloPlacement[] = [];
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     if (node.data('rollupStatus') !== 'disputed') return;
     const bb = node.renderedBoundingBox();
@@ -166,6 +181,7 @@ function commitWithdrawalPlacements(cy: Core): readonly WithdrawalHaloPlacement[
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
       y: (bb.y1 + bb.y2) / 2,
+      zoom,
     });
   });
   return next;

@@ -108,6 +108,16 @@ interface AnnotationRowPlacement {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * Cytoscape viewport zoom captured at commit time. The badge row is a
+   * DOM overlay sized in fixed CSS pixels, but the node/edge geometry it
+   * anchors to (`renderedBoundingBox`) scales with the viewport zoom.
+   * Without compensating, the row keeps its fixed pixel size and reads
+   * proportionally larger as the graph zooms out. The render path applies
+   * `scale(zoom)` about the row's top-center anchor so the badges track
+   * the element at every zoom level (mirrors `PerFacetPillOverlay`).
+   */
+  readonly zoom: number;
   readonly annotations: readonly Annotation[];
 }
 
@@ -158,7 +168,13 @@ export function AudienceAnnotationOverlay({
             position: 'absolute',
             left: `${String(p.x)}px`,
             top: `${String(p.y)}px`,
-            transform: 'translate(-50%, 0)',
+            // Anchor the row's top-center at (x, y), then scale by the
+            // viewport zoom about that same point (`transform-origin:
+            // center top`) so the badges stay glued below the element and
+            // keep a constant size *relative to the zoom* instead of
+            // ballooning when zoomed out. Mirrors `PerFacetPillOverlay`.
+            transform: `translate(-50%, 0) scale(${String(p.zoom)})`,
+            transformOrigin: 'center top',
             display: 'flex',
             gap: '4px',
             flexWrap: 'wrap',
@@ -176,6 +192,11 @@ export function AudienceAnnotationOverlay({
 
 function commitAnnotationPlacements(cy: Core): readonly AnnotationRowPlacement[] {
   const next: AnnotationRowPlacement[] = [];
+  // Snapshot the viewport zoom once per commit. `renderedBoundingBox`
+  // below is already in zoomed/rendered pixels; the offset gaps and the
+  // row scale derive from this single capture so the whole row tracks the
+  // element at the current zoom.
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     const annotations = node.data('annotations') as readonly Annotation[] | undefined;
     if (annotations === undefined || annotations.length === 0) return;
@@ -183,7 +204,8 @@ function commitAnnotationPlacements(cy: Core): readonly AnnotationRowPlacement[]
     next.push({
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
-      y: bb.y2 + ANNOTATION_ROW_OFFSET_Y,
+      y: bb.y2 + ANNOTATION_ROW_OFFSET_Y * zoom,
+      zoom,
       annotations,
     });
   });
@@ -194,7 +216,8 @@ function commitAnnotationPlacements(cy: Core): readonly AnnotationRowPlacement[]
     next.push({
       id: edge.id(),
       x: (bb.x1 + bb.x2) / 2,
-      y: (bb.y1 + bb.y2) / 2 + EDGE_ANNOTATION_OFFSET_Y,
+      y: (bb.y1 + bb.y2) / 2 + EDGE_ANNOTATION_OFFSET_Y * zoom,
+      zoom,
       annotations,
     });
   });

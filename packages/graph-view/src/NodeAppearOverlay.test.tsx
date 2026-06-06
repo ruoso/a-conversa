@@ -252,4 +252,25 @@ describe('AudienceNodeAppearOverlay', () => {
       unmount();
     }
   });
+
+  it('(h) exposes the viewport zoom as the --halo-zoom custom property so the halo box scales with the node', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithBox(cy, NODE_A, { x1: 100, x2: 200, y1: 50, y2: 130 });
+      act(() => {
+        cy.zoom(0.5);
+      });
+      await flushRaf();
+      const wrapper = document.querySelector<HTMLElement>(
+        `[data-node-appear-anim][data-element-id="${NODE_A}"]`,
+      );
+      expect(wrapper).not.toBeNull();
+      // The audience stylesheet reads this as `calc(96px * var(--halo-zoom))`
+      // so the 96px square tracks the (also-zoom-scaled) node instead of
+      // ballooning when zoomed out.
+      expect(wrapper?.style.getPropertyValue('--halo-zoom')).toBe('0.5');
+    } finally {
+      unmount();
+    }
+  });
 });
