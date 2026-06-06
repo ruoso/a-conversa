@@ -1,6 +1,8 @@
 # a-conversa — design notes
 
-> Status: Early design phase. This document evolves through Q&A as decisions get made. Open questions are explicitly marked. As any single concern grows, it gets extracted to its own file under `docs/`.
+> Status: MVP scope complete (M1–M8 + M8-audits); M9 deployment and M10 first-show remain, pending human-driven infrastructure work.
+>
+> This document evolves through Q&A as decisions get made. Open questions are explicitly marked. As any single concern grows, it gets extracted to its own file under `docs/`.
 
 ## Vision
 
