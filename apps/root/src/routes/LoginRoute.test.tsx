@@ -20,8 +20,8 @@ function ScreenNameStub(): ReactElement {
   return <main data-testid="route-screen-name-stub" />;
 }
 
-function HomeStub(): ReactElement {
-  return <main data-testid="route-home-stub" />;
+function LandingStub(): ReactElement {
+  return <main data-testid="route-landing-stub" />;
 }
 
 function DeepLinkStub(): ReactElement {
@@ -32,7 +32,7 @@ function renderLogin(options: Parameters<typeof renderWithProviders>[1]) {
   return renderWithProviders(
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
-      <Route path="/home" element={<HomeStub />} />
+      <Route path="/" element={<LandingStub />} />
       <Route path="/screen-name" element={<ScreenNameStub />} />
       <Route path="/m/sessions/abc" element={<DeepLinkStub />} />
     </Routes>,
@@ -76,7 +76,7 @@ describe('LoginRoute', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
-  it('navigates to /home when authenticated and no return-to is remembered', async () => {
+  it('navigates to / when authenticated and no return-to is remembered', async () => {
     renderLogin({
       auth: {
         status: 'authenticated',
@@ -90,7 +90,7 @@ describe('LoginRoute', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('route-home-stub')).toBeTruthy();
+      expect(screen.getByTestId('route-landing-stub')).toBeTruthy();
     });
     expect(window.sessionStorage.getItem('a-conversa:return-to')).toBeNull();
   });

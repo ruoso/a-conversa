@@ -9,7 +9,7 @@ import { LoadingFrame } from './LoadingFrame';
 const SSO_LOGIN_URL = '/api/auth/login';
 
 function resolvePostAuthTarget(): string {
-  return takeRememberedReturnTo() ?? '/home';
+  return takeRememberedReturnTo() ?? '/';
 }
 
 export function LoginRoute(): ReactElement {

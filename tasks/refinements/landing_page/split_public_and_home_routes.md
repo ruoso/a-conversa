@@ -1,5 +1,13 @@
 # split_public_and_home_routes
 
+> **Superseded (2026-06-06).** The `/home` dashboard this task introduced was
+> folded back into `/`: the only affordance it offered (create-session) already
+> lives on `/` in `CallToActionSection`, and its lone non-visual job (consuming
+> the `SurfaceHost` deep-link return-to) moved into `LandingRoute`'s
+> authenticated branch. See the ADR 0026 Amendment dated 2026-06-06. This
+> document is retained for historical context; the `/` vs `/home` split it
+> describes no longer exists.
+
 ## TaskJuggler entry
 
 `tasks/47-landing-page.tji` → `task landing_page` → `task split_public_and_home_routes`

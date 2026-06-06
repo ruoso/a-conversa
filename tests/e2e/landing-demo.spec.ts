@@ -17,8 +17,8 @@
 // task lands a thin spec rather than deferring everything.
 //
 // **What this spec pins.** The demo is reachable today: it is embedded on
-// `/`, which renders for anonymous visitors (an authenticated visitor is
-// bounced to `/home` before the marketing body renders). This spec asserts
+// `/`, which renders for every visitor — anonymous and authenticated alike
+// (the former `/home` dashboard folded back into `/`). This spec asserts
 //   1. an anonymous visit to `/` renders the walkthrough demo (the
 //      Cytoscape canvas container + the controls are visible), and
 //   2. clicking / keyboard-activating **next** advances the step-status
@@ -631,12 +631,12 @@ test.describe('landing walkthrough demo', () => {
     }
   });
 
-  // Acceptance criterion 3: the positive side of the public/home split. An
-  // anonymous `/` renders `route-landing` (the marketing surface) and settles
-  // on `/` — it never bounces to `/login` or `/home`. The negative side
-  // (anonymous `/home` → login; authenticated `/` → `/home`) is owned by
-  // `auth-flow.spec.ts` scenarios 6 + 7 and is deliberately not re-driven here
-  // (Decision D3).
+  // Acceptance criterion 3: an anonymous `/` renders `route-landing` (the
+  // marketing surface) and settles on `/` — it never bounces to `/login`. The
+  // authenticated home behaviour (the former `/home` dashboard folded back into
+  // `/` — ADR 0026 Amendment 2026-06-06) and the removed-`/home` redirect are
+  // owned by `auth-flow.spec.ts` scenarios 6 + 7 and are deliberately not
+  // re-driven here (Decision D3).
   test('anonymous / renders the marketing surface and does not bounce off /', async ({
     browser,
   }) => {
@@ -649,7 +649,7 @@ test.describe('landing walkthrough demo', () => {
       await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
 
-      // The page settled on `/` — no redirect to `/login` or `/home`.
+      // The page settled on `/` — no redirect to `/login`.
       expect(new URL(page.url()).pathname).toBe('/');
     } finally {
       await context.close();

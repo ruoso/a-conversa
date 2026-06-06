@@ -53,7 +53,7 @@ describe('root app routes', () => {
     });
   });
 
-  it('redirects an authenticated visit to / onward to the /home dashboard', async () => {
+  it('renders the landing surface as the home for an authenticated visit to /', async () => {
     renderWithProviders(<App />, {
       initialEntries: ['/'],
       auth: {
@@ -67,15 +67,20 @@ describe('root app routes', () => {
       },
     });
 
-    // `/` bounces the authenticated visitor to `/home`, where the
-    // dashboard (its `route-home` main + moderator handoff) renders.
+    // `/` is now the authenticated home too (the former `/home` dashboard
+    // folded back in). The marketing surface renders, with the CTA's
+    // secondary action swapped to a logout link and the start-session
+    // affordance still available.
     await waitFor(() => {
-      expect(screen.getByTestId('route-home')).toBeTruthy();
+      expect(screen.getByTestId('route-landing')).toBeTruthy();
     });
-    expect(screen.getByTestId('root-open-moderator')).toBeTruthy();
+    expect(screen.getByTestId('root-start-session')).toBeTruthy();
+    expect(screen.getByTestId('root-logout-link')).toBeTruthy();
+    // The anonymous SSO affordance is not shown to an authenticated visitor.
+    expect(screen.queryByTestId('auth-login-button')).toBeNull();
   });
 
-  it('renders the /home dashboard for an authenticated user', async () => {
+  it('redirects the removed /home path to the / landing surface', async () => {
     renderWithProviders(<App />, {
       initialEntries: ['/home'],
       auth: {
@@ -89,10 +94,11 @@ describe('root app routes', () => {
       },
     });
 
+    // `/home` no longer exists; the catch-all `*` route redirects any
+    // stale bookmark to `/`, which renders the home surface.
     await waitFor(() => {
-      expect(screen.getByTestId('root-open-moderator')).toBeTruthy();
+      expect(screen.getByTestId('route-landing')).toBeTruthy();
     });
-    expect(screen.getByTestId('route-title').textContent).toContain('alice');
     expect(screen.getByTestId('root-logout-link')).toBeTruthy();
   });
 

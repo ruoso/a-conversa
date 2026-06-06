@@ -590,10 +590,10 @@ export default defineConfig({
     // locale switcher, and (per `landing_responsive_a11y`) the page-wide
     // accessibility / responsive pins (axe WCAG-AA scan, focus order + visible
     // focus, no-horizontal-overflow, reduced-motion). No auth: the surface
-    // renders for anonymous visitors (an authenticated visitor is bounced to
-    // `/home` before the marketing body renders), so this project carries no
-    // `setup-auth` dependency. Single locale en-US seeds the English baseline
-    // the specs assert before exercising the in-page locale switch; each spec
+    // renders for anonymous visitors (and, since the former `/home` dashboard
+    // folded back into `/`, for authenticated ones too), so this project
+    // carries no `setup-auth` dependency. Single locale en-US seeds the English
+    // baseline the specs assert before exercising the in-page locale switch; each spec
     // allocates its own `browser.newContext()` (some at phone viewports), so
     // the project-level profile is just the default. Future landing leaves
     // (the terminal `landing_e2e`) widen this `testMatch`.

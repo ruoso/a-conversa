@@ -8,7 +8,7 @@ import { takeRememberedReturnTo } from '../surfaces/SurfaceHost';
 import { LoadingFrame } from './LoadingFrame';
 
 function resolvePostAuthTarget(): string {
-  return takeRememberedReturnTo() ?? '/home';
+  return takeRememberedReturnTo() ?? '/';
 }
 
 export function ScreenNameRoute(): ReactElement {
@@ -50,7 +50,7 @@ export function ScreenNameRoute(): ReactElement {
           consumes the remembered return-to. We deliberately do NOT
           also navigate from `onSuccess` — two consumers racing for
           the single sessionStorage entry would leak the value out
-          from under the Navigate and land the user on `/home` instead
+          from under the Navigate and land the user on `/` instead
           of the deep link they were trying to reach. */}
       <ScreenNameForm onSuccess={() => undefined} />
     </main>

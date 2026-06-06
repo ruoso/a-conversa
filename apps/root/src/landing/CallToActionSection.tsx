@@ -4,8 +4,11 @@
 //
 // This section owns the action affordances that previously lived in the hero
 // (`landing_hero_and_method` Decision §D5 deferred their final treatment here):
-// the start-a-session link and the SSO `<LoginButton>`. The affordance testids
-// (`root-start-session`, `auth-login-button`) are preserved exactly so the
+// the start-a-session link and an auth-appropriate secondary action — the SSO
+// `<LoginButton>` for anonymous visitors, or a `/logout` link for authenticated
+// ones (since `/` is now the authenticated home too; the former `/home`
+// dashboard folded back here). The affordance testids (`root-start-session`,
+// `auth-login-button`, `root-logout-link`) are preserved exactly so the
 // auth-flow Playwright scenarios that select them stay green (Constraint 6).
 //
 // Refinement: tasks/refinements/landing_page/landing_opensource_and_cta.md
@@ -20,13 +23,21 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { ReactElement } from 'react';
 
-import { LoginButton } from '@a-conversa/shell';
+import { LoginButton, useAuth } from '@a-conversa/shell';
 
 /** Stable id linking the section to its heading for `aria-labelledby`. */
 const TITLE_ID = 'landing-cta-title';
 
 export function CallToActionSection(): ReactElement {
   const { t } = useTranslation();
+  const auth = useAuth();
+  // `/` is now the home for authenticated visitors too (the former
+  // `/home` dashboard folded in). The start-a-session affordance serves
+  // both, but the secondary action differs: an anonymous visitor needs
+  // the SSO `<LoginButton>`, while a logged-in visitor needs a way out
+  // (the logout link the old dashboard carried). Swapping it here keeps
+  // the page functional as a home without re-introducing a second route.
+  const isAuthenticated = auth.status === 'authenticated' && auth.user !== undefined;
 
   return (
     <section
@@ -46,7 +57,17 @@ export function CallToActionSection(): ReactElement {
         >
           {t('moderator.createSession.title')}
         </Link>
-        <LoginButton className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700" />
+        {isAuthenticated ? (
+          <Link
+            to="/logout"
+            data-testid="root-logout-link"
+            className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+          >
+            {t('auth.login.logout')}
+          </Link>
+        ) : (
+          <LoginButton className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700" />
+        )}
       </div>
     </section>
   );
