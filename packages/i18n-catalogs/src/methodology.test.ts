@@ -76,6 +76,11 @@ const METHODOLOGY_VALUES = {
   // `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`'s
   // structural-sub-kind chips (Decision §4 + §10).
   facet: ['wording', 'classification', 'substance', 'proposal'],
+  // Substance VALUE labels (distinct from `facet.substance`, the facet
+  // NAME). The graph-view step pill renders `SUBSTANCE: <value>` via
+  // `methodology.substance.<value>`. Refinement:
+  // `tasks/refinements/post_implementation_audits/per_facet_step_pill.md`.
+  substance: ['agreed', 'disputed'],
   voteChoice: ['agree', 'dispute', 'withdraw'],
   // Per-participant vote-indicator verb-form fragments. Refinement:
   // `tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md`.

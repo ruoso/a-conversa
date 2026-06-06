@@ -148,9 +148,12 @@ import { computeNodeDimensions } from './nodeDimensions.js';
 import {
   cardRollupStatus,
   computeFacetStatuses,
+  deriveSlotOccupants,
   EMPTY_FACET_STATUSES,
+  projectVotesByFacet,
   type FacetName,
   type FacetStatus,
+  type Vote,
 } from '@a-conversa/shell';
 import {
   EMPTY_ANNOTATIONS,
@@ -163,6 +166,16 @@ import {
   type Annotation,
   type AxiomMark,
 } from '@a-conversa/shell';
+
+/** The two debater slots, in display order, for the step-pill roster. */
+const DEBATER_ROLES = ['debater-A', 'debater-B'] as const;
+
+/** A debater in the step-pill checkbox roster. */
+export interface StepDebater {
+  readonly role: (typeof DEBATER_ROLES)[number];
+  readonly participantId: string;
+  readonly screenName: string;
+}
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
@@ -264,6 +277,26 @@ export interface AudienceNodeData {
   readonly height?: number;
   /** Per-node `text-max-width` budget (px), `width - 2 * padding`. */
   readonly textMaxWidth?: number;
+  /**
+   * Per-facet candidate VALUE being voted on, RAW (not localized): the
+   * `classification` slot carries a `StatementKind` (`'fact'`…), the
+   * `substance` slot carries `'agreed'` / `'disputed'`. `wording` has no
+   * separate candidate (the text is `wording`). Absent facets are
+   * omitted; the whole field is absent when no candidate exists yet.
+   * Consumed by the step-pill renderer (`per_facet_step_pill`).
+   */
+  readonly facetCandidates?: Readonly<Partial<Record<FacetName, string>>>;
+  /**
+   * Per-facet per-participant votes on the facet's pending candidate,
+   * from `projectVotesByFacet`. Drives the per-debater checkbox marks.
+   */
+  readonly facetVotes?: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
+  /**
+   * The debater roster (debater-A, debater-B) for the step-pill checkbox
+   * row — both slots are listed so empty boxes render before anyone
+   * votes. Session-wide, so the same frozen array is shared across nodes.
+   */
+  readonly debaters?: readonly StepDebater[];
 }
 
 /**
@@ -348,6 +381,19 @@ export function projectGraph(events: readonly Event[]): {
 } {
   const facetStatusIndex = computeFacetStatuses(events);
   const axiomMarkIndex = groupAxiomMarksByNode(projectAxiomMarks(events));
+  // Per-facet per-participant votes + the debater roster for the step
+  // pill (`per_facet_step_pill`). Both are pure functions of the event
+  // log; computed once and stamped on statement nodes in the post-walk
+  // pass below. `debaters` is a single frozen array shared across nodes
+  // for stable React-memoization identity.
+  const votesByFacet = projectVotesByFacet(events);
+  const occupants = deriveSlotOccupants(events);
+  const debaters: readonly StepDebater[] = DEBATER_ROLES.flatMap((role) => {
+    const occupant = occupants[role];
+    return occupant === undefined
+      ? []
+      : [{ role, participantId: occupant.userId, screenName: occupant.screenName }];
+  });
   const projectedAnnotations = projectAnnotations(events);
   // Hybrid promotion per `aud_render_annotation_endpoint_edges` Decisions
   // §1 + §3: an annotation referenced as an edge endpoint becomes a
@@ -390,6 +436,10 @@ export function projectGraph(events: readonly Event[]): {
   // id. A new classify-node proposal supersedes the prior candidate
   // per ADR 0030 §7.
   const currentClassificationByNode = new Map<string, StatementKind>();
+  // Map from `node_id` → most-recent substance candidate (`'agreed'` /
+  // `'disputed'`), set by `set-node-substance` proposals. Parallel to
+  // `currentClassificationByNode`; read in the post-walk stamp.
+  const currentSubstanceByNode = new Map<string, 'agreed' | 'disputed'>();
   // Map from `proposal` envelope id → parent node id, for `decompose`
   // and `interpretive-split` proposals. The matching `commit`
   // (target=`'proposal'`) resolves the parent via this map and stamps
@@ -504,6 +554,8 @@ export function projectGraph(events: readonly Event[]): {
           classification: inner.classification,
         });
         currentClassificationByNode.set(inner.node_id, inner.classification);
+      } else if (inner.kind === 'set-node-substance') {
+        currentSubstanceByNode.set(inner.node_id, inner.value);
       } else if (inner.kind === 'decompose') {
         pendingDecompositions.set(event.id, inner.parent_node_id);
       } else if (inner.kind === 'interpretive-split') {
@@ -564,6 +616,32 @@ export function projectGraph(events: readonly Event[]): {
     }
   }
 
+  // Stamp the step-pill data on every statement node now that the walk
+  // has resolved the final candidate caches + the vote index. At this
+  // point `nodes` holds only statement nodes (annotation graph-nodes are
+  // appended below), so no `nodeKind` filter is needed.
+  for (let i = 0; i < nodes.length; i++) {
+    const element = nodes[i];
+    if (element === undefined) continue;
+    const id = element.data.id;
+    // `exactOptionalPropertyTypes`: omit the optional keys when absent
+    // rather than assigning `undefined`.
+    const facetCandidates = buildFacetCandidates(
+      currentClassificationByNode.get(id),
+      currentSubstanceByNode.get(id),
+    );
+    const facetVotes = facetVotesToRecord(votesByFacet.get(id));
+    nodes[i] = {
+      group: 'nodes',
+      data: {
+        ...element.data,
+        ...(facetCandidates !== undefined ? { facetCandidates } : {}),
+        ...(facetVotes !== undefined ? { facetVotes } : {}),
+        debaters,
+      },
+    };
+  }
+
   // Annotation graph-node + host-edge materialization pass per
   // `aud_render_annotation_endpoint_edges` Decisions §1 + §4.
   // Constraint §11 — emit nodes BEFORE concatenating edges so the
@@ -607,6 +685,35 @@ export function projectGraph(events: readonly Event[]): {
  * entirely so the `index.get(entityId)` lookup falls back to
  * `EMPTY_ANNOTATIONS` on the corresponding node/edge arm.
  */
+/**
+ * Build the per-facet candidate-value record from the final
+ * classification / substance caches. Returns `undefined` when neither has a
+ * candidate yet (so the node carries no `facetCandidates` key).
+ */
+function buildFacetCandidates(
+  classification: StatementKind | undefined,
+  substance: 'agreed' | 'disputed' | undefined,
+): Readonly<Partial<Record<FacetName, string>>> | undefined {
+  const out: Partial<Record<FacetName, string>> = {};
+  if (classification !== undefined) out.classification = classification;
+  if (substance !== undefined) out.substance = substance;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Flatten a `VotesByFacetIndex` per-entity map (`Map<FacetName, Vote[]>`)
+ * into a plain record for the node data. Returns `undefined` when the
+ * node has no votes (so the node carries no `facetVotes` key).
+ */
+function facetVotesToRecord(
+  perFacet: ReadonlyMap<FacetName, readonly Vote[]> | undefined,
+): Readonly<Partial<Record<FacetName, readonly Vote[]>>> | undefined {
+  if (perFacet === undefined || perFacet.size === 0) return undefined;
+  const out: Partial<Record<FacetName, readonly Vote[]>> = {};
+  for (const [facet, votes] of perFacet) out[facet] = votes;
+  return out;
+}
+
 function filterAnnotationIndex(
   index: Map<string, Annotation[]>,
   promotedSet: ReadonlySet<string>,

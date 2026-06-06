@@ -36,5 +36,8 @@
     "@a-conversa/shared-types": "workspace:^",
     "@a-conversa/shell": "workspace:*",
     "vite": "8.0.13"
+  },
+  "dependencies": {
+    "cytoscape-node-html-label": "1.2.2"
   }
 }

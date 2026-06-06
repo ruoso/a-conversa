@@ -526,6 +526,98 @@ describe('projectGraph (audience baseline)', () => {
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
 
+  it('(sp) stamps step-pill data — facetCandidates, facetVotes, debaters — on statement nodes', () => {
+    const T = '2026-05-27T00:00:00.000Z';
+    const ALICE = '00000000-0000-4000-8000-0000000000a1';
+    const BEN = '00000000-0000-4000-8000-0000000000a2';
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000701',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: { user_id: ALICE, role: 'debater-A', screen_name: 'Alice', joined_at: T },
+        createdAt: T,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000702',
+        sessionId: SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: { user_id: BEN, role: 'debater-B', screen_name: 'Ben', joined_at: T },
+        createdAt: T,
+      },
+      makeNodeCreated({ sequence: 3, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      // Facet-keyed classification votes: Alice agrees, Ben disputes.
+      {
+        id: '00000000-0000-4000-8000-000000000703',
+        sessionId: SESSION_ID,
+        sequence: 5,
+        kind: 'vote',
+        actor: ALICE,
+        payload: {
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'classification',
+          participant: ALICE,
+          choice: 'agree',
+          voted_at: T,
+        },
+        createdAt: T,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000704',
+        sessionId: SESSION_ID,
+        sequence: 6,
+        kind: 'vote',
+        actor: BEN,
+        payload: {
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'classification',
+          participant: BEN,
+          choice: 'dispute',
+          voted_at: T,
+        },
+        createdAt: T,
+      },
+      // Substance candidate.
+      {
+        id: '00000000-0000-4000-8000-000000000705',
+        sessionId: SESSION_ID,
+        sequence: 7,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: { proposal: { kind: 'set-node-substance', node_id: NODE_A, value: 'agreed' } },
+        createdAt: T,
+      },
+    ];
+    const data = projectGraph(events).nodes[0]?.data;
+    // Candidate values: classification kind + substance value (raw).
+    expect(data?.facetCandidates).toEqual({ classification: 'fact', substance: 'agreed' });
+    // Debater roster in slot order, both listed.
+    expect(data?.debaters).toEqual([
+      { role: 'debater-A', participantId: ALICE, screenName: 'Alice' },
+      { role: 'debater-B', participantId: BEN, screenName: 'Ben' },
+    ]);
+    // Per-debater classification votes.
+    const classVotes = data?.facetVotes?.classification ?? [];
+    expect(classVotes).toHaveLength(2);
+    const choiceById = Object.fromEntries(classVotes.map((v) => [v.participantId, v.choice]));
+    expect(choiceById[ALICE]).toBe('agree');
+    expect(choiceById[BEN]).toBe('dispute');
+  });
+
   // ---------------------------------------------------------------
   // aud_axiom_mark_decoration — per-node axiom-mark stamping. Pinned
   // cases pulled directly from the refinement Constraints section.
@@ -1122,18 +1214,11 @@ describe('projectGraph (audience baseline)', () => {
     expect(parent?.data.kind).toBe('normative');
   });
 
-  it('(j) is invariant under non-causal events interleaved between node-created and its classify commit', () => {
+  it('(j) is invariant under the POSITION of a participant-joined interleaved between node-created and its classify commit', () => {
+    // The participant roster is causal (it feeds `data.debaters`), so both
+    // logs carry the SAME participant-joined; the test pins that WHERE it
+    // sits in the stream does not change the node projection.
     const direct: Event[] = [
-      makeNodeCreated({ sequence: 1, nodeId: NODE_C, wording: 'C' }),
-      makeClassifyProposal({
-        sequence: 2,
-        envelopeId: PROPOSAL_A,
-        nodeId: NODE_C,
-        classification: 'predictive',
-      }),
-      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
-    ];
-    const interleaved: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_C, wording: 'C' }),
       makeParticipantJoined(2),
       makeClassifyProposal({
@@ -1142,8 +1227,18 @@ describe('projectGraph (audience baseline)', () => {
         nodeId: NODE_C,
         classification: 'predictive',
       }),
-      makeParticipantJoined(4),
-      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_A }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const interleaved: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_C, wording: 'C' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_C,
+        classification: 'predictive',
+      }),
+      makeParticipantJoined(3),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
     ];
     const directOut = projectGraph(direct);
     const interleavedOut = projectGraph(interleaved);

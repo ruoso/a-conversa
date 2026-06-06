@@ -202,6 +202,10 @@
       "substance": "Substância",
       "proposal": "Proposição"
     },
+    "substance": {
+      "agreed": "Se sustenta",
+      "disputed": "Não se sustenta"
+    },
     "voteChoice": {
       "agree": "Concordar",
       "dispute": "Discordar",
