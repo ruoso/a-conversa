@@ -143,6 +143,7 @@ import {
   projectAnnotationHostEdges,
   projectAnnotationNodes,
 } from './annotations.js';
+import { computeNodeDimensions } from './nodeDimensions.js';
 
 import {
   cardRollupStatus,
@@ -247,6 +248,22 @@ export interface AudienceNodeData {
    * (committed decompositions are structurally permanent).
    */
   readonly decomposed?: boolean;
+  /**
+   * Per-node Cytoscape box width (px), measured from `wording` by
+   * `computeNodeDimensions`. The baseline `node` selector's
+   * `width: 'data(width)'` mapper reads this so statement boxes size to
+   * their content instead of the prior constant `200`. Stamped on
+   * statement nodes only — promoted annotation graph-nodes keep the
+   * fixed footprint from their `node[nodeKind = 'annotation']` selector
+   * (which overrides `width` with a literal, so the mapper is never
+   * evaluated for them). Refinement: closes the constant-`200`/`80`
+   * deferral noted in `stylesheet.ts`'s STYLESHEET status block.
+   */
+  readonly width?: number;
+  /** Per-node Cytoscape box height (px). Symmetric with `width`. */
+  readonly height?: number;
+  /** Per-node `text-max-width` budget (px), `width - 2 * padding`. */
+  readonly textMaxWidth?: number;
 }
 
 /**
@@ -388,6 +405,12 @@ export function projectGraph(events: readonly Event[]): {
       const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
       const axiomMarks = axiomMarkIndex.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
       const annotations = nodeAnnotationIndex.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
+      // Measure the wording once so the statement box sizes to its
+      // content (the `width`/`height`/`textMaxWidth` `data(...)` mappers
+      // in `STYLESHEET` read these back). Annotation graph-nodes are
+      // emitted by `projectAnnotationNodes` below and keep their fixed
+      // selector footprint, so they carry no measured dimensions.
+      const dimensions = computeNodeDimensions(event.payload.wording);
       const element: AudienceNodeElement = {
         group: 'nodes',
         data: {
@@ -400,6 +423,9 @@ export function projectGraph(events: readonly Event[]): {
           rollupStatus,
           axiomMarks,
           annotations,
+          width: dimensions.width,
+          height: dimensions.height,
+          textMaxWidth: dimensions.textMaxWidth,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);

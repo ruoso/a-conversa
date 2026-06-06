@@ -134,13 +134,19 @@ export const STATE_COLORS = {
  * Cytoscape stylesheet for the audience broadcast surface.
  *
  * Module-scope so the reference is stable across renders — Cytoscape
- * diffs by reference identity, not deep equality. Numeric `width: 200`
- * / `height: 80` is the validated post-deviation pattern: the
- * participant's status block documents that `width: 'label'` /
- * `height: 'label'` was deprecated by Cytoscape 3.33 and surfaces as a
- * `console.warn`, which the Vitest harness treats as a failure per
- * `vitest.setup.ts`. The audience adopts numeric width/height up-front
- * rather than rediscovering the deviation.
+ * diffs by reference identity, not deep equality. Statement-node box
+ * dimensions are per-node `data(width)` / `data(height)` mappers fed by
+ * the projector's `computeNodeDimensions(wording)` call (see
+ * `nodeDimensions.ts`), so a one-word statement and a three-line
+ * statement no longer share the same box. This closes the constant
+ * `width: 200` / `height: 80` deferral the audience inherited from the
+ * participant's `part_graph_render` Decision §7. Note the deferral's
+ * cause is still live: `width: 'label'` / `height: 'label'` was
+ * deprecated by Cytoscape 3.33 and surfaces as a `console.warn` (a
+ * Vitest failure per `vitest.setup.ts`), so the dynamic sizing routes
+ * through measured `data(...)` numbers rather than Cytoscape's
+ * label-auto-size — the measurement happens in the projector, not in
+ * the renderer.
  *
  * Per-facet styling (proposed dashed / agreed solid / disputed marker /
  * meta-disagreement split) and decoration (axiom-mark badges,
@@ -195,12 +201,23 @@ export const STYLESHEET: StylesheetJson = [
       'border-color': '#cbd5e1',
       label: 'data(wording)',
       'text-wrap': 'wrap',
-      'text-max-width': '180px',
+      // Per-node wrap budget: stamped on `data.textMaxWidth` by the
+      // projector's `computeNodeDimensions(wording)` call so the wrap
+      // engine and the box-sizing agree on the same per-node footprint.
+      // Refinement: closes the constant-`200`/`80` deferral noted in the
+      // STYLESHEET status block below.
+      'text-max-width': 'data(textMaxWidth)',
       color: '#0f172a',
       'text-valign': 'center',
       'text-halign': 'center',
-      width: 200,
-      height: 80,
+      // Per-node box dimensions, measured from the wording by the
+      // projector. Statement nodes carry `data.width` / `data.height`;
+      // promoted annotation graph-nodes override both with literals in
+      // their `node[nodeKind = 'annotation']` selector below, so these
+      // `data(...)` mappers are never evaluated for them.
+      width: 'data(width)',
+      height: 'data(height)',
+      padding: '12px',
       'font-family': BROADCAST_FONT_STACK,
       'font-size': BROADCAST_NODE_FONT_SIZE_PX,
       'font-weight': BROADCAST_NODE_FONT_WEIGHT,

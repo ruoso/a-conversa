@@ -189,6 +189,34 @@ describe('projectGraph (audience baseline)', () => {
     });
   });
 
+  it('(b2) stamps content-measured width / height / textMaxWidth on statement nodes (not a constant box)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Yes' }),
+      makeNodeCreated({
+        sequence: 2,
+        nodeId: NODE_B,
+        wording:
+          'A considerably longer statement whose wording wraps across several lines and grows the box',
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const short = nodes.find((n) => n.data.id === NODE_A)?.data;
+    const long = nodes.find((n) => n.data.id === NODE_B)?.data;
+    // Both carry numeric, positive box dimensions sourced from the
+    // projector's `computeNodeDimensions(wording)` call.
+    expect(typeof short?.width).toBe('number');
+    expect(typeof short?.height).toBe('number');
+    expect(typeof long?.width).toBe('number');
+    // The wrap budget invariant the stylesheet relies on: a node's
+    // `text-max-width: data(textMaxWidth)` is always `width - 2*padding`.
+    expect(short?.textMaxWidth).toBe((short?.width ?? 0) - 24);
+    expect(long?.textMaxWidth).toBe((long?.width ?? 0) - 24);
+    // Content drives the size: the long wording produces a wider and
+    // taller box than the short one — the whole point of the change.
+    expect(long?.width ?? 0).toBeGreaterThan(short?.width ?? 0);
+    expect(long?.height ?? 0).toBeGreaterThan(short?.height ?? 0);
+  });
+
   it('(c) emits one edge descriptor per edge-created with correct source / target / role', () => {
     const events: Event[] = [
       makeEdgeCreated({
