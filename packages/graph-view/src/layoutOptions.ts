@@ -258,6 +258,28 @@ export function packComponentBoxes(
 }
 
 /**
+ * Aspect ratio (width / height) of the on-screen graph area the packing
+ * should fill — the rendered viewport (`cy.width()`/`cy.height()`, the
+ * container's measured pixels) minus the `PADDING` that `cy.fit` insets
+ * on every side. Returns `undefined` when there is no real viewport
+ * (headless measurement), so the packer falls back to
+ * `DEFAULT_PACK_ASPECT`.
+ */
+function measuredViewportAspect(cy: Core): number | undefined {
+  const usableWidth = cy.width() - 2 * PADDING;
+  const usableHeight = cy.height() - 2 * PADDING;
+  if (
+    !Number.isFinite(usableWidth) ||
+    !Number.isFinite(usableHeight) ||
+    usableWidth <= 0 ||
+    usableHeight <= 0
+  ) {
+    return undefined;
+  }
+  return usableWidth / usableHeight;
+}
+
+/**
  * Lays the graph out with `breadthfirst`, but ONE CONNECTED COMPONENT AT
  * A TIME, then bin-packs the component bounding boxes into 2D.
  *
@@ -309,12 +331,13 @@ export function layoutAndPackComponents(cy: Core): void {
 
   if (components.length === 1) return;
 
-  const width = cy.width();
-  const height = cy.height();
-  const targetAspect =
-    Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
-      ? width / height
-      : undefined;
+  // Target the packed box at the MEASURED on-screen graph area's aspect
+  // so `cy.fit` fills it rather than letterboxing. The area the graph
+  // actually occupies is the rendered viewport (`cy.width()`/`cy.height()`
+  // — the container's measured pixels) minus the `PADDING` that `cy.fit`
+  // insets on every side, so the ratio is taken over the USABLE box.
+  // `DEFAULT_PACK_ASPECT` is only a headless fallback (no real viewport).
+  const targetAspect = measuredViewportAspect(cy);
   const slots = packComponentBoxes(
     boxes.map((box) => ({ w: box.w, h: box.h })),
     targetAspect === undefined ? undefined : { targetAspect },
