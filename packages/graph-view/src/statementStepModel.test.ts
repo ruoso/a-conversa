@@ -31,33 +31,63 @@ function statuses(
 }
 
 describe('selectStepFacet', () => {
-  it('(a) returns wording for an empty status record (nothing settled yet)', () => {
+  it('(a) returns wording for an empty status record (nothing opened yet)', () => {
     expect(selectStepFacet({})).toBe('wording');
   });
 
-  it('(b) skips a committed wording to classification', () => {
-    expect(selectStepFacet(statuses({ wording: 'committed' }))).toBe('classification');
-  });
-
-  it('(c) skips committed wording + classification to substance', () => {
-    expect(selectStepFacet(statuses({ wording: 'committed', classification: 'committed' }))).toBe(
-      'substance',
+  it('(b) advances to classification once a classification candidate has opened', () => {
+    // The realistic shape: wording stays 'proposed' (a node always carries
+    // a proposed wording, never 'committed'); classification opens. The
+    // step must advance even though wording is not committed.
+    expect(selectStepFacet(statuses({ wording: 'proposed', classification: 'proposed' }))).toBe(
+      'classification',
     );
   });
 
-  it('(d) returns null when all three are committed (fully settled)', () => {
+  it('(c) advances to substance once a substance candidate has opened', () => {
     expect(
       selectStepFacet(
-        statuses({ wording: 'committed', classification: 'committed', substance: 'committed' }),
+        statuses({ wording: 'proposed', classification: 'committed', substance: 'proposed' }),
+      ),
+    ).toBe('substance');
+  });
+
+  it('(d) returns null when classification AND substance are committed (fully settled)', () => {
+    expect(
+      selectStepFacet(
+        statuses({ wording: 'proposed', classification: 'committed', substance: 'committed' }),
       ),
     ).toBeNull();
   });
 
-  it('(e) treats open statuses (proposed/agreed/disputed) as the current step', () => {
-    expect(selectStepFacet(statuses({ wording: 'agreed' }))).toBe('wording');
-    expect(selectStepFacet(statuses({ wording: 'committed', classification: 'disputed' }))).toBe(
+  it('(e) treats an awaiting-proposal facet as not-yet-opened (does NOT advance)', () => {
+    // Regression for the "stuck on Wording" bug: an un-opened deeper facet
+    // must NOT pull the step forward — only a started one does.
+    expect(
+      selectStepFacet(
+        statuses({
+          wording: 'proposed',
+          classification: 'awaiting-proposal',
+          substance: 'awaiting-proposal',
+        }),
+      ),
+    ).toBe('wording');
+    expect(
+      selectStepFacet(
+        statuses({
+          wording: 'proposed',
+          classification: 'committed',
+          substance: 'awaiting-proposal',
+        }),
+      ),
+    ).toBe('classification');
+  });
+
+  it('(f) treats open statuses (agreed/disputed) on a deeper facet as the current step', () => {
+    expect(selectStepFacet(statuses({ wording: 'proposed', classification: 'disputed' }))).toBe(
       'classification',
     );
+    expect(selectStepFacet(statuses({ wording: 'agreed' }))).toBe('wording');
   });
 });
 

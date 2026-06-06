@@ -408,6 +408,18 @@
  * 2026-06-06 amendment). `tpl` markup is built by `statementNodeHtml.ts`.
  * The label layer is click-through (read-only surface); the box frame +
  * per-status border come from the Cytoscape node selectors. */
+/* Single root wrapper for the per-node HTML (header + body + footer). A
+ * single root is REQUIRED — see `renderStatementNodeHtml` for why the
+ * plugin drops sibling roots. Stacks its sections vertically, centered. */
+.gv-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: 240px;
+  pointer-events: none;
+}
+
 .gv-node__header,
 .gv-node__body,
 .gv-node__footer {

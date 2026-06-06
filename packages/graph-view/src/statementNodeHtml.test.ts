@@ -29,6 +29,33 @@ describe('renderStatementNodeHtml', () => {
     expect(html).not.toContain('<lifts>');
   });
 
+  it('(a2) wraps everything in a SINGLE root element (header + body + footer all present)', () => {
+    // The plugin appends each child of the parsed body while iterating a
+    // live HTMLCollection, which drops every other element when there is
+    // more than one root. A single `gv-node` root keeps the wording (the
+    // middle child) from vanishing. Parse and assert exactly one root with
+    // all three sections beneath it.
+    const step: StatementStepModel = {
+      kind: 'step',
+      facet: 'wording',
+      facetLabel: 'Wording',
+      valueLabel: null,
+      debaters: [],
+    };
+    const html = renderStatementNodeHtml({
+      wording: 'the claim',
+      step,
+      annotations: [{ kind: 'note', kindLabel: 'Note', content: 'n' }],
+    });
+    const roots = new DOMParser().parseFromString(html, 'text/html').body.children;
+    expect(roots.length).toBe(1);
+    const root = roots[0]!;
+    expect(root.className).toBe('gv-node');
+    expect(root.querySelector('.gv-node__header')).not.toBeNull();
+    expect(root.querySelector('.gv-node__body')?.textContent).toBe('the claim');
+    expect(root.querySelector('.gv-node__footer')).not.toBeNull();
+  });
+
   it('(b) a wording step shows the facet label with no ": value"', () => {
     const step: StatementStepModel = {
       kind: 'step',

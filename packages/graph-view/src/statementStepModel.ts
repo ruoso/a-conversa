@@ -12,19 +12,20 @@ import type { FacetName, FacetStatus, Vote } from '@a-conversa/shell';
 
 import type { StepDebater } from './projectGraph.js';
 
-/** Canonical facet order — the methodology's sequential capture flow. */
-const STEP_ORDER: readonly FacetName[] = ['wording', 'classification', 'substance'];
+/** The methodology's capture flow (wording → classification → substance)
+ *  in deepest-first order — `selectStepFacet` scans this to find the
+ *  deepest facet that has opened. */
+const DEEPEST_FIRST: readonly FacetName[] = ['substance', 'classification', 'wording'];
 
 /**
- * Statuses that mean a facet is CLOSED (no longer the live step). The
- * current step is the first facet that is NOT one of these (an unset /
- * `proposed` / `agreed` / `disputed` facet is still open).
+ * Whether a facet has been STARTED — i.e. a candidate value has been
+ * proposed on it. `'awaiting-proposal'` (and an absent status) mean the
+ * facet has not opened yet. The wording facet carries its candidate
+ * inline from node creation, so it is started from birth.
  */
-const CLOSED_STATUSES: ReadonlySet<FacetStatus> = new Set<FacetStatus>([
-  'committed',
-  'withdrawn',
-  'meta-disagreement',
-]);
+function isStarted(status: FacetStatus | undefined): boolean {
+  return status !== undefined && status !== 'awaiting-proposal';
+}
 
 export type VoteMark = 'none' | 'agree' | 'dispute';
 
@@ -72,18 +73,32 @@ export interface StepLabels {
 }
 
 /**
- * The current step facet — the first in `wording → classification →
- * substance` whose status is not closed. Returns `null` when all three
- * are settled (→ the compact summary).
+ * The current step facet — the DEEPEST facet (substance → classification
+ * → wording) that has been started. Returns `null` only when the node is
+ * fully settled: classification AND substance both committed (→ the
+ * compact summary, which shows those two decided values).
+ *
+ * Why deepest-started and NOT first-not-committed: the wording facet is
+ * never "committed" in the methodology — a node always carries a *proposed*
+ * wording (its status sits at `'proposed'`/`'agreed'`/`'disputed'`, never
+ * `'committed'`). A first-not-committed scan would therefore stay pinned on
+ * wording forever, even as classification and substance progress. The step
+ * instead advances as each deeper facet OPENS: wording until a
+ * classification candidate is proposed, classification until a substance
+ * candidate is proposed, substance until both decided facets commit.
  */
 export function selectStepFacet(
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>,
 ): FacetName | null {
-  for (const facet of STEP_ORDER) {
-    const status = facetStatuses[facet];
-    if (status === undefined || !CLOSED_STATUSES.has(status)) return facet;
+  if (facetStatuses.classification === 'committed' && facetStatuses.substance === 'committed') {
+    return null;
   }
-  return null;
+  for (const facet of DEEPEST_FIRST) {
+    if (isStarted(facetStatuses[facet])) return facet;
+  }
+  // No facet has opened yet (an empty status record): the node is at the
+  // wording step by default.
+  return 'wording';
 }
 
 export function buildStatementStepModel(

@@ -134,6 +134,14 @@ function renderFooter(
  * the wording body, with an optional footer of axiom-mark badges +
  * node-targeted annotation chips. `cytoscape-node-html-label` wraps the
  * returned string and positions it on the node.
+ *
+ * CRITICAL: the whole thing is wrapped in a SINGLE root `<div class="gv-node">`.
+ * The plugin parses `tpl(data)` with `DOMParser` and appends each child of
+ * the parsed `<body>` — iterating a *live* `HTMLCollection` while moving
+ * nodes out of it, which silently skips every other element when there is
+ * more than one root. A single root makes that iteration a no-op edge case,
+ * so the header / body / footer all survive (the wording is the middle
+ * child and was the one being dropped).
  */
 export function renderStatementNodeHtml(args: {
   readonly wording: string;
@@ -142,8 +150,10 @@ export function renderStatementNodeHtml(args: {
   readonly annotations?: readonly NodeAnnotationView[];
 }): string {
   return (
+    `<div class="gv-node">` +
     `<div class="gv-node__header">${renderHeader(args.step)}</div>` +
     `<div class="gv-node__body">${escapeHtml(args.wording)}</div>` +
-    renderFooter(args.axiomMarks ?? [], args.annotations ?? [])
+    renderFooter(args.axiomMarks ?? [], args.annotations ?? []) +
+    `</div>`
   );
 }
