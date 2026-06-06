@@ -49,6 +49,11 @@ import {
   type SurfaceModule,
 } from '@a-conversa/shell';
 
+// Shared graph-overlay animation CSS (keyframes + `--aud-anim-*` cadence
+// tokens + halo geometry), co-located with the overlay components per
+// ADR 0039. Loaded before `./index.css` so the tokens are defined for
+// both the overlays and this app's `aud-segment-break` caption.
+import '@a-conversa/graph-view/overlays.css';
 import './index.css';
 import { App } from './App';
 import { audienceWsStore } from './ws/wsStore';

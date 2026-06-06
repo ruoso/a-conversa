@@ -3,6 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { negotiateAuthenticatedLocale } from '@a-conversa/i18n-catalogs';
 import { AuthProvider, createI18nInstance, I18nProvider } from '@a-conversa/shell';
+// Shared graph-overlay animation CSS, co-located with the overlay
+// components per ADR 0039. Importing it here is what makes the landing
+// page's node-appear / withdrawal / decomposition / diagnostic-fire
+// halos (and the axiom-mark + pill-agreed pulses) actually render — the
+// overlay <span>s were already emitted, but the keyframes/geometry only
+// lived in the audience app until this extraction.
+import '@a-conversa/graph-view/overlays.css';
 import './index.css';
 import App from './App';
 

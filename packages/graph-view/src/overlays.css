@@ -1,0 +1,404 @@
+/* Shared graph-overlay animation styles for `@a-conversa/graph-view`.
+ *
+ * These keyframes, the `--aud-anim-*` cadence tokens, and the
+ * `[data-*-anim]` halo geometry were extracted verbatim from
+ * `apps/audience/src/index.css` so they now travel WITH the overlay
+ * components. ADR 0039 lifted the renderer's JS (projector, stylesheet,
+ * the eight overlay components) into this package but left the overlay
+ * *CSS* behind in the audience app — so the landing page (`apps/root`),
+ * which renders the same overlay `<span>`s, had no matching rules and
+ * the halos were silently invisible there. Co-locating the CSS with the
+ * components closes that gap; both consuming apps import this file from
+ * their entry module:
+ *
+ *   import '@a-conversa/graph-view/overlays.css';
+ *
+ * The `aud-` class prefix is retained (NOT renamed to e.g. `gv-`) so the
+ * overlay component class strings and their Vitest assertions stay
+ * unchanged; the prefix is now a historical artifact of the audience
+ * origin, not surface scoping.
+ *
+ * Scope: the SIX graph-overlay animation families only — axiom-mark
+ * landing, the node-appear / withdrawal / decomposition / diagnostic-fire
+ * halos, and the per-facet pill 'agreed' pulse — plus the shared cadence
+ * tokens they consume. Audience-app chrome (the Tailwind import,
+ * self-hosted Inter `@font-face`, the broadcast `@theme` token, the
+ * html/body/#root reset, the OBS overflow/transparency rules, and the
+ * `aud-segment-break` chapter-caption animation) stays in
+ * `apps/audience/src/index.css` — those are not graph overlays. NOTE:
+ * `aud-segment-break` consumes the `--aud-anim-*` tokens defined below,
+ * so the audience entry MUST import this file (it does).
+ *
+ * Refinement: tasks/refinements/audience/aud_animation_pacing.md (the
+ *   cadence-tier model + token definitions) plus the per-family
+ *   `aud_*_animation.md` refinements cited inline below.
+ * ADRs: 0039 (graph-view package boundary), 0005 (Tailwind + shared
+ *   tokens — the cadence tokens stay CSS custom properties, not @theme).
+ */
+
+/* `aud_animation_pacing` — overlay animation cadence model.
+ *
+ * The overlay animation family is methodologically tiered:
+ *
+ *   commit-moment tier (--aud-anim-commit-ms = 350 ms)
+ *     • aud-axiom-mark-land — per-participant axiom-mark badge arrival
+ *     • aud-pill-agreed     — per-facet pill transition to 'agreed'
+ *     Semantics: a participant-side declaration just landed. Fast,
+ *     decisive, "lands and sticks".
+ *
+ *   halo tier (--aud-anim-halo-ms = 450 ms)
+ *     • aud-node-appear            — Cytoscape node arrival halo
+ *     • aud-withdrawal             — rollupStatus → 'disputed' halo
+ *     • aud-decomposition          — decompose / interpretive-split halo
+ *     • aud-diagnostic-fire-blocking, ...-advisory — diagnostic halos
+ *     Semantics: the graph state registered a change at this entity.
+ *     The 96 px square radial-gradient halo benefits from the slightly
+ *     slower entrance so peripheral vision catches the cue.
+ *
+ *   shared easing (--aud-anim-easing = cubic-bezier(0.16, 1, 0.3, 1))
+ *     Material "emphasized decelerate": fast initial motion settling
+ *     gently into the resting state.
+ *
+ * Refinement: tasks/refinements/audience/aud_animation_pacing.md
+ *   Decision §1 — CSS custom properties (NOT a JS constants module, NOT
+ *   Tailwind @theme tokens) are the cadence dial; the keyframe rules
+ *   below consume them via `animation-duration: var(--aud-anim-...)`.
+ *   Decision §7 — future animation siblings MUST consume these
+ *   variables rather than ship inline durations. */
+:root {
+  --aud-anim-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --aud-anim-commit-ms: 350ms;
+  --aud-anim-halo-ms: 450ms;
+}
+
+/* `aud_axiom_mark_animation` — one-shot landing animation for
+ * per-participant axiom-mark badges as they arrive.
+ * Refinement: tasks/refinements/audience/aud_axiom_mark_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed wrapper, NOT a
+ *   JS-driven tween nor a motion-framework dependency; CSS keyframes
+ *   are inherently one-shot per element lifetime, and React's keyed
+ *   reconciliation handles "which wrapper is new".
+ *   Decision §5 — 350 ms with `cubic-bezier(0.16, 1, 0.3, 1)`
+ *   ("emphasized decelerate") for a "lands and sticks" entrance.
+ *   `both` fill-mode keeps the badge in the `to` state after the
+ *   animation completes.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS, not TS — the class is always emitted, this media-query
+ *   override no-ops the animation. */
+@keyframes aud-axiom-mark-land {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.aud-axiom-mark-land {
+  animation: aud-axiom-mark-land var(--aud-anim-commit-ms) var(--aud-anim-easing) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-axiom-mark-land {
+    animation: none;
+  }
+}
+
+/* `aud_node_appear_animation` — one-shot halo animation on Cytoscape
+ * node arrival.
+ * Refinement: tasks/refinements/audience/aud_node_appear_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed halo overlay
+ *   `<span>`, NOT a JS-driven tween, NOT a motion-framework
+ *   dependency, NOT a `cy.animate()` call.
+ *   Decision §5 — 450 ms with `cubic-bezier(0.16, 1, 0.3, 1)`
+ *   ("emphasized decelerate"); longer than the axiom-mark badge's
+ *   350 ms because the halo's larger geometry benefits from a slightly
+ *   slower entrance. `forwards` fill-mode keeps the halo at the `to`
+ *   state (`opacity: 0`) after the animation completes so it is
+ *   invisible at rest.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS (the class is always emitted by the render path).
+ *
+ * The keyframe's `transform` carries `translate(-50%, -50%)` alongside
+ * the `scale(...)` because the React inline style sets
+ * `transform: translate(-50%, -50%)` for centering; while the animation
+ * runs, the CSS animation overrides the inline transform, so the
+ * keyframe must restate the centering translate. The slate-700-ish
+ * gradient color (`rgba(15, 23, 42, ...)`) matches the renderer's
+ * border palette (`STATE_COLORS.agreed` in
+ * `packages/graph-view/src/stylesheet.ts`) so the halo reads as "of the
+ * same surface" rather than a foreign accent. */
+[data-node-appear-anim] {
+  /* `--halo-zoom` (set inline by the overlay = live cy.zoom()) scales the
+     halo box with the node it sits on, so it no longer balloons when the
+     viewport zooms out. Defaults to 1 when the overlay did not set it.
+     The keyframe `scale(...)` multipliers stay relative to this box, so
+     they compose with the zoom. */
+  width: calc(96px * var(--halo-zoom, 1));
+  height: calc(96px * var(--halo-zoom, 1));
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(15, 23, 42, 0.35) 0%,
+    rgba(15, 23, 42, 0.1) 50%,
+    rgba(15, 23, 42, 0) 75%
+  );
+  opacity: 0;
+  border-radius: 50%;
+}
+
+@keyframes aud-node-appear {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.aud-node-appear {
+  animation: aud-node-appear var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-node-appear {
+    animation: none;
+  }
+}
+
+/* `aud_proposed_to_agreed_animation` — one-shot pulse on per-facet
+ * pill transition to `'agreed'`.
+ * Refinement: tasks/refinements/audience/aud_proposed_to_agreed_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed wrapper around the
+ *   inner `<FacetPill>`, gated by `useSeenKeysGate` over currently-
+ *   `'agreed'` `${nodeId}:${facet}` keys; keyframes fire once when the
+ *   class lands on a previously-class-less wrapper, then never again.
+ *   Decision §5 — 350 ms with `cubic-bezier(0.16, 1, 0.3, 1)`; parity
+ *   with the axiom-mark sibling. `forwards` fill keeps the `to` state
+ *   so the chip returns cleanly to its `'agreed'` paint with no
+ *   residual outline.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression in CSS.
+ *
+ * The keyframe animates a scale settle plus an outward `box-shadow`
+ * ripple that fades to zero. The slate-700 ripple color matches the
+ * `'agreed'` border palette (`PILL_STATUS_CLASSNAME.agreed` in
+ * `packages/shell/src/facet-pill/FacetPill.tsx`). */
+@keyframes aud-pill-agreed {
+  from {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 rgba(15, 23, 42, 0.45);
+  }
+  to {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(15, 23, 42, 0);
+  }
+}
+
+.aud-pill-agreed {
+  display: inline-block;
+  animation: aud-pill-agreed var(--aud-anim-commit-ms) var(--aud-anim-easing) forwards;
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-pill-agreed {
+    animation: none;
+  }
+}
+
+/* `aud_withdrawal_animation` — one-shot rose-tinted halo on a node's
+ * `rollupStatus` first reaching `'disputed'` (the agreed → disputed
+ * transition from withdraw-agreement or per-facet dispute votes).
+ * Refinement: tasks/refinements/audience/aud_withdrawal_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed halo `<span>`.
+ *   Decision §5 — 450 ms; parity with the node-appear halo. `forwards`
+ *   fill keeps the `to` state (`opacity: 0`) so the halo is invisible
+ *   at rest.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression in CSS.
+ *
+ * The halo geometry mirrors `[data-node-appear-anim]` (96px square,
+ * radial gradient fading to transparent at 75%); the palette is sampled
+ * from `STATE_COLORS.disputed` (rose-600 `#e11d48`) in
+ * `packages/graph-view/src/stylesheet.ts`, so the halo reads as "of the
+ * disputed-state surface" and the post-animation steady state is the
+ * rose-600 border painted by the static stylesheet. The halo's max
+ * scale (`1.8`) is slightly larger than the node-appear halo's `1.6` so
+ * the regression halo reads as "spreading outward" with a distinct
+ * rhythm. */
+[data-withdrawal-anim] {
+  /* `--halo-zoom` (set inline by the overlay = live cy.zoom()) scales the
+     halo box with the node it sits on, so it no longer balloons when the
+     viewport zooms out. Defaults to 1 when the overlay did not set it.
+     The keyframe `scale(...)` multipliers stay relative to this box, so
+     they compose with the zoom. */
+  width: calc(96px * var(--halo-zoom, 1));
+  height: calc(96px * var(--halo-zoom, 1));
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(225, 29, 72, 0.45) 0%,
+    rgba(225, 29, 72, 0.15) 50%,
+    rgba(225, 29, 72, 0) 75%
+  );
+  opacity: 0;
+  border-radius: 50%;
+}
+
+@keyframes aud-withdrawal {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+}
+
+.aud-withdrawal {
+  animation: aud-withdrawal var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-withdrawal {
+    animation: none;
+  }
+}
+
+/* `aud_diagnostic_fire_animation` — one-shot amber halos on nodes/edges
+ * affected by a newly-fired structural diagnostic. Severity-keyed:
+ * amber-700 for `'blocking'` (cycle + contradiction), amber-400 for
+ * `'advisory'` (multi-warrant + dangling-claim + coherency-hint).
+ * Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation.md
+ *   Decision §5 — 450 ms; parity with the other halos. Blocking and
+ *   advisory differ ONLY in final scale (1.8 vs 1.7).
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression in CSS.
+ *   Decision §8 — the animation IS the entire diagnostic surface (the
+ *   post-animation state is a clean canvas, no persistent border).
+ *
+ * The blocking palette is amber-700 (`rgba(180, 83, 9, ...)`); the
+ * advisory palette is amber-400 (`rgba(251, 191, 36, ...)`) — both match
+ * the moderator's diagnostic borders so the cross-surface palette stays
+ * continuous. The keyframes restate the centering `translate(-50%, -50%)`
+ * (same pattern as `aud-node-appear` / `aud-withdrawal`). */
+[data-diagnostic-fire-anim] {
+  /* `--halo-zoom` (set inline by the overlay = live cy.zoom()) scales the
+     halo box with the element it sits on, so it no longer balloons when
+     the viewport zooms out. Defaults to 1 when the overlay did not set
+     it. The keyframe `scale(...)` multipliers stay relative to this box,
+     so they compose with the zoom. */
+  width: calc(96px * var(--halo-zoom, 1));
+  height: calc(96px * var(--halo-zoom, 1));
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 50%;
+}
+[data-diagnostic-fire-anim][data-severity='blocking'] {
+  background-image: radial-gradient(
+    circle,
+    rgba(180, 83, 9, 0.5) 0%,
+    rgba(180, 83, 9, 0.18) 50%,
+    rgba(180, 83, 9, 0) 75%
+  );
+}
+[data-diagnostic-fire-anim][data-severity='advisory'] {
+  background-image: radial-gradient(
+    circle,
+    rgba(251, 191, 36, 0.45) 0%,
+    rgba(251, 191, 36, 0.15) 50%,
+    rgba(251, 191, 36, 0) 75%
+  );
+}
+
+@keyframes aud-diagnostic-fire-blocking {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+}
+
+@keyframes aud-diagnostic-fire-advisory {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+}
+
+.aud-diagnostic-fire-blocking {
+  animation: aud-diagnostic-fire-blocking var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+.aud-diagnostic-fire-advisory {
+  animation: aud-diagnostic-fire-advisory var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-diagnostic-fire-blocking,
+  .aud-diagnostic-fire-advisory {
+    animation: none;
+  }
+}
+
+/* `aud_decomposition_animation` — one-shot slate-tinted halo on a parent
+ * node's `data.decomposed` first flipping to `true` (a decompose /
+ * interpretive-split commit structurally retiring the parent).
+ * Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+ *   Decision §6 — `var(--aud-anim-halo-ms)` (450 ms); halo-tier parity.
+ *   `forwards` fill keeps the `to` state (`opacity: 0`).
+ *   Decision §7 — `prefers-reduced-motion: reduce` suppression in CSS.
+ *
+ * The halo geometry mirrors `[data-node-appear-anim]`; the palette is
+ * sampled from `STATE_COLORS.agreed` (slate-700 `#334155`) in
+ * `packages/graph-view/src/stylesheet.ts`, so the halo reads as "settled
+ * into retirement". The post-animation steady state is
+ * `node[?decomposed] { opacity: 0.15 }` in the Cytoscape stylesheet. */
+[data-decomposition-anim] {
+  /* `--halo-zoom` (set inline by the overlay = live cy.zoom()) scales the
+     halo box with the node it sits on, so it no longer balloons when the
+     viewport zooms out. Defaults to 1 when the overlay did not set it.
+     The keyframe `scale(...)` multipliers stay relative to this box, so
+     they compose with the zoom. */
+  width: calc(96px * var(--halo-zoom, 1));
+  height: calc(96px * var(--halo-zoom, 1));
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(51, 65, 85, 0.45) 0%,
+    rgba(51, 65, 85, 0.15) 50%,
+    rgba(51, 65, 85, 0) 75%
+  );
+  opacity: 0;
+  border-radius: 50%;
+}
+
+@keyframes aud-decomposition {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.aud-decomposition {
+  animation: aud-decomposition var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-decomposition {
+    animation: none;
+  }
+}
