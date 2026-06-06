@@ -15,7 +15,8 @@
       "source": "./src/cytoscapeTestEnv.ts",
       "types": "./dist/cytoscapeTestEnv.d.ts",
       "default": "./dist/cytoscapeTestEnv.js"
-    }
+    },
+    "./overlays.css": "./src/overlays.css"
   },
   "scripts": {
     "build": "vite build && tsc -b tsconfig.json --emitDeclarationOnly --force",
