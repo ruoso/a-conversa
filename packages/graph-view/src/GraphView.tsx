@@ -318,7 +318,7 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
-import { buildAudienceLayoutOptions, PADDING } from './layoutOptions.js';
+import { layoutAndPackComponents, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
 import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
@@ -542,7 +542,12 @@ export function GraphView({
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
     if (cy.elements().length > 0 && viewportReady && structureGrew) {
-      cy.layout(buildAudienceLayoutOptions(elements)).run();
+      // Lay out each connected component on its own and bin-pack the
+      // boxes into 2D — disconnected argument threads fill the canvas
+      // instead of stringing out into one flat row (which a single
+      // whole-graph breadthfirst pass produces, because it shares one
+      // global depth array across components).
+      layoutAndPackComponents(cy);
     }
     cy.nodes().forEach((node) => {
       const position = node.position();

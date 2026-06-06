@@ -151,9 +151,19 @@
 // element set IS the testability seam).
 
 import * as React from 'react';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import type { BreadthFirstLayoutOptions, Core, LayoutOptions } from 'cytoscape';
+import type { Core, LayoutOptions } from 'cytoscape';
 import type {
   AnnotationKind,
   EdgeRole,
@@ -175,7 +185,12 @@ import {
   STYLESHEET,
 } from './stylesheet';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
-import { PADDING, SPACING_FACTOR } from './layoutOptions';
+import { PADDING } from './layoutOptions';
+// Namespace import so the layout-engine tests can `vi.spyOn` the
+// `layoutAndPackComponents` orchestration the element-sync effect calls —
+// the per-component layout it runs needs a real viewport, so under
+// happy-dom we stub it and assert it was invoked, not its painted output.
+import * as layoutEngine from './layoutOptions';
 
 function findStylesheetEntry(selector: string): Record<string, unknown> {
   const entry = (
@@ -423,6 +438,9 @@ afterEach(() => {
   cleanup();
   currentEvents = [];
   rerenderWithEvents = null;
+  // Restore any `vi.spyOn` (e.g. the layout-engine spy below) so a
+  // mocked `layoutAndPackComponents` does not leak into later tests.
+  vi.restoreAllMocks();
 });
 
 interface RenderResult {
@@ -613,12 +631,21 @@ describe('<GraphView>', () => {
     fit: ReturnType<typeof vi.fn<(...args: unknown[]) => void>>;
     layout: ReturnType<typeof vi.fn<(opts: LayoutOptions) => void>>;
     layoutRun: ReturnType<typeof vi.fn<() => void>>;
+    // The element-sync effect calls `layoutAndPackComponents(cy)` on a
+    // structure change. Its per-component breadthfirst needs a real
+    // viewport, so we stub the orchestration to a no-op and assert it
+    // was invoked (the per-component layout + packing logic is pinned
+    // directly in `layoutOptions.test.ts`).
+    layoutAndPack: MockInstance<(cy: Core) => void>;
   }
   function installLayoutEngineSpies(cy: Core): LayoutEngineSpies {
     const spies: LayoutEngineSpies = {
       fit: vi.fn(),
       layout: vi.fn(),
       layoutRun: vi.fn(),
+      layoutAndPack: vi
+        .spyOn(layoutEngine, 'layoutAndPackComponents')
+        .mockImplementation(() => undefined),
     };
     (cy as unknown as { width: () => number }).width = () => 1920;
     (cy as unknown as { height: () => number }).height = () => 1080;
@@ -694,29 +721,18 @@ describe('<GraphView>', () => {
     expect(secondSpies.fit).toHaveBeenCalledTimes(1);
   });
 
-  it('(p) calls `cy.layout` with the options returned by `buildAudienceLayoutOptions(elements)`', () => {
+  it('(p) runs the component layout-and-pack pass on the first non-empty render', () => {
     const result = renderView();
     const cy = result.getCy();
     const spies = installLayoutEngineSpies(cy);
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
-    expect(spies.layout).toHaveBeenCalledTimes(1);
-    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
-    const captured = spies.layout.mock.calls[0]?.[0] as BreadthFirstLayoutOptions | undefined;
-    if (captured === undefined || captured.name !== 'breadthfirst') {
-      throw new Error('expected breadthfirst layout options');
-    }
-    expect(captured.name).toBe('breadthfirst');
-    expect(captured.directed).toBe(true);
-    expect(captured.circle).toBe(false);
-    expect(captured.grid).toBe(false);
-    expect(captured.avoidOverlap).toBe(true);
-    expect(captured.spacingFactor).toBe(SPACING_FACTOR);
-    expect(captured.nodeDimensionsIncludeLabels).toBe(false);
-    expect(captured.padding).toBe(PADDING);
-    expect(captured.animate).toBe(false);
-    expect(captured.fit).toBe(false);
-    // The seeded graph has one node, no edges → root candidates = [NODE_A].
-    expect(captured.roots).toEqual([NODE_A]);
+    // The element-sync effect delegates layout to `layoutAndPackComponents`
+    // (per-component breadthfirst + 2D packing). The breadthfirst option
+    // shape + the deterministic roots are pinned directly in
+    // `layoutOptions.test.ts`; here we pin that the effect invokes it,
+    // once, against the live cy instance.
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(1);
+    expect(spies.layoutAndPack).toHaveBeenCalledWith(cy);
   });
 
   it('(p2) re-runs the layout when a new EDGE connects existing nodes (tidy-up on connect)', () => {
@@ -726,10 +742,10 @@ describe('<GraphView>', () => {
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
     // Two truly-new nodes → two layout passes so far.
-    expect(spies.layoutRun).toHaveBeenCalledTimes(2);
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(2);
     // An edge between the two EXISTING nodes introduces no new node, but
-    // it re-roots / re-tiers the breadthfirst hierarchy — so it must
-    // trigger a third layout pass (the "tidy up on edge add" fix).
+    // it merges two components into one and re-tiers the hierarchy — so it
+    // must trigger a third layout pass (the "tidy up on edge add" fix).
     seedEvent(
       edgeCreatedEvent({
         sequence: 3,
@@ -739,11 +755,7 @@ describe('<GraphView>', () => {
         role: 'rebuts',
       }),
     );
-    expect(spies.layoutRun).toHaveBeenCalledTimes(3);
-    // The re-layout reflects the new connectivity: NODE_B now has an
-    // incoming edge, so only NODE_A remains a deterministic root.
-    const edgeLayoutOpts = spies.layout.mock.calls[2]?.[0] as BreadthFirstLayoutOptions | undefined;
-    expect(edgeLayoutOpts?.roots).toEqual([NODE_A]);
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(3);
   });
 
   it('(p3) does NOT re-run the layout on a pure decoration tick (no new node or edge)', () => {
@@ -751,7 +763,7 @@ describe('<GraphView>', () => {
     const cy = result.getCy();
     const spies = installLayoutEngineSpies(cy);
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
-    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(1);
     // A classify proposal + commit flips the node's kind label but adds
     // no node or edge id → same structure → no re-layout.
     seedEvent(
@@ -763,7 +775,7 @@ describe('<GraphView>', () => {
       }),
     );
     seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }));
-    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(1);
   });
 
   // ---------------------------------------------------------------
