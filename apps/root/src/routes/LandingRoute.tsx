@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@a-conversa/shell';
 
+import { takeRememberedReturnTo } from '../surfaces/SurfaceHost';
 import { LoadingFrame } from './LoadingFrame';
 import { HeroSection } from '../landing/HeroSection';
 import { HowItWorksSection } from '../landing/HowItWorksSection';
@@ -34,15 +35,22 @@ export function LandingRoute(): ReactElement {
     return <Navigate to="/screen-name" replace />;
   }
 
-  // `/` is the public marketing surface; an authenticated visitor's home
-  // is the dashboard, so bounce them to `/home` (a `replace` so the
-  // marketing page never enters history). The OIDC callback's
-  // returning-user branch 302s back to `APP_BASE_URL` (i.e. `/`), so
-  // returnees land here first — this redirect shepherds them onward
-  // rather than stranding them on marketing content, and `/home` is the
-  // single consumer of any remembered deep-link return-to.
+  // `/` is the home for everyone: ADR 0026 scopes this route to both the
+  // authenticated and unauthenticated states, and the former `/home`
+  // dashboard folded back in here (the create-session affordance it
+  // offered already lives in `CallToActionSection`, which renders an
+  // auth-appropriate action below). The one job `/home` did beyond
+  // rendering — consuming the sessionStorage-remembered deep-link
+  // return-to set by `SurfaceHost` for an unauthenticated deep-link
+  // visitor — moves here, because the OIDC callback's returning-user
+  // branch 302s back to `APP_BASE_URL` (i.e. `/`), so returnees land
+  // here first. Read-and-clear once: forward to the deep link if one was
+  // remembered, otherwise fall through and render the page as their home.
   if (auth.status === 'authenticated' && auth.user !== undefined) {
-    return <Navigate to="/home" replace />;
+    const remembered = takeRememberedReturnTo();
+    if (remembered !== undefined) {
+      return <Navigate to={remembered} replace />;
+    }
   }
 
   return (

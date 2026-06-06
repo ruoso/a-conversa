@@ -19,8 +19,8 @@ function LoginStub(): ReactElement {
   return <main data-testid="route-login-stub" />;
 }
 
-function HomeStub(): ReactElement {
-  return <main data-testid="route-home-stub" />;
+function LandingStub(): ReactElement {
+  return <main data-testid="route-landing-stub" />;
 }
 
 function DeepLinkStub(): ReactElement {
@@ -32,7 +32,7 @@ function renderScreenName(initialPath: string, options: Parameters<typeof render
     <Routes>
       <Route path="/screen-name" element={<ScreenNameRoute />} />
       <Route path="/login" element={<LoginStub />} />
-      <Route path="/home" element={<HomeStub />} />
+      <Route path="/" element={<LandingStub />} />
       <Route path="/p/sessions/xyz/invite" element={<DeepLinkStub />} />
     </Routes>,
     { ...(options ?? {}), initialEntries: [initialPath] },
@@ -86,7 +86,7 @@ describe('ScreenNameRoute', () => {
     expect(screen.queryByTestId('route-login-stub')).toBeNull();
   });
 
-  it('navigates to /home when authenticated and no return-to is remembered', async () => {
+  it('navigates to / when authenticated and no return-to is remembered', async () => {
     renderScreenName('/screen-name', {
       auth: {
         status: 'authenticated',
@@ -100,7 +100,7 @@ describe('ScreenNameRoute', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('route-home-stub')).toBeTruthy();
+      expect(screen.getByTestId('route-landing-stub')).toBeTruthy();
     });
     expect(window.sessionStorage.getItem('a-conversa:return-to')).toBeNull();
   });

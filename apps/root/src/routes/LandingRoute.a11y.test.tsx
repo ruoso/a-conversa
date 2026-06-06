@@ -30,10 +30,6 @@ afterEach(() => {
   window.sessionStorage.clear();
 });
 
-function HomeStub(): ReactElement {
-  return <main data-testid="route-home-stub" />;
-}
-
 function ScreenNameStub(): ReactElement {
   return <main data-testid="route-screen-name-stub" />;
 }
@@ -42,7 +38,6 @@ function renderAnonymousLanding() {
   return renderWithProviders(
     <Routes>
       <Route path="/" element={<LandingRoute />} />
-      <Route path="/home" element={<HomeStub />} />
       <Route path="/screen-name" element={<ScreenNameStub />} />
     </Routes>,
     {

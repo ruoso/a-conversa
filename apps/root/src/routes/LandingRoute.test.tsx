@@ -19,15 +19,15 @@ function ScreenNameStub(): ReactElement {
   return <main data-testid="route-screen-name-stub" />;
 }
 
-function HomeStub(): ReactElement {
-  return <main data-testid="route-home-stub" />;
+function DeepLinkStub(): ReactElement {
+  return <main data-testid="route-deep-link-stub" />;
 }
 
 function renderLanding(initialPath: string, options: Parameters<typeof renderWithProviders>[1]) {
   return renderWithProviders(
     <Routes>
       <Route path="/" element={<LandingRoute />} />
-      <Route path="/home" element={<HomeStub />} />
+      <Route path="/m/sessions/new" element={<DeepLinkStub />} />
       <Route path="/screen-name" element={<ScreenNameStub />} />
     </Routes>,
     { ...(options ?? {}), initialEntries: [initialPath] },
@@ -65,7 +65,7 @@ describe('LandingRoute', () => {
     expect(screen.queryByTestId('route-landing')).toBeNull();
   });
 
-  it('redirects an authenticated visitor to /home without rendering the dashboard or consuming return-to', async () => {
+  it('consumes a remembered return-to for an authenticated visitor and navigates to it, clearing the slot', async () => {
     window.sessionStorage.setItem('a-conversa:return-to', '/m/sessions/new');
 
     renderLanding('/', {
@@ -80,14 +80,36 @@ describe('LandingRoute', () => {
       },
     });
 
+    // `/` is where the OIDC callback's returning-user 302 lands, so it is
+    // now the single consumer of the remembered deep-link return-to.
     await waitFor(() => {
-      expect(screen.getByTestId('route-home-stub')).toBeTruthy();
+      expect(screen.getByTestId('route-deep-link-stub')).toBeTruthy();
     });
-    // `/` no longer renders the dashboard card...
-    expect(screen.queryByTestId('route-home')).toBeNull();
-    expect(screen.queryByTestId('root-open-moderator')).toBeNull();
-    // ...and no longer consumes the return-to — that is `/home`'s job.
-    expect(window.sessionStorage.getItem('a-conversa:return-to')).toBe('/m/sessions/new');
+    expect(screen.queryByTestId('route-landing')).toBeNull();
+    expect(window.sessionStorage.getItem('a-conversa:return-to')).toBeNull();
+  });
+
+  it('renders the landing surface as the home for an authenticated visitor with no return-to', async () => {
+    renderLanding('/', {
+      auth: {
+        status: 'authenticated',
+        user: {
+          userId: '00000000-0000-4000-8000-000000000011',
+          screenName: 'alice',
+        },
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-landing')).toBeTruthy();
+    });
+    // The authenticated home keeps the start-session affordance and swaps
+    // the secondary action to a logout link (no anonymous SSO button).
+    expect(screen.getByTestId('root-start-session')).toBeTruthy();
+    expect(screen.getByTestId('root-logout-link')).toBeTruthy();
+    expect(screen.queryByTestId('auth-login-button')).toBeNull();
   });
 
   it('keeps the functional CTA affordances and the public testid for anonymous visitors', async () => {
