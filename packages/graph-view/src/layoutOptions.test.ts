@@ -19,10 +19,14 @@ import type { ElementDefinition } from 'cytoscape';
 
 import {
   BROADCAST_DIMENSIONS,
+  COMPONENT_SPACING,
   DEFAULT_BROADCAST_DIMENSIONS,
   PADDING,
   SPACING_FACTOR,
+  type ComponentSize,
+  type ComponentSlot,
   buildAudienceLayoutOptions,
+  packComponentBoxes,
   selectDeterministicRoots,
 } from './layoutOptions';
 
@@ -148,5 +152,102 @@ describe('layout-options named exports', () => {
     // Referential equality — DEFAULT_BROADCAST_DIMENSIONS aliases HD_1080,
     // doesn't copy it, so a future swap of the default surfaces here.
     expect(DEFAULT_BROADCAST_DIMENSIONS).toBe(BROADCAST_DIMENSIONS.HD_1080);
+  });
+});
+
+describe('packComponentBoxes', () => {
+  // Two boxes overlap iff their x-intervals AND y-intervals overlap
+  // (strict — touching edges are not an overlap; the packer leaves a
+  // `spacing` gap, so true packings never even touch).
+  function overlaps(
+    a: ComponentSize,
+    sa: ComponentSlot,
+    b: ComponentSize,
+    sb: ComponentSlot,
+  ): boolean {
+    return sa.x < sb.x + b.w && sb.x < sa.x + a.w && sa.y < sb.y + b.h && sb.y < sa.y + a.h;
+  }
+
+  it('(10) returns [] for empty input', () => {
+    expect(packComponentBoxes([])).toEqual([]);
+  });
+
+  it('(11) places a single box at the origin', () => {
+    expect(packComponentBoxes([{ w: 100, h: 50 }])).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it('(12) returns one slot per input box, in input order', () => {
+    const sizes: ComponentSize[] = [
+      { w: 100, h: 50 },
+      { w: 60, h: 80 },
+      { w: 40, h: 40 },
+    ];
+    expect(packComponentBoxes(sizes)).toHaveLength(3);
+  });
+
+  it('(13) produces a non-overlapping packing across varied box sizes', () => {
+    const sizes: ComponentSize[] = [
+      { w: 200, h: 80 },
+      { w: 50, h: 50 },
+      { w: 240, h: 200 },
+      { w: 100, h: 40 },
+      { w: 120, h: 160 },
+      { w: 80, h: 80 },
+      { w: 30, h: 30 },
+    ];
+    const slots = packComponentBoxes(sizes, { spacing: 20, targetAspect: 1 });
+    for (let i = 0; i < sizes.length; i++) {
+      for (let j = i + 1; j < sizes.length; j++) {
+        const si = sizes[i];
+        const sj = sizes[j];
+        const pi = slots[i];
+        const pj = slots[j];
+        if (si === undefined || sj === undefined || pi === undefined || pj === undefined) {
+          throw new Error('missing size/slot');
+        }
+        expect(overlaps(si, pi, sj, pj), `boxes ${String(i)} and ${String(j)} overlap`).toBe(false);
+      }
+    }
+  });
+
+  it('(14) wraps into multiple rows — fills 2D rather than a single flat row', () => {
+    const sizes: ComponentSize[] = Array.from({ length: 9 }, () => ({ w: 100, h: 100 }));
+    const slots = packComponentBoxes(sizes, { spacing: 10, targetAspect: 1 });
+    const distinctRows = new Set(slots.map((s) => s.y));
+    expect(distinctRows.size).toBeGreaterThan(1);
+  });
+
+  it('(15) is a pure function — identical input yields identical output', () => {
+    const sizes: ComponentSize[] = [
+      { w: 100, h: 50 },
+      { w: 60, h: 120 },
+      { w: 200, h: 80 },
+      { w: 40, h: 40 },
+    ];
+    expect(packComponentBoxes(sizes)).toEqual(packComponentBoxes(sizes));
+  });
+
+  it('(16) a narrower target aspect packs taller (more rows) than a wider one', () => {
+    const sizes: ComponentSize[] = Array.from({ length: 8 }, () => ({ w: 100, h: 100 }));
+    const wide = packComponentBoxes(sizes, { targetAspect: 4 });
+    const narrow = packComponentBoxes(sizes, { targetAspect: 0.25 });
+    const maxY = (slots: ComponentSlot[]): number => Math.max(...slots.map((s) => s.y));
+    expect(maxY(narrow)).toBeGreaterThan(maxY(wide));
+  });
+
+  it('(17) defaults the spacing to COMPONENT_SPACING when not supplied', () => {
+    // A wide target row keeps both boxes on one row; the second box then
+    // starts exactly `firstWidth + COMPONENT_SPACING` to the right, which
+    // pins the default-spacing value. Equal-size boxes: the tie breaks by
+    // index, so input order is preserved.
+    const slots = packComponentBoxes(
+      [
+        { w: 100, h: 100 },
+        { w: 100, h: 100 },
+      ],
+      { targetAspect: 100 },
+    );
+    expect(slots[0]).toEqual({ x: 0, y: 0 });
+    expect(slots[1]).toEqual({ x: 100 + COMPONENT_SPACING, y: 0 });
   });
 });
