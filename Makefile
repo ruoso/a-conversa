@@ -33,7 +33,9 @@ help:
 	@echo "  make up-backing     bring up ONLY the backing services (postgres + authelia) — no app container"
 	@echo "  make dev-app        build, then run the app on the HOST against the backing services"
 	@echo "                      (assumes 'make up-backing'; rewrites in-compose hostnames to host ports)"
-	@echo "  make dev            'make up-backing' then 'make dev-app' — the host-app dev loop in one command"
+	@echo "  make dev            watch-mode host loop: backing services + backend on :3000 (tsx watch)"
+	@echo "                      + root Vite dev server on :5174 with HMR. Loads every surface (and"
+	@echo "                      graph-view/shell) from SOURCE, so editing any of them hot-reloads live."
 	@echo "  make migrate        apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "                      — usually unnecessary now that 'make up' applies migrations on app startup"
 	@echo "  make down           stop the dev stack (volumes preserved)"
@@ -173,9 +175,52 @@ dev-app:
 		NODE_EXTRA_CA_CERTS="$$(pwd)/infra/authelia/tls/cert.pem" \
 		pnpm --filter @a-conversa/server start
 
-# One-command host-app dev loop: backing services in Compose, app on the
-# host. Equivalent to `make up-backing && make dev-app`.
-dev: up-backing dev-app
+# Watch-mode host dev loop (Vite HMR + backend watch).
+#
+# Backing services in Compose, then TWO host processes:
+#   - backend on :3000 under `tsx watch` (restarts on server-src edits),
+#     with the same host env rewrites `dev-app` uses.
+#   - the root Vite dev server on :5174 with HMR, proxying /api, /ws, and
+#     /_surfaces to the backend (see apps/root/vite.config.ts).
+# Open the app at http://localhost:5174.
+#
+# Full-tree HMR: the root dev server's `serve` config aliases every surface
+# (moderator, participant, audience, test-mode) AND the shared UI packages
+# (graph-view, shell, i18n-catalogs) to their TypeScript SOURCE, so editing
+# any of them hot-reloads live — no rebuild, no per-surface dev server.
+# `SurfaceHost` switches to the source loader via the VITE_SURFACE_SOURCE
+# flag the `serve` config sets. This is a dev-only divergence from ADR
+# 0026's runtime-bundle loading; the real manifest + built-bundle path is
+# exercised by `make up` / `make dev-app`.
+#
+# A one-time `pnpm run build` runs first: the backend's static-frontends
+# plugin fail-fasts at boot unless every frontend `dist/` exists, and the
+# shared workspace packages must be built for the backend + the initial
+# resolve to succeed.
+#
+# Login note: APP_BASE_URL stays http://localhost:3000, so the OIDC
+# callback lands on :3000 (the registered redirect URI) — the session
+# cookie is set for `localhost` (port-agnostic) so it's still sent back
+# to :5174. Browser login also needs the /etc/hosts alias the `up`
+# banner documents.
+#
+# The trap tears down BOTH host processes on Ctrl-C; the backing services
+# stay up (`make down` / `make down-v` to stop those).
+dev: up-backing
+	@if [ ! -f .env ]; then \
+		echo "[dev] .env missing — 'make up-backing' should have seeded it from .env.example"; \
+		exit 1; \
+	fi
+	@pnpm run build
+	@echo "[dev] backend :3000 (tsx watch) + root Vite :5174 (HMR, surfaces from source). Open http://localhost:5174 — Ctrl-C stops both."
+	@set -a; . ./.env; set +a; \
+		export DATABASE_URL=$$(echo "$$DATABASE_URL" | sed 's|@postgres:|@localhost:|'); \
+		export NODE_ENV=development; \
+		export NODE_EXTRA_CA_CERTS="$$(pwd)/infra/authelia/tls/cert.pem"; \
+		pnpm --filter @a-conversa/server exec tsx watch src/index.ts & BACK=$$!; \
+		pnpm --filter @a-conversa/root dev & FRONT=$$!; \
+		trap 'kill $$BACK $$FRONT 2>/dev/null' INT TERM EXIT; \
+		wait
 
 # Alias for `make up`. Kept so existing muscle memory / docs that
 # reference `make up-app` still work; the split it used to enforce
