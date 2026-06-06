@@ -398,6 +398,16 @@ export function GraphView({
   // completes and MUST NOT trigger a re-render — the events memo
   // already drives the re-render cadence.
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
+  // Track edge ids the component has already seen, parallel to
+  // `knownNodeIdsRef`. A new edge changes the graph's connectivity — and
+  // therefore the `breadthfirst` hierarchy (roots, depth, sibling
+  // grouping) — even when it introduces no new node, so an edge arrival
+  // must also trigger a re-layout. Without this the graph keeps the
+  // positions from the last node-addition pass: nodes that were laid out
+  // as roots (no incoming edge yet) stay in their flat starting row even
+  // after edges arrive that would give the graph depth. `useRef` for the
+  // same post-layout-write rationale as `knownNodeIdsRef`.
+  const knownEdgeIdsRef = useRef<Set<string>>(new Set());
   // Position cache mirrored from the participant's pattern: cache
   // every emitted node's `{x, y}` after each layout pass so cy.json
   // re-applies them on the next tick. The audience baseline has no
@@ -451,6 +461,7 @@ export function GraphView({
       setCyState(null);
       cyRef?.(null);
       knownNodeIdsRef.current = new Set();
+      knownEdgeIdsRef.current = new Set();
       positionCacheRef.current = new Map();
       hasFitOnceRef.current = false;
     };
@@ -498,20 +509,28 @@ export function GraphView({
   }, [events, t]);
 
   // Element sync — runs on every events / translation change. Runs
-  // a `breadthfirst` layout pass only when at least one truly-new
-  // node id appears; existing-only re-projections (the empty
-  // baseline today, decoration ticks once sibling tasks land) skip
-  // the layout.
+  // a `breadthfirst` layout pass when the graph's STRUCTURE grows —
+  // i.e. at least one truly-new node OR truly-new edge id appears. A
+  // new edge re-roots / re-tiers the hierarchy even with no new node,
+  // so it must re-tidy the layout; without it, edge arrivals would
+  // leave the graph in its prior (often flat, all-roots) arrangement.
+  // Pure decoration ticks (a kind-label flip, a per-facet status
+  // change — same node and edge id sets) still skip the layout.
   useEffect(() => {
     const cy = cyInstanceRef.current;
     if (cy === null) return;
     const trulyNewNodeIds: string[] = [];
+    const trulyNewEdgeIds: string[] = [];
     for (const element of elements) {
-      if (element.group !== 'nodes') continue;
       const id = element.data?.id;
       if (typeof id !== 'string') continue;
-      if (!knownNodeIdsRef.current.has(id)) trulyNewNodeIds.push(id);
+      if (element.group === 'nodes') {
+        if (!knownNodeIdsRef.current.has(id)) trulyNewNodeIds.push(id);
+      } else if (element.group === 'edges') {
+        if (!knownEdgeIdsRef.current.has(id)) trulyNewEdgeIds.push(id);
+      }
     }
+    const structureGrew = trulyNewNodeIds.length > 0 || trulyNewEdgeIds.length > 0;
     cy.json({ elements });
     // Skip the layout pass when the canvas has no measurable
     // viewport (happy-dom: `cy.width()` reports 0). Cytoscape
@@ -522,13 +541,16 @@ export function GraphView({
     const height = cy.height();
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-    if (cy.elements().length > 0 && viewportReady && trulyNewNodeIds.length > 0) {
+    if (cy.elements().length > 0 && viewportReady && structureGrew) {
       cy.layout(buildAudienceLayoutOptions(elements)).run();
     }
     cy.nodes().forEach((node) => {
       const position = node.position();
       positionCacheRef.current.set(node.id(), { x: position.x, y: position.y });
       knownNodeIdsRef.current.add(node.id());
+    });
+    cy.edges().forEach((edge) => {
+      knownEdgeIdsRef.current.add(edge.id());
     });
     // One-shot auto-fit on the first non-empty render. `fit: false` on
     // the layout options keeps subsequent event arrivals from snapping

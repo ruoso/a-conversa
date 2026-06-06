@@ -719,6 +719,53 @@ describe('<GraphView>', () => {
     expect(captured.roots).toEqual([NODE_A]);
   });
 
+  it('(p2) re-runs the layout when a new EDGE connects existing nodes (tidy-up on connect)', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    // Two truly-new nodes → two layout passes so far.
+    expect(spies.layoutRun).toHaveBeenCalledTimes(2);
+    // An edge between the two EXISTING nodes introduces no new node, but
+    // it re-roots / re-tiers the breadthfirst hierarchy — so it must
+    // trigger a third layout pass (the "tidy up on edge add" fix).
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+    );
+    expect(spies.layoutRun).toHaveBeenCalledTimes(3);
+    // The re-layout reflects the new connectivity: NODE_B now has an
+    // incoming edge, so only NODE_A remains a deterministic root.
+    const edgeLayoutOpts = spies.layout.mock.calls[2]?.[0] as BreadthFirstLayoutOptions | undefined;
+    expect(edgeLayoutOpts?.roots).toEqual([NODE_A]);
+  });
+
+  it('(p3) does NOT re-run the layout on a pure decoration tick (no new node or edge)', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
+    // A classify proposal + commit flips the node's kind label but adds
+    // no node or edge id → same structure → no re-layout.
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }));
+    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
+  });
+
   // ---------------------------------------------------------------
   // aud_clean_typography — broadcast typography pins on STYLESHEET.
   // ---------------------------------------------------------------
