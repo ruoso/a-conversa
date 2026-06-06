@@ -164,6 +164,21 @@ export const COMPONENT_SPACING = 80;
 export const DEFAULT_PACK_ASPECT = 16 / 9;
 
 /**
+ * Horizontal lean for the packer's arrangement choice (0 = pure
+ * aspect-match, larger = stronger preference for WIDER arrangements).
+ *
+ * When two candidate arrangements straddle the target aspect — one a bit
+ * too tall, one a bit too wide — a pure closest-aspect score picks the
+ * tall one as often as not, which reads as "stacked vertically when there
+ * was horizontal room". This subtracts `lean * log(aspect)` from the
+ * score so a wider arrangement wins the near-ties, spreading components
+ * across the width. It is deliberately gentle: an arrangement that is
+ * WILDLY too wide still loses (its aspect distance dominates the bonus).
+ * Tunable — purely a visual dial.
+ */
+export const PACK_HORIZONTAL_LEAN = 0.5;
+
+/**
  * Vertical-compression factor applied to each component AFTER its
  * breadthfirst pass (1 = no change, smaller = tighter levels).
  *
@@ -206,18 +221,17 @@ export interface ComponentSlot {
  * (the caller translates each component so its current bounding-box
  * top-left lands on the returned slot).
  *
- * Algorithm: next-fit-decreasing-height shelf packing — boxes placed
- * tallest-first into left-to-right rows, a row wrapping when the next box
- * would exceed the row width. The row width is what sets the arrangement's
- * aspect (a wider row fits more side-by-side = fewer, wider rows; a
- * narrower one stacks them = more, taller rows). Rather than estimate one
- * width from the packed AREA — which underestimates badly for wide-but-
- * short boxes and strings components down the page when there's
- * horizontal room — we evaluate the candidate widths at which the row
- * composition changes and keep the arrangement whose bounding-box aspect
- * is closest (in log-ratio) to `targetAspect`. The tallest-first order +
- * size/index tiebreak keep it a pure function of the component sizes,
- * preserving determinism.
+ * Algorithm: a proper 2D bottom-left SKYLINE bin-pack (not a shelf pack).
+ * A shelf pack makes every row as tall as its tallest box and leaves the
+ * vertical gaps beside short boxes empty — for the wide-but-short
+ * component boxes this renderer produces, that wastes space and strings
+ * components down the page. The skyline packer instead drops each box into
+ * the lowest free spot along the current top profile, tucking short boxes
+ * into those gaps. The bin WIDTH sets the arrangement's aspect (wider bin
+ * = more side-by-side); we run the pack at each candidate bin width and
+ * keep the arrangement whose bounding-box aspect is closest (in log-ratio)
+ * to `targetAspect`. Tallest-first placement + a size/index tiebreak keep
+ * it a pure, deterministic function of the component sizes.
  */
 export function packComponentBoxes(
   sizes: readonly ComponentSize[],
@@ -235,57 +249,134 @@ export function packComponentBoxes(
     .map((size, index) => ({ size, index }))
     .sort((a, b) => b.size.h - a.size.h || b.size.w - a.size.w || a.index - b.index);
 
-  // Candidate row widths: the cumulative widths in pack order span the
-  // arrangements from "one box per row" up to "all in a single row" — the
-  // composition only changes at these thresholds.
+  // Candidate bin widths span "the widest single box alone" up to "every
+  // box side-by-side". Each box reserves its `spacing` gutter, so the
+  // thresholds are the cumulative INFLATED (w + spacing) widths, widest
+  // first — the points at which one more box can sit on the bottom row.
+  const inflatedWidthsDesc = order.map((e) => e.size.w + spacing).sort((a, b) => b - a);
   const candidateWidths = new Set<number>();
   let cumulative = 0;
-  for (let i = 0; i < order.length; i++) {
-    const entry = order[i];
-    if (entry === undefined) continue;
-    cumulative += (i > 0 ? spacing : 0) + entry.size.w;
+  for (const inflatedWidth of inflatedWidthsDesc) {
+    cumulative += inflatedWidth;
     candidateWidths.add(cumulative);
   }
 
-  let best: { slots: ComponentSlot[]; score: number; rowWidth: number } | null = null;
-  for (const rowWidth of candidateWidths) {
-    const packed = shelfPack(order, rowWidth, spacing);
+  let best: { slots: ComponentSlot[]; score: number; binWidth: number } | null = null;
+  for (const binWidth of candidateWidths) {
+    const packed = skylinePack(order, binWidth, spacing);
     const aspect = packed.height > 0 ? packed.width / packed.height : Number.POSITIVE_INFINITY;
-    const score = Math.abs(Math.log(aspect) - Math.log(targetAspect));
-    // On a score tie prefer the WIDER row (fewer, wider rows) so a wide
-    // screen fills horizontally rather than stacking.
-    if (best === null || score < best.score || (score === best.score && rowWidth > best.rowWidth)) {
-      best = { slots: packed.slots, score, rowWidth };
+    // Closest aspect to the target, with a gentle lean toward WIDER
+    // arrangements (`PACK_HORIZONTAL_LEAN`) so near-ties that straddle the
+    // target resolve horizontally rather than stacking.
+    const score =
+      Math.abs(Math.log(aspect) - Math.log(targetAspect)) - PACK_HORIZONTAL_LEAN * Math.log(aspect);
+    // On a score tie prefer the WIDER bin (fills horizontally) so a wide
+    // screen spreads components across rather than stacking them.
+    if (best === null || score < best.score || (score === best.score && binWidth > best.binWidth)) {
+      best = { slots: packed.slots, score, binWidth };
     }
   }
   return best === null ? [] : best.slots;
 }
 
-/** One next-fit-decreasing-height shelf pass at a fixed row width;
- * returns the per-box slots (input order) plus the packed bounding size. */
-function shelfPack(
+interface SkylineSegment {
+  x: number;
+  width: number;
+  top: number;
+}
+
+/**
+ * Bottom-left skyline bin-pack at a fixed bin width. Each box reserves a
+ * `spacing` gutter on its right and bottom (so packed boxes never touch),
+ * is dropped into the position along the skyline that yields the lowest
+ * top (ties leftmost), and the skyline is raised under it. Returns the
+ * per-box slots (input order) + the packed bounding size (over ACTUAL box
+ * extents, gutters excluded).
+ */
+function skylinePack(
   order: ReadonlyArray<{ readonly size: ComponentSize; readonly index: number }>,
-  rowWidth: number,
+  binWidth: number,
   spacing: number,
 ): { slots: ComponentSlot[]; width: number; height: number } {
+  let skyline: SkylineSegment[] = [{ x: 0, width: Math.max(binWidth, 1), top: 0 }];
   const slots: ComponentSlot[] = new Array<ComponentSlot>(order.length);
-  let cursorX = 0;
-  let cursorY = 0;
-  let rowHeight = 0;
-  let maxRight = 0;
+  let boundWidth = 0;
+  let boundHeight = 0;
   for (const { size, index } of order) {
-    if (cursorX > 0 && cursorX + size.w > rowWidth) {
-      cursorX = 0;
-      cursorY += rowHeight + spacing;
-      rowHeight = 0;
+    const w = size.w + spacing;
+    const h = size.h + spacing;
+    let placeX = 0;
+    let placeY = Number.POSITIVE_INFINITY;
+    let placedTop = Number.POSITIVE_INFINITY;
+    for (const segment of skyline) {
+      const x = segment.x;
+      // Skip anchors that would overflow the bin — except x = 0, which
+      // always accepts a box wider than the bin (it then spans the row).
+      if (x > 0 && x + w > binWidth) continue;
+      const y = skylineTop(skyline, x, w);
+      const top = y + h;
+      if (top < placedTop || (top === placedTop && x < placeX)) {
+        placeX = x;
+        placeY = y;
+        placedTop = top;
+      }
     }
-    slots[index] = { x: cursorX, y: cursorY };
-    const right = cursorX + size.w;
-    if (right > maxRight) maxRight = right;
-    cursorX = right + spacing;
-    if (size.h > rowHeight) rowHeight = size.h;
+    if (!Number.isFinite(placeY)) {
+      // Defensive: no anchor fit (shouldn't happen — x = 0 always does).
+      placeX = 0;
+      placeY = skylineTop(skyline, 0, w);
+      placedTop = placeY + h;
+    }
+    slots[index] = { x: placeX, y: placeY };
+    skyline = raiseSkyline(skyline, placeX, w, placedTop);
+    if (placeX + size.w > boundWidth) boundWidth = placeX + size.w;
+    if (placeY + size.h > boundHeight) boundHeight = placeY + size.h;
   }
-  return { slots, width: maxRight, height: cursorY + rowHeight };
+  return { slots, width: boundWidth, height: boundHeight };
+}
+
+/** Highest skyline top over the span `[x, x + w)`. */
+function skylineTop(skyline: readonly SkylineSegment[], x: number, w: number): number {
+  const xEnd = x + w;
+  let top = 0;
+  for (const segment of skyline) {
+    if (segment.x + segment.width <= x) continue;
+    if (segment.x >= xEnd) break; // skyline is kept sorted by x
+    if (segment.top > top) top = segment.top;
+  }
+  return top;
+}
+
+/** Raise the skyline over `[x, x + w)` to `top`, preserving the rest. */
+function raiseSkyline(
+  skyline: readonly SkylineSegment[],
+  x: number,
+  w: number,
+  top: number,
+): SkylineSegment[] {
+  const xEnd = x + w;
+  const next: SkylineSegment[] = [];
+  for (const segment of skyline) {
+    const segEnd = segment.x + segment.width;
+    if (segEnd <= x || segment.x >= xEnd) {
+      next.push({ ...segment });
+      continue;
+    }
+    if (segment.x < x) next.push({ x: segment.x, width: x - segment.x, top: segment.top });
+    if (segEnd > xEnd) next.push({ x: xEnd, width: segEnd - xEnd, top: segment.top });
+  }
+  next.push({ x, width: w, top });
+  next.sort((a, b) => a.x - b.x);
+  const merged: SkylineSegment[] = [];
+  for (const segment of next) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && last.top === segment.top && last.x + last.width === segment.x) {
+      last.width += segment.width;
+    } else {
+      merged.push({ ...segment });
+    }
+  }
+  return merged;
 }
 
 /**

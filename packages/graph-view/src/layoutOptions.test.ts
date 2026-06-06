@@ -22,6 +22,7 @@ import {
   COMPONENT_SPACING,
   DEFAULT_BROADCAST_DIMENSIONS,
   LEVEL_SPACING_FACTOR,
+  PACK_HORIZONTAL_LEAN,
   PADDING,
   SPACING_FACTOR,
   type ComponentSize,
@@ -143,11 +144,42 @@ describe('layout-options named exports', () => {
     expect(PADDING).toBe(60);
   });
 
-  it('(8b) pins `COMPONENT_SPACING` to 80 and `LEVEL_SPACING_FACTOR` to 0.5', () => {
-    // Visual dials for the component packing + per-component vertical
-    // compression. Pinned so a retune is an intentional source diff.
+  it('(8b) pins the packing / spacing visual dials', () => {
+    // Pinned so a retune is an intentional source diff.
     expect(COMPONENT_SPACING).toBe(80);
     expect(LEVEL_SPACING_FACTOR).toBe(0.5);
+    expect(PACK_HORIZONTAL_LEAN).toBe(0.5);
+  });
+
+  it('(8c) the horizontal lean breaks a straddling tie toward the wider arrangement', () => {
+    // One wide box + several short ones, on a target aspect that sits
+    // BETWEEN the compact (taller) and spread (wider) arrangements. The
+    // lean must pick the wider one — this is the "stacked vertically when
+    // there was horizontal room" case.
+    // Modelled on the real "step 117" set: one 4-card-wide thread, one
+    // 2-wide thread, and several single nodes. At target 2.0 a pure
+    // aspect-match stacks them into bands (~1.5 aspect); the lean instead
+    // sets the two threads side-by-side for a markedly wider arrangement.
+    const sizes: ComponentSize[] = [
+      { w: 1284, h: 304 },
+      { w: 588, h: 304 },
+      { w: 240, h: 110 },
+      { w: 240, h: 110 },
+      { w: 240, h: 110 },
+      { w: 240, h: 110 },
+      { w: 240, h: 110 },
+    ];
+    const slots = packComponentBoxes(sizes, { spacing: 80, targetAspect: 2.0 });
+    let right = 0;
+    let bottom = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      const size = sizes[i];
+      const slot = slots[i];
+      if (size === undefined || slot === undefined) throw new Error('missing size/slot');
+      right = Math.max(right, slot.x + size.w);
+      bottom = Math.max(bottom, slot.y + size.h);
+    }
+    expect(right / bottom).toBeGreaterThan(2.0);
   });
 
   it('(9) pins `BROADCAST_DIMENSIONS` to {720p, 1080p, 1440p} and `DEFAULT_BROADCAST_DIMENSIONS` to 1080p', () => {
@@ -282,5 +314,30 @@ describe('packComponentBoxes', () => {
       bottom = Math.max(bottom, slot.y + size.h);
     }
     expect(right).toBeGreaterThan(bottom);
+  });
+
+  it('(19) tucks short boxes into the vertical gap beside a tall one (skyline gap-fill)', () => {
+    // One tall box + three short ones. A shelf pack puts the short boxes
+    // on a new full-height row (height ≈ 400 + gap + 100 = 520); the
+    // skyline stacks them in the empty column beside the tall box, so the
+    // packed height stays near the tall box's 400.
+    const sizes: ComponentSize[] = [
+      { w: 200, h: 400 },
+      { w: 200, h: 100 },
+      { w: 200, h: 100 },
+      { w: 200, h: 100 },
+    ];
+    const slots = packComponentBoxes(sizes, { spacing: 20, targetAspect: 0.6 });
+    let right = 0;
+    let bottom = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      const size = sizes[i];
+      const slot = slots[i];
+      if (size === undefined || slot === undefined) throw new Error('missing size/slot');
+      right = Math.max(right, slot.x + size.w);
+      bottom = Math.max(bottom, slot.y + size.h);
+    }
+    // Gap-filled: shorter than the shelf-pack's stacked-row height.
+    expect(bottom).toBeLessThan(520);
   });
 });
