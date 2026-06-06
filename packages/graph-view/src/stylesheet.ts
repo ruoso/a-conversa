@@ -224,6 +224,18 @@ export const STYLESHEET: StylesheetJson = [
     },
   },
   {
+    // Statement nodes render their content (step pill + wording) as a
+    // per-node HTML element via `cytoscape-node-html-label`
+    // (`per_facet_step_pill`). Hide the Cytoscape canvas label so the box
+    // just frames the HTML; the per-status border/background paint below
+    // (which keys on `rollupStatus`) still applies. Annotation graph-nodes
+    // keep their canvas label (their own selector below).
+    selector: "node[nodeKind = 'statement']",
+    style: {
+      'text-opacity': 0,
+    },
+  },
+  {
     selector: 'edge',
     style: {
       'curve-style': 'bezier',

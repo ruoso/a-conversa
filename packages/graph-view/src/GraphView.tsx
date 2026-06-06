@@ -315,13 +315,15 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
+import nodeHtmlLabel, { type NodeHtmlLabelFn } from 'cytoscape-node-html-label';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
 import { layoutAndPackComponents, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
-import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
+import { buildStatementStepModel, type StatementStepModel } from './statementStepModel.js';
+import { renderStatementNodeHtml } from './statementNodeHtml.js';
 import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
 import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
@@ -339,6 +341,25 @@ import { AudienceDecompositionFadeOverlay } from './DecompositionFadeOverlay.js'
  * reference-stable on no-op re-renders.
  */
 const EMPTY_ACTIVE_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = new Map();
+
+// Register the per-node HTML-label plugin once (module load). It renders
+// each statement node's content (step pill + wording) as an HTML element
+// positioned on the node, tracking pan/zoom itself — replacing the
+// floating per-facet pill overlay (`per_facet_step_pill`; ADR 0004
+// 2026-06-06 amendment).
+cytoscape.use(nodeHtmlLabel);
+
+/**
+ * `cytoscape-node-html-label` `tpl` callback for statement nodes: build
+ * the inner HTML from the localized `stepModel` the projection memo
+ * stamps on `data`. Returns `''` (no label) until the model is present.
+ */
+function statementNodeTpl(data: Record<string, unknown>): string {
+  const stepModel = data.stepModel as StatementStepModel | undefined;
+  if (stepModel === undefined) return '';
+  const wording = typeof data.wording === 'string' ? data.wording : '';
+  return renderStatementNodeHtml({ wording, step: stepModel });
+}
 
 export interface GraphViewProps {
   /**
@@ -455,6 +476,20 @@ export function GraphView({
       autoungrabify: true,
     });
     cyInstanceRef.current = cy;
+    // Per-node HTML content for statement nodes (the step pill + wording),
+    // composed inside the node box. The plugin owns pan/zoom positioning.
+    // Cast: the plugin adds `nodeHtmlLabel` to `Core` at runtime (its types
+    // are not merged into `@types/cytoscape` — see the `.d.ts`).
+    (cy as unknown as { nodeHtmlLabel: NodeHtmlLabelFn }).nodeHtmlLabel([
+      {
+        query: 'node[nodeKind = "statement"]',
+        halign: 'center',
+        valign: 'center',
+        halignBox: 'center',
+        valignBox: 'center',
+        tpl: statementNodeTpl,
+      },
+    ]);
     setCyState(cy);
     cyRef?.(cy);
     return () => {
@@ -486,14 +521,28 @@ export function GraphView({
     const nondanglingEdges = edges.filter(
       (e) => projectedNodeIds.has(e.data.source) && projectedNodeIds.has(e.data.target),
     );
+    // Label resolvers for the step pill — wrap `t(...)` so the pure
+    // model (`buildStatementStepModel`) stays i18n-agnostic. Built per
+    // memo run so a locale change re-localizes via the `t` dependency.
+    const stepLabels = {
+      facet: (facet: string) => t(`methodology.facet.${facet}`),
+      classification: (kind: string) => t(`methodology.kind.${kind}`),
+      substance: (value: string) => t(`methodology.substance.${value}`),
+    };
     const localizedNodes: ElementDefinition[] = nodes.map((node) => {
       const cachedPosition = positionCacheRef.current.get(node.data.id);
+      const baseData = {
+        ...node.data,
+        kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
+      };
       const descriptor: ElementDefinition = {
         group: 'nodes',
-        data: {
-          ...node.data,
-          kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
-        },
+        // Statement nodes carry the localized step-pill view-model the
+        // html-label `tpl` renders; annotation graph-nodes don't.
+        data:
+          node.data.nodeKind === 'statement'
+            ? { ...baseData, stepModel: buildStatementStepModel(node.data, stepLabels) }
+            : baseData,
       };
       if (cachedPosition !== undefined) {
         descriptor.position = { x: cachedPosition.x, y: cachedPosition.y };
@@ -578,7 +627,6 @@ export function GraphView({
   return (
     <div data-testid="audience-graph-root-wrapper" className="relative h-full w-full">
       <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />
-      <AudiencePerFacetPillOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
       <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />

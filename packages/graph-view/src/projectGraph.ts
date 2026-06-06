@@ -170,6 +170,14 @@ import {
 /** The two debater slots, in display order, for the step-pill roster. */
 const DEBATER_ROLES = ['debater-A', 'debater-B'] as const;
 
+/**
+ * Extra height (px) reserved on a statement node's box for the per-node
+ * HTML step-pill header (`per_facet_step_pill`), above the wording the
+ * `computeNodeDimensions` measurement already accounts for. The pill is
+ * roughly two lines (facet/value title + the debater checkbox row).
+ */
+const STEP_PILL_BAND_PX = 64;
+
 /** A debater in the step-pill checkbox roster. */
 export interface StepDebater {
   readonly role: (typeof DEBATER_ROLES)[number];
@@ -474,7 +482,7 @@ export function projectGraph(events: readonly Event[]): {
           axiomMarks,
           annotations,
           width: dimensions.width,
-          height: dimensions.height,
+          height: dimensions.height + STEP_PILL_BAND_PX,
           textMaxWidth: dimensions.textMaxWidth,
         },
       };

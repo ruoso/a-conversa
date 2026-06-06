@@ -1168,13 +1168,11 @@ describe('<GraphView>', () => {
   // in `PerFacetPillOverlay.test.tsx`.
   // ---------------------------------------------------------------
 
-  it('(ii) renders the audience-graph-root-wrapper as parent of audience-graph-root and the per-facet pill overlay', () => {
+  it('(ii) renders the audience-graph-root-wrapper as parent of audience-graph-root', () => {
     renderView();
     const wrapper = screen.getByTestId('audience-graph-root-wrapper');
     const inner = screen.getByTestId('audience-graph-root');
-    const overlay = screen.getByTestId('audience-per-facet-pill-overlay');
     expect(wrapper.contains(inner)).toBe(true);
-    expect(wrapper.contains(overlay)).toBe(true);
   });
 
   it('(jj) the wrapper carries the relative + h-full + w-full classNames (positioning ancestor)', () => {
@@ -1220,14 +1218,12 @@ describe('<GraphView>', () => {
   const AX_PROPOSAL_A = '00000000-0000-4000-8000-0000000000d1';
   const AX_PROPOSAL_B = '00000000-0000-4000-8000-0000000000d2';
 
-  it('(ll) the wrapper hosts both the per-facet pill overlay and the axiom-mark overlay as siblings of audience-graph-root', () => {
+  it('(ll) the wrapper hosts the axiom-mark overlay as a sibling of audience-graph-root', () => {
     renderView();
     const wrapper = screen.getByTestId('audience-graph-root-wrapper');
     const inner = screen.getByTestId('audience-graph-root');
-    const facetOverlay = screen.getByTestId('audience-per-facet-pill-overlay');
     const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
     expect(wrapper.contains(inner)).toBe(true);
-    expect(wrapper.contains(facetOverlay)).toBe(true);
     expect(wrapper.contains(axiomOverlay)).toBe(true);
   });
 
@@ -1295,24 +1291,20 @@ describe('<GraphView>', () => {
     expect(participantIds).toEqual([AX_PARTICIPANT_A, AX_PARTICIPANT_B]);
   });
 
-  it('(kk) a node with non-empty facetStatuses mounts at least one [data-facet-pill-row] child in the overlay', async () => {
-    // A lone `node-created` produces facetStatuses with
-    // `wording: 'proposed'` (Rule 8 of facetStatus.ts with 0 current
-    // participants). The overlay schedules a rAF commit on mount; the
-    // happy-dom polyfill in `cytoscapeTestEnv` drains via microtask,
-    // so a single Promise-await flushes the pending frame.
-    renderView();
+  it('(kk) a statement node carries the localized step-pill model on its cy data (memo → html-label wiring)', () => {
+    // The per-node HTML (`cytoscape-node-html-label`) renders from
+    // `data.stepModel`, which the projection memo stamps. A lone
+    // `node-created` → `facetStatuses.wording: 'proposed'` (open), so the
+    // current step is `wording` with no candidate value.
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
-    // Drain the rAF microtask + the React commit that follows.
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const overlay = screen.getByTestId('audience-per-facet-pill-overlay');
-    const rows = overlay.querySelectorAll('[data-facet-pill-row]');
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    const ids = Array.from(rows).map((r) => r.getAttribute('data-element-id'));
-    expect(ids).toContain(NODE_A);
+    const stepModel = cy.getElementById(NODE_A).data('stepModel') as
+      | { kind: string; facet?: string }
+      | undefined;
+    expect(stepModel).toBeDefined();
+    expect(stepModel?.kind).toBe('step');
+    expect(stepModel?.facet).toBe('wording');
   });
 
   // ---------------------------------------------------------------
@@ -1352,15 +1344,13 @@ describe('<GraphView>', () => {
   const ANN_ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101';
   const ANN_ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa102';
 
-  it('(ss) the wrapper hosts all three overlays (per-facet, axiom-mark, annotation) as siblings of audience-graph-root', () => {
+  it('(ss) the wrapper hosts the axiom-mark and annotation overlays as siblings of audience-graph-root', () => {
     renderView();
     const wrapper = screen.getByTestId('audience-graph-root-wrapper');
     const inner = screen.getByTestId('audience-graph-root');
-    const facetOverlay = screen.getByTestId('audience-per-facet-pill-overlay');
     const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
     const annotationOverlay = screen.getByTestId('audience-annotation-overlay');
     expect(wrapper.contains(inner)).toBe(true);
-    expect(wrapper.contains(facetOverlay)).toBe(true);
     expect(wrapper.contains(axiomOverlay)).toBe(true);
     expect(wrapper.contains(annotationOverlay)).toBe(true);
   });

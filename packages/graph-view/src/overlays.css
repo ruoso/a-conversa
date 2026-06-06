@@ -402,3 +402,110 @@
     animation: none;
   }
 }
+
+/* `per_facet_step_pill` — per-node HTML content (the step pill + wording)
+ * rendered inside the node box via `cytoscape-node-html-label` (ADR 0004
+ * 2026-06-06 amendment). `tpl` markup is built by `statementNodeHtml.ts`.
+ * The label layer is click-through (read-only surface); the box frame +
+ * per-status border come from the Cytoscape node selectors. */
+.gv-node__header,
+.gv-node__body {
+  box-sizing: border-box;
+  max-width: 240px;
+  pointer-events: none;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    'Noto Sans',
+    sans-serif;
+}
+
+/* Step-pill header, centered above the wording. */
+.gv-node__header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.gv-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 240px;
+  padding: 3px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.gv-pill__title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gv-pill__debaters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.gv-debater {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #475569;
+}
+
+/* The vote checkbox: an empty bordered box, a green check, or a rose cross. */
+.gv-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid #94a3b8;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.gv-mark--agree {
+  color: #15803d;
+  border-color: #15803d;
+}
+
+.gv-mark--dispute {
+  color: #e11d48;
+  border-color: #e11d48;
+}
+
+/* Settled summary: a single tinted chip. */
+.gv-pill--settled {
+  flex-direction: row;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+}
+
+/* The statement wording, centered in the box. */
+.gv-node__body {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #0f172a;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
