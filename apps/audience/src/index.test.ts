@@ -126,6 +126,19 @@ describe('apps/audience/src/index.css', () => {
     const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
     expect(contents).toMatch(/\.aud-decomposition\s*\{\s*animation\s*:\s*none/);
   });
+
+  // Per tasks/refinements/audience/aud_segment_break_animation.md
+  // Decision §1/§7 — same CSS smoke-pin posture for the live-broadcast
+  // chapter-marker one-shot segment-break entrance cue.
+  it('contains the @keyframes aud-segment-break definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-segment-break');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-segment-break', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/\.aud-segment-break\s*\{\s*animation\s*:\s*none/);
+  });
 });
 
 // Per tasks/refinements/audience/aud_animation_pacing.md Decision §6 —
@@ -198,6 +211,16 @@ describe('aud_animation_pacing — cadence variables', () => {
     const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
     expect(contents).toMatch(
       /\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*aud-diagnostic-fire-advisory\s+var\(--aud-anim-halo-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  // Per tasks/refinements/audience/aud_segment_break_animation.md
+  // Decision §3 + Constraint §4 — the segment-break cue is commit-tier
+  // (350 ms) and MUST consume the shared dial, not a hard-coded duration.
+  it('.aud-segment-break consumes var(--aud-anim-commit-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-segment-break\s*\{\s*animation\s*:\s*aud-segment-break\s+var\(--aud-anim-commit-ms\)\s+var\(--aud-anim-easing\)/,
     );
   });
 });

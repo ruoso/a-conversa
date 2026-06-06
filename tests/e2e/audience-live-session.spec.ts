@@ -1190,6 +1190,70 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
     }
   });
 
+  test('(13) segment-break cue: no animation on the seeding snapshot, fires on a live new snapshot', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_segment_break_animation.md
+    //   (Acceptance §8 — INLINE Playwright spec, IN SCOPE not deferred.
+    //   The first `snapshot-created` seeds the `useSeenKeysGate` gate, so
+    //   the `[data-segment-break-anim]` marker is visible WITHOUT the
+    //   `aud-segment-break` cue class (Decision §6 — a viewer joining
+    //   mid-show sees the current segment statically). A second
+    //   `snapshot-created` is a live segment break: the marker shows the
+    //   newer label AND carries `aud-segment-break`. The class persists on
+    //   the live element (`both` fill + `snapshotId`-keyed identity), so
+    //   the assertion is deterministic and holds under reduced-motion too,
+    //   where the class is present but no-op'd. Pool member: `kate` (next
+    //   unallocated after julia in this file).)
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    try {
+      const kate = await loginAs(page, { username: 'kate' });
+      expect(kate.screenName.toLowerCase()).toBe('kate');
+      const sessionId = await createSession(page, {
+        topic: 'Audience chapter marker animates a live segment break',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}`);
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      // First snapshot — seeds the one-shot gate; the caption appears
+      // statically, WITHOUT the entrance cue.
+      await seedSnapshotCreated(page, {
+        sessionId,
+        sequence: 1_000_700,
+        eventId: 'eeeeeeee-1111-4eee-8eee-eeeeeeee0001',
+        snapshotId: 'eeeeeeee-aaaa-4eee-8eee-eeeeeeeeaaaa',
+        label: 'Segment 1 close',
+        logPosition: 1_000_700,
+        actorId: kate.userId,
+      });
+
+      const marker = page.locator('[data-segment-break-anim]');
+      await expect(marker).toBeVisible({ timeout: 15_000 });
+      await expect(marker).toContainText('Segment 1 close');
+      await expect(marker).not.toHaveClass(/aud-segment-break/);
+
+      // Second snapshot — a live segment break while watching: the cue
+      // fires on the (remounted, snapshotId-keyed) marker.
+      await seedSnapshotCreated(page, {
+        sessionId,
+        sequence: 1_000_701,
+        eventId: 'eeeeeeee-1111-4eee-8eee-eeeeeeee0002',
+        snapshotId: 'eeeeeeee-bbbb-4eee-8eee-eeeeeeeebbbb',
+        label: 'Commercial',
+        logPosition: 1_000_701,
+        actorId: kate.userId,
+      });
+
+      await expect(marker).toContainText('Commercial', { timeout: 15_000 });
+      await expect(marker).toHaveClass(/aud-segment-break/);
+    } finally {
+      await context.close();
+    }
+  });
+
   test.describe('(6) OBS dimension audit at the graph-route tier', () => {
     // Match `DEFAULT_BROADCAST_DIMENSIONS` (1920×1080) from
     // `apps/audience/src/graph/layoutOptions.ts`. Scope the viewport

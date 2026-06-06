@@ -496,6 +496,7 @@ task audience "Audience and broadcast" {
     task aud_segment_break_animation "Optional: brief animation cue at segment break" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_chapter_marker_render
     }
   }

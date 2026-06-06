@@ -543,3 +543,46 @@ body {
     animation: none;
   }
 }
+
+/* `aud_segment_break_animation` — one-shot entrance cue on the live-
+ * broadcast chapter marker when the moderator labels a NEW snapshot
+ * mid-show, so a segment change reads as a noticed moment rather than a
+ * silent caption swap.
+ * Refinement: tasks/refinements/audience/aud_segment_break_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-toggled class, the family's
+ *   established mechanism; NOT a motion-framework dependency, NOT a
+ *   JS-driven rAF tween, NOT an inline hard-coded duration.
+ *   Decision §3 — commit-moment tier (`var(--aud-anim-commit-ms)` =
+ *   350 ms), NOT the halo tier: the marker is a discrete, foreground
+ *   "lands and sticks" caption moment (axiom-mark / proposed→agreed
+ *   family), not a peripheral graph-state halo. No new `:root` token
+ *   (pacing Decision §7 — consume the shared dial). `both` fill keeps
+ *   the marker in the resting `to` state after the reveal completes, so
+ *   the class can persist on the live (`snapshotId`-keyed) element.
+ *   Decision §4 — the marker root is keyed by `snapshotId` in React, so
+ *   each supersession remounts a fresh element and the keyframe re-runs.
+ *   Decision §7 (reduced motion) — the class is always emitted by the
+ *   render path; this `prefers-reduced-motion: reduce` override no-ops
+ *   the reveal so reduced-motion / screen-reader viewers get the static
+ *   caption (the `sr-only` "Current segment: <label>" prefix narrates
+ *   it) with no entrance motion. */
+@keyframes aud-segment-break {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.aud-segment-break {
+  animation: aud-segment-break var(--aud-anim-commit-ms) var(--aud-anim-easing) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-segment-break {
+    animation: none;
+  }
+}

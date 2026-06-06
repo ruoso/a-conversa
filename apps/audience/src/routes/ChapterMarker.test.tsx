@@ -27,6 +27,8 @@ import { ChapterMarker } from './ChapterMarker.js';
 const SESSION_A = '00000000-0000-4000-8000-000000000001';
 const ACTOR_ID = '00000000-0000-4000-8000-0000000000a1';
 const SNAP_1 = '00000000-0000-4000-8000-0000000000c1';
+const SNAP_2 = '00000000-0000-4000-8000-0000000000c2';
+const SNAP_3 = '00000000-0000-4000-8000-0000000000c3';
 
 function snapshotEvent(opts: {
   sequence: number;
@@ -44,6 +46,28 @@ function snapshotEvent(opts: {
       snapshot_id: opts.snapshotId,
       label: opts.label,
       log_position: opts.logPosition,
+    },
+    createdAt: '2026-05-18T00:00:00.000Z',
+  };
+}
+
+// A non-snapshot event (roster join) used to drive an UNRELATED re-render
+// that changes the events slice without changing the latest snapshot —
+// the gate must NOT re-fire on it (segment-break Constraint §1). The
+// store's `applyEvent` appends any higher-sequence event; `latestSnapshotFrom`
+// ignores everything but `snapshot-created`.
+function rosterEvent(sequence: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xf00 + sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'participant-joined',
+    actor: ACTOR_ID,
+    payload: {
+      user_id: ACTOR_ID,
+      role: 'debater-A',
+      screen_name: 'Alice',
+      joined_at: '2026-05-18T00:00:00.000Z',
     },
     createdAt: '2026-05-18T00:00:00.000Z',
   };
@@ -89,6 +113,19 @@ function seedSnapshot(): void {
   });
 }
 
+function applySnapshot(opts: { sequence: number; snapshotId: string; label: string }): void {
+  act(() => {
+    audienceWsStore.getState().applyEvent(
+      snapshotEvent({
+        sequence: opts.sequence,
+        snapshotId: opts.snapshotId,
+        label: opts.label,
+        logPosition: opts.sequence,
+      }),
+    );
+  });
+}
+
 describe('ChapterMarker', () => {
   it('(a) renders nothing until a snapshot is present', () => {
     renderMarker();
@@ -125,5 +162,75 @@ describe('ChapterMarker', () => {
     // Resolved en-US chrome, not the raw i18n key — proves t() resolution.
     expect(marker.textContent).toContain('Current segment');
     expect(marker.textContent).not.toContain('audience.segmentMarker.prefix');
+  });
+});
+
+// Segment-break entrance cue — React-side class gating.
+// Refinement: tasks/refinements/audience/aud_segment_break_animation.md
+//   (Acceptance §1–§5. jsdom does not run keyframes, so this layer pins
+//   that the `aud-segment-break` class LANDS on a live new snapshot and
+//   only then; the keyframe + reduced-motion suppression are pinned in
+//   `index.test.ts`. The `data-segment-break-anim` presence marker is the
+//   stable e2e/test handle, testid-convention parity with the overlays.)
+describe('ChapterMarker — segment-break cue', () => {
+  it('(e) does not animate the seeding (load-time) snapshot', () => {
+    renderMarker();
+    // First non-empty render seeds the gate — the snapshot already current
+    // at page load must NOT carry the cue (Decision §6).
+    seedSnapshot();
+    const marker = screen.getByTestId('audience-chapter-marker');
+    expect(marker.hasAttribute('data-segment-break-anim')).toBe(true);
+    expect(marker.className).not.toContain('aud-segment-break');
+  });
+
+  it('(f) animates on a live new snapshot arriving post-mount', () => {
+    renderMarker();
+    seedSnapshot(); // seeds the gate (SNAP_1) — no cue
+    applySnapshot({ sequence: 2, snapshotId: SNAP_2, label: 'Commercial' });
+    const marker = screen.getByTestId('audience-chapter-marker');
+    expect(marker.textContent).toContain('Commercial');
+    expect(marker.className).toContain('aud-segment-break');
+  });
+
+  it('(g) re-fires the cue on a further supersession (not a once-per-mount artifact)', () => {
+    renderMarker();
+    seedSnapshot(); // SNAP_1 seeds
+    applySnapshot({ sequence: 2, snapshotId: SNAP_2, label: 'Commercial' }); // cue
+    applySnapshot({ sequence: 3, snapshotId: SNAP_3, label: 'Segment 2 open' }); // cue again
+    const marker = screen.getByTestId('audience-chapter-marker');
+    expect(marker.textContent).toContain('Segment 2 open');
+    expect(marker.className).toContain('aud-segment-break');
+  });
+
+  it('(h) does not re-fire on an unrelated re-render carrying the same snapshotId', () => {
+    renderMarker();
+    seedSnapshot(); // SNAP_1 seeds
+    applySnapshot({ sequence: 2, snapshotId: SNAP_2, label: 'Commercial' }); // cue lands
+    // A roster-only event re-renders the marker but leaves SNAP_2 current.
+    act(() => {
+      audienceWsStore.getState().applyEvent(rosterEvent(3));
+    });
+    const marker = screen.getByTestId('audience-chapter-marker');
+    expect(marker.textContent).toContain('Commercial');
+    // Same snapshotId → the gate returns false → the freshly-reconciled
+    // (same-key, reused) root no longer carries the cue class.
+    expect(marker.className).not.toContain('aud-segment-break');
+  });
+
+  it('(i) the animated subtree stays OBS-inert (pointer-events-none, no input affordances)', () => {
+    renderMarker();
+    seedSnapshot();
+    applySnapshot({ sequence: 2, snapshotId: SNAP_2, label: 'Commercial' });
+    const marker = screen.getByTestId('audience-chapter-marker');
+    expect(marker.className).toContain('aud-segment-break');
+    expect(marker.className).toContain('pointer-events-none');
+    expect(
+      marker.querySelectorAll(
+        'dialog, [aria-modal="true"], audio, video, [data-requires-input="true"]',
+      ).length,
+    ).toBe(0);
+    expect(
+      marker.matches('dialog, [aria-modal="true"], audio, video, [data-requires-input="true"]'),
+    ).toBe(false);
   });
 });
