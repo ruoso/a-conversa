@@ -156,15 +156,21 @@ function makeAnnotation(opts: {
   };
 }
 
+// The node branch of the overlay now renders only NON-statement
+// (annotation graph-) nodes — statement-node annotations fold into the
+// node HTML (`per_facet_step_pill`). So the node cases model annotation
+// graph-nodes (`nodeKind: 'annotation'`); a dedicated case below pins
+// that a `nodeKind: 'statement'` node is skipped.
 function addNodeWithAnnotations(
   cy: Core,
   id: string,
   annotations: readonly Annotation[],
   renderedBox: { x1: number; x2: number; y1: number; y2: number },
+  nodeKind: 'statement' | 'annotation' = 'annotation',
 ): void {
   cy.add({
     group: 'nodes',
-    data: { id, annotations },
+    data: { id, annotations, nodeKind },
     position: {
       x: (renderedBox.x1 + renderedBox.x2) / 2,
       y: (renderedBox.y1 + renderedBox.y2) / 2,
@@ -231,6 +237,24 @@ describe('AudienceAnnotationOverlay', () => {
         y1: 50,
         y2: 130,
       });
+      await flushRaf();
+      const rows = document.querySelectorAll(`[data-annotation-row][data-element-id="${NODE_A}"]`);
+      expect(rows.length).toBe(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(c2) skips a STATEMENT node carrying annotations (those fold into the node HTML)', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(
+        cy,
+        NODE_A,
+        [makeAnnotation({ id: ANNO_1, kind: 'note', targetNodeId: NODE_A })],
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+        'statement',
+      );
       await flushRaf();
       const rows = document.querySelectorAll(`[data-annotation-row][data-element-id="${NODE_A}"]`);
       expect(rows.length).toBe(0);

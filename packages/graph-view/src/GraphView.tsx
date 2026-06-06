@@ -318,13 +318,17 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import nodeHtmlLabel, { type NodeHtmlLabelFn } from 'cytoscape-node-html-label';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
+import { axiomMarkColorFor } from '@a-conversa/shell';
 
 import { layoutAndPackComponents, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
 import { buildStatementStepModel, type StatementStepModel } from './statementStepModel.js';
-import { renderStatementNodeHtml } from './statementNodeHtml.js';
-import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
+import {
+  renderStatementNodeHtml,
+  type NodeAnnotationView,
+  type NodeAxiomMarkView,
+} from './statementNodeHtml.js';
 import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
 import { AudienceWithdrawalHaloOverlay } from './WithdrawalHaloOverlay.js';
@@ -351,14 +355,17 @@ cytoscape.use(nodeHtmlLabel);
 
 /**
  * `cytoscape-node-html-label` `tpl` callback for statement nodes: build
- * the inner HTML from the localized `stepModel` the projection memo
- * stamps on `data`. Returns `''` (no label) until the model is present.
+ * the inner HTML from the localized `stepModel` + `axiomMarkViews` +
+ * `annotationViews` the projection memo stamps on `data`. Returns `''`
+ * (no label) until the model is present.
  */
 function statementNodeTpl(data: Record<string, unknown>): string {
   const stepModel = data.stepModel as StatementStepModel | undefined;
   if (stepModel === undefined) return '';
   const wording = typeof data.wording === 'string' ? data.wording : '';
-  return renderStatementNodeHtml({ wording, step: stepModel });
+  const axiomMarks = (data.axiomMarkViews as readonly NodeAxiomMarkView[] | undefined) ?? [];
+  const annotations = (data.annotationViews as readonly NodeAnnotationView[] | undefined) ?? [];
+  return renderStatementNodeHtml({ wording, step: stepModel, axiomMarks, annotations });
 }
 
 export interface GraphViewProps {
@@ -537,11 +544,33 @@ export function GraphView({
       };
       const descriptor: ElementDefinition = {
         group: 'nodes',
-        // Statement nodes carry the localized step-pill view-model the
-        // html-label `tpl` renders; annotation graph-nodes don't.
+        // Statement nodes carry the localized step-pill view-model + the
+        // resolved axiom-mark / node-annotation footer views the html-label
+        // `tpl` renders inside the box; annotation graph-nodes don't (their
+        // annotations stay in the floating overlay).
         data:
           node.data.nodeKind === 'statement'
-            ? { ...baseData, stepModel: buildStatementStepModel(node.data, stepLabels) }
+            ? {
+                ...baseData,
+                stepModel: buildStatementStepModel(node.data, stepLabels),
+                axiomMarkViews: node.data.axiomMarks.map((mark): NodeAxiomMarkView => {
+                  const color = axiomMarkColorFor(mark.participantId);
+                  return {
+                    participantId: mark.participantId,
+                    colorClass: `${color.bg} ${color.text} ring-1 ${color.ring}`,
+                    tooltip: t('methodology.axiomMark.tooltip', {
+                      participantId: mark.participantId,
+                    }),
+                  };
+                }),
+                annotationViews: node.data.annotations.map(
+                  (annotation): NodeAnnotationView => ({
+                    kind: annotation.kind,
+                    kindLabel: t(`methodology.annotationKind.${annotation.kind}`),
+                    content: annotation.content,
+                  }),
+                ),
+              }
             : baseData,
       };
       if (cachedPosition !== undefined) {
@@ -627,7 +656,11 @@ export function GraphView({
   return (
     <div data-testid="audience-graph-root-wrapper" className="relative h-full w-full">
       <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />
-      <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
+      {/* Axiom-mark badges + node-targeted annotation chips now render
+          inside each statement node's HTML (`per_facet_step_pill`
+          fold-in). This overlay keeps only the EDGE-targeted annotation
+          rows and annotations on non-statement (annotation graph-) nodes —
+          an edge has no node box to host them. */}
       <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
       <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />
       <AudienceWithdrawalHaloOverlay cy={cyState} containerRef={containerRef} />

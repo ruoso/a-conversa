@@ -72,4 +72,77 @@ describe('renderStatementNodeHtml', () => {
     expect(html).toContain('gv-pill--settled');
     expect(html).toContain('Fact · Holds ✓');
   });
+
+  it('(e) renders no footer when there are no axiom marks or annotations', () => {
+    const step: StatementStepModel = {
+      kind: 'step',
+      facet: 'wording',
+      facetLabel: 'Wording',
+      valueLabel: null,
+      debaters: [],
+    };
+    const html = renderStatementNodeHtml({ wording: 'w', step });
+    expect(html).not.toContain('gv-node__footer');
+  });
+
+  it('(f) renders axiom-mark badges with their color class, participant id, and tooltip', () => {
+    const step: StatementStepModel = {
+      kind: 'step',
+      facet: 'wording',
+      facetLabel: 'Wording',
+      valueLabel: null,
+      debaters: [],
+    };
+    const html = renderStatementNodeHtml({
+      wording: 'w',
+      step,
+      axiomMarks: [
+        {
+          participantId: 'p-1',
+          colorClass: 'bg-sky-100 text-sky-900',
+          tooltip: 'Axiom marked by p-1',
+        },
+      ],
+    });
+    expect(html).toContain('gv-node__footer');
+    expect(html).toContain('gv-axiom bg-sky-100 text-sky-900');
+    expect(html).toContain('data-participant-id="p-1"');
+    expect(html).toContain('title="Axiom marked by p-1"');
+  });
+
+  it('(g) renders node-targeted annotation chips with kind label, kind attribute, and escaped content title', () => {
+    const step: StatementStepModel = {
+      kind: 'step',
+      facet: 'wording',
+      facetLabel: 'Wording',
+      valueLabel: null,
+      debaters: [],
+    };
+    const html = renderStatementNodeHtml({
+      wording: 'w',
+      step,
+      annotations: [{ kind: 'reframe', kindLabel: 'Reframe', content: 'a <tag> note' }],
+    });
+    expect(html).toContain('gv-anno');
+    expect(html).toContain('data-annotation-kind="reframe"');
+    expect(html).toContain('>Reframe<');
+    expect(html).toContain('title="a &lt;tag&gt; note"');
+  });
+
+  it('(h) orders axiom marks before annotations in the footer', () => {
+    const step: StatementStepModel = {
+      kind: 'step',
+      facet: 'wording',
+      facetLabel: 'Wording',
+      valueLabel: null,
+      debaters: [],
+    };
+    const html = renderStatementNodeHtml({
+      wording: 'w',
+      step,
+      axiomMarks: [{ participantId: 'p-1', colorClass: 'bg-sky-100', tooltip: 'mark' }],
+      annotations: [{ kind: 'note', kindLabel: 'Note', content: 'n' }],
+    });
+    expect(html.indexOf('gv-axiom')).toBeLessThan(html.indexOf('gv-anno'));
+  });
 });

@@ -409,7 +409,8 @@
  * The label layer is click-through (read-only surface); the box frame +
  * per-status border come from the Cytoscape node selectors. */
 .gv-node__header,
-.gv-node__body {
+.gv-node__body,
+.gv-node__footer {
   box-sizing: border-box;
   max-width: 240px;
   pointer-events: none;
@@ -508,4 +509,51 @@
   text-align: center;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Footer row: per-participant axiom-mark badges then node-targeted
+ * annotation chips, folded inside the box (`per_facet_step_pill` —
+ * retiring the floating axiom-mark + node-annotation overlays). */
+.gv-node__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Per-participant axiom-mark badge: a small rounded square carrying the
+ * 'A' glyph. The background / text / ring color ride the Tailwind utility
+ * classes the caller resolves from `axiomMarkColorFor` (same per-
+ * participant palette the retired floating badge used); this rule owns
+ * only the structural geometry. */
+.gv-axiom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Node-targeted annotation chip: an amber pill carrying the localized
+ * annotation-kind label (the `content` body rides the `title` tooltip).
+ * Self-contained amber (matches `<AudienceAnnotationBadge>`'s amber-100 /
+ * amber-900). */
+.gv-anno {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: #fef3c7;
+  color: #78350f;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }

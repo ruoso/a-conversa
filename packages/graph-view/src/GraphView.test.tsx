@@ -1185,9 +1185,13 @@ describe('<GraphView>', () => {
   });
 
   // ---------------------------------------------------------------
-  // aud_axiom_mark_decoration — wrapper hosts both overlays as
-  // siblings; integration cases assert the projection-to-badge-row
-  // path lights up when a committed axiom-mark lands on a node.
+  // aud_axiom_mark_decoration + per_facet_step_pill fold-in — axiom
+  // marks no longer float in a sibling overlay; they render inside the
+  // statement node's HTML footer. These cases assert the projection
+  // stamps the resolved `axiomMarkViews` the html-label `tpl` reads
+  // (the DOM the html-label plugin emits needs a real viewport, so —
+  // like the `stepModel` case (kk) — we pin the data seam, not the
+  // rendered pixels).
   // ---------------------------------------------------------------
 
   function axiomMarkProposalEvent(opts: {
@@ -1218,17 +1222,17 @@ describe('<GraphView>', () => {
   const AX_PROPOSAL_A = '00000000-0000-4000-8000-0000000000d1';
   const AX_PROPOSAL_B = '00000000-0000-4000-8000-0000000000d2';
 
-  it('(ll) the wrapper hosts the axiom-mark overlay as a sibling of audience-graph-root', () => {
+  it('(ll) the wrapper no longer hosts an axiom-mark overlay (axiom marks fold into the node HTML)', () => {
     renderView();
     const wrapper = screen.getByTestId('audience-graph-root-wrapper');
     const inner = screen.getByTestId('audience-graph-root');
-    const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
     expect(wrapper.contains(inner)).toBe(true);
-    expect(wrapper.contains(axiomOverlay)).toBe(true);
+    expect(screen.queryByTestId('audience-axiom-mark-overlay')).toBeNull();
   });
 
-  it('(mm) a node with a committed axiom-mark mounts a [data-axiom-mark-row] child carrying the matching participant id', async () => {
-    renderView();
+  it('(mm) a committed axiom-mark stamps one axiomMarkViews entry on the statement node, carrying the participant id', () => {
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(
       axiomMarkProposalEvent({
@@ -1239,22 +1243,18 @@ describe('<GraphView>', () => {
       }),
     );
     seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: AX_PROPOSAL_A }));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const overlay = screen.getByTestId('audience-axiom-mark-overlay');
-    const rows = overlay.querySelectorAll('[data-axiom-mark-row]');
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    const row = Array.from(rows).find((r) => r.getAttribute('data-element-id') === NODE_A);
-    expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
-    expect(badges?.length).toBe(1);
-    expect(badges?.[0]?.getAttribute('data-participant-id')).toBe(AX_PARTICIPANT_A);
+    const views = cy.getElementById(NODE_A).data('axiomMarkViews') as
+      | ReadonlyArray<{ participantId: string; colorClass: string; tooltip: string }>
+      | undefined;
+    expect(views?.length).toBe(1);
+    expect(views?.[0]?.participantId).toBe(AX_PARTICIPANT_A);
+    expect(views?.[0]?.colorClass).toMatch(/\bbg-/);
+    expect(views?.[0]?.tooltip).toContain(AX_PARTICIPANT_A);
   });
 
-  it('(nn) two participants marking the same node produce two distinct badges in commit-arrival order', async () => {
-    renderView();
+  it('(nn) two participants marking the same node stamp two axiomMarkViews in commit-arrival order', () => {
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(
       axiomMarkProposalEvent({
@@ -1274,21 +1274,10 @@ describe('<GraphView>', () => {
     );
     seedEvent(commitEvent({ sequence: 4, proposalEnvelopeId: AX_PROPOSAL_A }));
     seedEvent(commitEvent({ sequence: 5, proposalEnvelopeId: AX_PROPOSAL_B }));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const overlay = screen.getByTestId('audience-axiom-mark-overlay');
-    const row = Array.from(overlay.querySelectorAll('[data-axiom-mark-row]')).find(
-      (r) => r.getAttribute('data-element-id') === NODE_A,
-    );
-    expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
-    expect(badges?.length).toBe(2);
-    const participantIds = Array.from(badges ?? []).map((b) =>
-      b.getAttribute('data-participant-id'),
-    );
-    expect(participantIds).toEqual([AX_PARTICIPANT_A, AX_PARTICIPANT_B]);
+    const views = cy.getElementById(NODE_A).data('axiomMarkViews') as
+      | ReadonlyArray<{ participantId: string }>
+      | undefined;
+    expect(views?.map((v) => v.participantId)).toEqual([AX_PARTICIPANT_A, AX_PARTICIPANT_B]);
   });
 
   it('(kk) a statement node carries the localized step-pill model on its cy data (memo → html-label wiring)', () => {
@@ -1344,19 +1333,20 @@ describe('<GraphView>', () => {
   const ANN_ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101';
   const ANN_ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa102';
 
-  it('(ss) the wrapper hosts the axiom-mark and annotation overlays as siblings of audience-graph-root', () => {
+  it('(ss) the wrapper hosts the annotation overlay (edge-targeted) as a sibling of audience-graph-root', () => {
     renderView();
     const wrapper = screen.getByTestId('audience-graph-root-wrapper');
     const inner = screen.getByTestId('audience-graph-root');
-    const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
     const annotationOverlay = screen.getByTestId('audience-annotation-overlay');
     expect(wrapper.contains(inner)).toBe(true);
-    expect(wrapper.contains(axiomOverlay)).toBe(true);
     expect(wrapper.contains(annotationOverlay)).toBe(true);
+    // The axiom-mark overlay was retired (axiom marks fold into the node HTML).
+    expect(screen.queryByTestId('audience-axiom-mark-overlay')).toBeNull();
   });
 
-  it('(tt) a node with a committed annotation mounts a [data-annotation-row] child carrying the matching annotation-kind badge', async () => {
-    renderView();
+  it('(tt) a committed node-targeted annotation stamps one annotationViews entry on the statement node and does NOT mount an overlay row', async () => {
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(
       annotationCreatedEvent({
@@ -1372,21 +1362,25 @@ describe('<GraphView>', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    const views = cy.getElementById(NODE_A).data('annotationViews') as
+      | ReadonlyArray<{ kind: string; kindLabel: string; content: string }>
+      | undefined;
+    expect(views?.length).toBe(1);
+    expect(views?.[0]?.kind).toBe('note');
+    expect(views?.[0]?.kindLabel).toBe('Note');
+    expect(views?.[0]?.content).toBe('see also F-003');
+    // The statement node folds its annotation inline, so the overlay
+    // carries NO row for it.
     const overlay = screen.getByTestId('audience-annotation-overlay');
-    const rows = overlay.querySelectorAll('[data-annotation-row]');
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    const row = Array.from(rows).find((r) => r.getAttribute('data-element-id') === NODE_A);
-    expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
-    expect(badges?.length).toBe(1);
-    expect(badges?.[0]?.getAttribute('data-annotation-kind')).toBe('note');
-    expect(badges?.[0]?.getAttribute('data-testid')).toBe(
-      `audience-annotation-badge-${ANN_ANNO_1}`,
+    const row = Array.from(overlay.querySelectorAll('[data-annotation-row]')).find(
+      (r) => r.getAttribute('data-element-id') === NODE_A,
     );
+    expect(row).toBeUndefined();
   });
 
-  it('(uu) two annotations on the same node produce two distinct badges in commit-arrival order', async () => {
-    renderView();
+  it('(uu) two annotations on the same node stamp two annotationViews in commit-arrival order', () => {
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(
       annotationCreatedEvent({
@@ -1406,24 +1400,10 @@ describe('<GraphView>', () => {
         targetEdgeId: null,
       }),
     );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const overlay = screen.getByTestId('audience-annotation-overlay');
-    const row = Array.from(overlay.querySelectorAll('[data-annotation-row]')).find(
-      (r) => r.getAttribute('data-element-id') === NODE_A,
-    );
-    expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
-    expect(badges?.length).toBe(2);
-    const ids = Array.from(badges ?? []).map((b) => b.getAttribute('data-testid'));
-    expect(ids).toEqual([
-      `audience-annotation-badge-${ANN_ANNO_1}`,
-      `audience-annotation-badge-${ANN_ANNO_2}`,
-    ]);
-    const kinds = Array.from(badges ?? []).map((b) => b.getAttribute('data-annotation-kind'));
-    expect(kinds).toEqual(['note', 'reframe']);
+    const views = cy.getElementById(NODE_A).data('annotationViews') as
+      | ReadonlyArray<{ kind: string }>
+      | undefined;
+    expect(views?.map((v) => v.kind)).toEqual(['note', 'reframe']);
   });
 
   // ---------------------------------------------------------------
@@ -1508,8 +1488,9 @@ describe('<GraphView>', () => {
     expect(node.style('shape')).toBe('round-rectangle');
   });
 
-  it('(ww) a session with one node-targeted + one edge-targeted annotation mounts two distinct rows', async () => {
-    renderView();
+  it('(ww) with one node-targeted + one edge-targeted annotation, the node folds inline and only the edge mounts an overlay row', async () => {
+    const result = renderView();
+    const cy = result.getCy();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
     seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
@@ -1535,16 +1516,18 @@ describe('<GraphView>', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    // The node-targeted annotation folds into the statement node's data.
+    const views = cy.getElementById(NODE_A).data('annotationViews') as
+      | ReadonlyArray<{ kind: string }>
+      | undefined;
+    expect(views?.map((v) => v.kind)).toEqual(['note']);
+    // The overlay carries ONLY the edge row, not the (folded-in) node row.
     const overlay = screen.getByTestId('audience-annotation-overlay');
     const rows = Array.from(overlay.querySelectorAll('[data-annotation-row]'));
     const elementIds = rows.map((r) => r.getAttribute('data-element-id'));
-    expect(elementIds).toContain(NODE_A);
+    expect(elementIds).not.toContain(NODE_A);
     expect(elementIds).toContain(EDGE_A);
-    const nodeRow = rows.find((r) => r.getAttribute('data-element-id') === NODE_A);
     const edgeRow = rows.find((r) => r.getAttribute('data-element-id') === EDGE_A);
-    expect(
-      nodeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANN_EDGE_ANNO_1}"]`),
-    ).not.toBeNull();
     expect(
       edgeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANN_EDGE_ANNO_2}"]`),
     ).not.toBeNull();

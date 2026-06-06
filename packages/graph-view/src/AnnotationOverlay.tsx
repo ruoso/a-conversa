@@ -1,9 +1,18 @@
 // `<AudienceAnnotationOverlay>` — React DOM overlay painting one
 // absolutely-positioned row of `<AudienceAnnotationBadge>` chips per
-// Cytoscape node OR edge that carries at least one committed
-// annotation. Third sibling of the Cytoscape canvas mount (after the
-// per-facet pill overlay and the axiom-mark overlay) inside the
-// `audience-graph-root-wrapper` positioning ancestor.
+// Cytoscape EDGE — and per non-statement (annotation graph-) node —
+// that carries at least one committed annotation. Sibling of the
+// Cytoscape canvas mount inside the `audience-graph-root-wrapper`
+// positioning ancestor.
+//
+// NOTE (`per_facet_step_pill` fold-in; ADR 0004 2026-06-06 amendment):
+// statement-node annotations now render INSIDE the node box as HTML (via
+// `cytoscape-node-html-label`), so the commit pass skips
+// `nodeKind === 'statement'` nodes. This overlay survives for the two
+// cases that have no node box to fold into: edge-targeted annotations,
+// and annotations on promoted annotation graph-nodes. The sibling
+// axiom-mark overlay was retired entirely (axiom marks fold into the
+// statement-node HTML footer).
 //
 // Refinement: tasks/refinements/audience/aud_annotation_rendering.md
 //              (Decision §1 — per-annotation badges, NOT a boolean
@@ -198,6 +207,12 @@ function commitAnnotationPlacements(cy: Core): readonly AnnotationRowPlacement[]
   // element at the current zoom.
   const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
+    // Statement nodes render their node-targeted annotations INSIDE the
+    // node HTML (`per_facet_step_pill` fold-in); the overlay only carries
+    // annotations on non-statement (annotation graph-) nodes here, plus
+    // every edge-targeted annotation below. An edge has no node box to
+    // host its chips, so it must stay a floating row.
+    if (node.data('nodeKind') === 'statement') return;
     const annotations = node.data('annotations') as readonly Annotation[] | undefined;
     if (annotations === undefined || annotations.length === 0) return;
     const bb = node.renderedBoundingBox();
