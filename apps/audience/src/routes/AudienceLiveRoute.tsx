@@ -33,6 +33,7 @@ import { WsRequestError, useWsClient } from '@a-conversa/shell';
 
 import { AudienceGraphView } from '../graph/GraphView.js';
 import { useAudienceLogPosition } from '../state/useAudienceLogPosition.js';
+import { ChapterMarker } from './ChapterMarker.js';
 import { PrivateSessionCta } from './PrivateSessionCta.js';
 
 export function AudienceLiveRoute(): ReactElement {
@@ -96,6 +97,7 @@ export function AudienceLiveRoute(): ReactElement {
   return (
     <div className="relative h-screen w-screen">
       <AudienceGraphView />
+      <ChapterMarker sessionId={sessionId ?? ''} />
       {subscribeRejection === 'not-found' && <PrivateSessionCta />}
     </div>
   );

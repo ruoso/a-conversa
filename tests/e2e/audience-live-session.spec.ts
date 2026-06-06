@@ -63,6 +63,14 @@
 //   renders as a Cytoscape graph-node, and the DOM-overlay badge for
 //   its id is suppressed. Pool member: `ivan` (next unallocated after
 //   henry).)
+// Refinement: tasks/refinements/audience/aud_chapter_marker_render.md
+//   (Acceptance criteria §4 / Decision §7 — Playwright cover IS in
+//   scope (not deferred); the audience surface is reachable via
+//   `aud_session_url`. Scenario (12) below seeds `snapshot-created`
+//   events via the same dev seam and pins the live chapter-marker
+//   caption: absent before any snapshot, appears with the verbatim
+//   label, supersedes to a newer snapshot. Pool member: `julia` (next
+//   unallocated after ivan).)
 
 import {
   expect,
@@ -412,6 +420,63 @@ async function readEventsLength(page: Page, sessionId: string): Promise<number> 
     if (!slice) return -1;
     return slice.events.length;
   }, sessionId);
+}
+
+/**
+ * Seed a synthetic `snapshot-created` event into the audience surface's
+ * WS store via the dev-only `window.__aConversaWsStore` seam. Drives the
+ * live chapter-marker caption (`<ChapterMarker>`), which projects the
+ * most-recent snapshot label from the events slice.
+ */
+async function seedSnapshotCreated(
+  page: Page,
+  seed: {
+    sessionId: string;
+    sequence: number;
+    eventId: string;
+    snapshotId: string;
+    label: string;
+    logPosition: number;
+    actorId: string;
+  },
+): Promise<void> {
+  await page.evaluate(
+    (s: {
+      sessionId: string;
+      sequence: number;
+      eventId: string;
+      snapshotId: string;
+      label: string;
+      logPosition: number;
+      actorId: string;
+    }) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState: () => { applyEvent: (event: unknown) => void };
+          };
+        }
+      ).__aConversaWsStore;
+      if (!store) {
+        throw new Error('__aConversaWsStore is not exposed on window (audience dev seam)');
+      }
+      const apply = store.getState().applyEvent.bind(store.getState());
+      apply({
+        id: s.eventId,
+        sessionId: s.sessionId,
+        sequence: s.sequence,
+        kind: 'snapshot-created',
+        actor: s.actorId,
+        payload: {
+          snapshot_id: s.snapshotId,
+          label: s.label,
+          log_position: s.logPosition,
+        },
+        createdAt: '2026-06-05T00:00:00.000Z',
+      });
+    },
+    seed,
+  );
 }
 
 test.describe('Audience live session route — /a/sessions/:sessionId', () => {
@@ -1067,6 +1132,59 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
       await expect(overlay).toHaveCount(1);
       const promotedRow = overlay.locator(`[data-element-id="${ANNO_1_ID}"]`);
       await expect(promotedRow).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(12) live chapter marker: absent before any snapshot, appears on snapshot-created, supersedes to the newer label', async ({
+    browser,
+  }) => {
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    try {
+      const julia = await loginAs(page, { username: 'julia' });
+      expect(julia.screenName.toLowerCase()).toBe('julia');
+      const sessionId = await createSession(page, {
+        topic: 'Audience chapter marker surfaces the latest snapshot label',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}`);
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      // Absent before any snapshot — the marker renders nothing until the
+      // first `snapshot-created` event lands.
+      await expect(page.getByTestId('audience-chapter-marker')).toHaveCount(0);
+
+      await seedSnapshotCreated(page, {
+        sessionId,
+        sequence: 1_000_600,
+        eventId: 'dddddddd-1111-4ddd-8ddd-dddddddd0001',
+        snapshotId: 'dddddddd-aaaa-4ddd-8ddd-ddddddddaaaa',
+        label: 'Segment 1 close',
+        logPosition: 1_000_600,
+        actorId: julia.userId,
+      });
+
+      const marker = page.getByTestId('audience-chapter-marker');
+      await expect(marker).toBeVisible({ timeout: 15_000 });
+      await expect(marker).toContainText('Segment 1 close');
+
+      // A newer snapshot supersedes the caption (persistent-until-
+      // superseded, Decision §5).
+      await seedSnapshotCreated(page, {
+        sessionId,
+        sequence: 1_000_601,
+        eventId: 'dddddddd-1111-4ddd-8ddd-dddddddd0002',
+        snapshotId: 'dddddddd-bbbb-4ddd-8ddd-ddddddddbbbb',
+        label: 'Commercial',
+        logPosition: 1_000_601,
+        actorId: julia.userId,
+      });
+
+      await expect(marker).toContainText('Commercial', { timeout: 15_000 });
+      await expect(marker).not.toContainText('Segment 1 close');
     } finally {
       await context.close();
     }

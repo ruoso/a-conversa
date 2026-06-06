@@ -1045,6 +1045,9 @@
       "title": "Sesión no disponible",
       "body": "Esta sesión no está disponible para visitantes anónimos. Si tienes una cuenta que pueda verla, inicia sesión para reintentar."
     },
+    "segmentMarker": {
+      "prefix": "Segmento actual"
+    },
     "replay": {
       "loading": "Cargando replay…",
       "unavailableTitle": "Replay no disponible",
