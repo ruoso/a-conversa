@@ -114,28 +114,37 @@ describe('FacetPill — per-status styling branches', () => {
   // pill is the per-facet record, unlike the whole-card frame which
   // falls back to baseline for closed statuses.
 
-  it('proposed branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-60', async () => {
+  // Pending facets are white outline chips; voted/settled facets carry a
+  // tinted fill. The `bg-*` assertions below pin that figure-vs-ground
+  // distinction (the prior all-`bg-white` scheme made pending vs voted
+  // barely perceptible at the 10px pill size).
+
+  it('proposed branch is a faded white outline chip (pending): bg-white + border-dashed + border-slate-400 + text-slate-500 + opacity-60', async () => {
     await render(<FacetPill facet="wording" status="proposed" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-white');
     expect(pill.className).toContain('border-dashed');
     expect(pill.className).toContain('border-slate-400');
     expect(pill.className).toContain('text-slate-500');
     expect(pill.className).toContain('opacity-60');
   });
 
-  it('agreed branch applies border-solid + border-slate-700 + text-slate-700 + opacity-100', async () => {
+  it('agreed branch is a filled chip (voted): bg-slate-200 + border-solid + border-slate-700 + text-slate-700 + opacity-100', async () => {
     await render(<FacetPill facet="wording" status="agreed" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-slate-200');
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-slate-700');
     expect(pill.className).toContain('text-slate-700');
     expect(pill.className).toContain('opacity-100');
     expect(pill.className).not.toContain('border-dashed');
+    expect(pill.className).not.toContain('bg-white');
   });
 
-  it('disputed branch applies border-solid + border-rose-600 + text-rose-700 + ring-1 + ring-rose-500 + opacity-100', async () => {
+  it('disputed branch is a filled chip (voted): bg-rose-100 + border-solid + border-rose-600 + text-rose-700 + ring-1 + ring-rose-500 + opacity-100', async () => {
     await render(<FacetPill facet="classification" status="disputed" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-rose-100');
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-rose-600');
     expect(pill.className).toContain('text-rose-700');
@@ -143,11 +152,13 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).toContain('ring-rose-500');
     expect(pill.className).toContain('opacity-100');
     expect(pill.className).not.toContain('border-dashed');
+    expect(pill.className).not.toContain('bg-white');
   });
 
-  it('meta-disagreement branch applies border-double + border-violet-600 + text-violet-700 + ring-1 + ring-violet-400 + opacity-100', async () => {
+  it('meta-disagreement branch is a filled chip (voted): bg-violet-100 + border-double + border-violet-600 + text-violet-700 + ring-1 + ring-violet-400 + opacity-100', async () => {
     await render(<FacetPill facet="substance" status="meta-disagreement" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-violet-100');
     expect(pill.className).toContain('border-double');
     expect(pill.className).toContain('border-violet-600');
     expect(pill.className).toContain('text-violet-700');
@@ -157,21 +168,25 @@ describe('FacetPill — per-status styling branches', () => {
     // Not styled as any of the other branches.
     expect(pill.className).not.toContain('border-dashed');
     expect(pill.className).not.toContain('border-rose-600');
+    expect(pill.className).not.toContain('bg-white');
   });
 
-  it('committed branch applies border-solid + border-slate-400 + text-slate-600 + opacity-90 (closed; slightly faded)', async () => {
+  it('committed branch is a filled chip (settled): bg-slate-100 + border-solid + border-slate-400 + text-slate-600 + opacity-90', async () => {
     await render(<FacetPill facet="wording" status="committed" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-slate-100');
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-slate-400');
     expect(pill.className).toContain('text-slate-600');
     expect(pill.className).toContain('opacity-90');
     expect(pill.className).not.toContain('border-dashed');
+    expect(pill.className).not.toContain('bg-white');
   });
 
-  it('withdrawn branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-50 (closed; retracted)', async () => {
+  it('withdrawn branch stays a faded white outline chip (closed; retracted): bg-white + border-dashed + border-slate-400 + text-slate-500 + opacity-50', async () => {
     await render(<FacetPill facet="wording" status="withdrawn" />);
     const pill = getPill();
+    expect(pill.className).toContain('bg-white');
     expect(pill.className).toContain('border-dashed');
     expect(pill.className).toContain('border-slate-400');
     expect(pill.className).toContain('text-slate-500');

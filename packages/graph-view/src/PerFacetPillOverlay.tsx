@@ -100,6 +100,16 @@ interface PillRowPlacement {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * Cytoscape viewport zoom captured at commit time. The pill row is a
+   * DOM overlay sized in fixed CSS pixels, whereas the node geometry it
+   * sits above (`renderedBoundingBox`) and the node's painted label both
+   * scale with the viewport zoom. Without compensating, the row keeps its
+   * fixed pixel size and reads proportionally larger as the graph zooms
+   * out. The render path applies `scale(zoom)` about the row's
+   * bottom-center anchor so the pills track the node at every zoom level.
+   */
+  readonly zoom: number;
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
 }
 
@@ -162,7 +172,15 @@ export function AudiencePerFacetPillOverlay({
             position: 'absolute',
             left: `${String(p.x)}px`,
             top: `${String(p.y)}px`,
-            transform: 'translate(-50%, -100%)',
+            // Anchor the row's bottom-center at (x, y), then scale by the
+            // viewport zoom about that same point. With `transform-origin:
+            // center bottom`, the unscaled `translate(-50%, -100%)` places
+            // bottom-center at the anchor and the `scale(zoom)` grows/shrinks
+            // the row around it — so pills stay glued to the node and keep a
+            // constant size *relative to the zoom*, never ballooning when
+            // zoomed out.
+            transform: `translate(-50%, -100%) scale(${String(p.zoom)})`,
+            transformOrigin: 'center bottom',
             display: 'flex',
             gap: '4px',
           }}
@@ -191,6 +209,12 @@ export function AudiencePerFacetPillOverlay({
 
 function commitPerFacetPlacements(cy: Core): readonly PillRowPlacement[] {
   const next: PillRowPlacement[] = [];
+  // Snapshot the viewport zoom once per commit. `renderedBoundingBox`
+  // below is already in zoomed/rendered pixels; the offset gap and the
+  // row scale derive from this single capture so the whole row tracks
+  // the node at the current zoom (refinement: the gap shrinks with the
+  // node, the chips scale with `scale(zoom)` in the render path).
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     const facetStatuses = node.data('facetStatuses') as
       | Readonly<Partial<Record<FacetName, FacetStatus>>>
@@ -211,7 +235,8 @@ function commitPerFacetPlacements(cy: Core): readonly PillRowPlacement[] {
     next.push({
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
-      y: bb.y1 - PILL_ROW_OFFSET_Y,
+      y: bb.y1 - PILL_ROW_OFFSET_Y * zoom,
+      zoom,
       facetStatuses,
     });
   });
