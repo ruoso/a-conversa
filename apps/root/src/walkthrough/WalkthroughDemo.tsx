@@ -192,7 +192,7 @@ export function WalkthroughDemo({
       aria-label={t('landing.demo.regionLabel')}
       className="flex h-full w-full flex-col gap-4"
     >
-      <div className="relative min-h-[24rem] flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="relative min-h-[28rem] flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white lg:min-h-[36rem]">
         <GraphView events={events} instanceKey={INSTANCE_KEY} cyRef={handleCy} />
       </div>
 

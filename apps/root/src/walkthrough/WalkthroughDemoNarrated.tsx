@@ -11,7 +11,11 @@
 // ADRs:        0026 (root-app micro-frontend), 0024 (react-i18next + ICU).
 //
 // Scope: desktop-first layout — the caption sits beside the graph (a
-// two-column grid at `lg`, stacked below it otherwise). This wrapper also
+// two-column grid at `lg`, stacked below it otherwise). The caption is a
+// fixed narrow band (`minmax(16rem,22rem)`) so the graph column (`1fr`)
+// claims all the remaining window width: the page is now full-width, and a
+// proportional caption column would otherwise balloon to a third of the
+// viewport and starve the graph. This wrapper also
 // owns the **small-viewport variant gate** (`landing_demo_mobile_fallback`,
 // Decision §D5): below Tailwind `md` (a phone) it mounts the lighter
 // `WalkthroughDemoCompact` instead of the full interactive stepper, passing
@@ -87,7 +91,7 @@ export function WalkthroughDemoNarrated(): ReactElement {
   return (
     <div
       data-testid="walkthrough-demo-narrated"
-      className="grid h-full w-full gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+      className="grid h-full w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
     >
       {isSmallViewport ? (
         <WalkthroughDemoCompact onPositionChange={handlePositionChange} />
