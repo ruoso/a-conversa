@@ -163,6 +163,29 @@ export const COMPONENT_SPACING = 80;
  */
 export const DEFAULT_PACK_ASPECT = 16 / 9;
 
+/**
+ * Vertical-compression factor applied to each component AFTER its
+ * breadthfirst pass (1 = no change, smaller = tighter levels).
+ *
+ * breadthfirst spaces depth rows by an ISOTROPIC `minDistance` = the
+ * largest node dimension. Our statement cards are wide-but-short
+ * (~240×80), so that floor inherits the node WIDTH and reads as far too
+ * much air between levels. There's no per-axis spacing knob in the
+ * bundled layout, so we scale each node's y toward its component's
+ * vertical centre to bring the depth rows closer without touching the
+ * horizontal (sibling) spacing. Tunable — purely a visual dial.
+ */
+export const LEVEL_SPACING_FACTOR: number = 0.5;
+
+/**
+ * Near-zero boundingBox handed to each per-component breadthfirst pass so
+ * it spaces nodes by its content-based `minDistance` floor instead of
+ * spreading them across the (default) full viewport. The packing pass
+ * places the resulting compact boxes; absolute coordinates here don't
+ * matter, only the relative spacing.
+ */
+const COMPACT_LAYOUT_BOX = { x1: 0, y1: 0, w: 1, h: 1 } as const;
+
 export interface ComponentSize {
   readonly w: number;
   readonly h: number;
@@ -261,7 +284,26 @@ export function layoutAndPackComponents(cy: Core): void {
       .filter((node) => node.indegree(false) === 0)
       .map((node) => node.id())
       .sort();
-    component.layout({ ...BREADTHFIRST_BASE, roots }).run();
+    // A tiny boundingBox keeps breadthfirst from spreading this (usually
+    // small) component across the full viewport — without it, a 2-level
+    // component drops ~1080px of height between its two rows. With a
+    // ~zero box the layout falls back to its content-based `minDistance`
+    // spacing, which the packing pass below then arranges in 2D.
+    component.layout({ ...BREADTHFIRST_BASE, roots, boundingBox: COMPACT_LAYOUT_BOX }).run();
+    // Tighten the inter-level (vertical) spacing: scale each node's y
+    // toward the component's vertical centre. Sibling (horizontal)
+    // spacing is untouched. See `LEVEL_SPACING_FACTOR`.
+    if (LEVEL_SPACING_FACTOR !== 1) {
+      const preBox = component.boundingBox();
+      const centerY = (preBox.y1 + preBox.y2) / 2;
+      component.nodes().forEach((node) => {
+        const position = node.position();
+        node.position({
+          x: position.x,
+          y: centerY + (position.y - centerY) * LEVEL_SPACING_FACTOR,
+        });
+      });
+    }
     return component.boundingBox();
   });
 
