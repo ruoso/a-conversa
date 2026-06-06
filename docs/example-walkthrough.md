@@ -170,7 +170,7 @@ MARIA: I want to be careful here, because I heard two things and I think they ne
 
 MARIA: And the third thing — the strategic one — I want logged explicitly so neither of you can quietly relocate the debate later.
 
-`[platform: capture meta-move (kind=reframe) by Anna as annotation A2 on N6: "If welfare is the access to constitutive capacities, then the netting question — does AZA-grade husbandry sufficiently meet ranging/foraging/social-navigation capacities — is the operational form of the N11 dispute, not a sidestep of it." A2 status: proposed (Ben has not voted agree on this reframe).]`
+`[platform: capture meta-move (kind=reframe) by Anna as annotation A2 on N6: "If welfare is the access to constitutive capacities, then the netting question — does AZA-grade husbandry sufficiently meet ranging/foraging/social-navigation capacities — is the operational form of the constitutive-capacities dispute, not a sidestep of it." A2 status: proposed (Ben has not voted agree on this reframe).]`
 
 MARIA: So, Anna, one operationalization question before Ben replies, because I want N15 to be something the platform can actually work with. You said "almost always." Can you name a case where we'd call a capacity constitutive *without* welfare-deficit evidence? If there are none, N15 strengthens the epistemic reading. If there are some, that's where Ben will plant his flag.
 
@@ -204,7 +204,7 @@ MARIA: Ben, let me make sure I've got that. You're not retreating — you're obj
 - `[Ben votes agree on N16 substance (accepts the epistemic reading); all parties agree; Maria commits N16 substance as agreed. The epistemic-reading rebut on N11 is now substantively live too: edge E11a's substance is already agreed (Ben's pre-commitment), and now N16's substance is agreed, so the rebut on N11 fires through this path.]`
 - `[Capture annotation A3 on N17, kind=stance, owner=B, content: "Decline to press despite available concession; methodological, not substantive." A3 commits.]`
 - `[Ben votes dispute on annotation A2 (Anna's reframe). A2 stays in disputed state.]`
-`[platform: create N19 (kind=normative, owner=B): "What is owed (N12) precedes welfare-aggregation; the netting question is downstream of that priority, not its operational form." Propose contradicts edge E15: N19 contradicts A2 (Anna's reframe). Status: live disagreement. N19 is the located crux.]`
+`[platform: create N19 (kind=normative, owner=B): "What is owed — that a life has a shape it is owed — precedes welfare-aggregation; the netting question is downstream of that priority, not its operational form." Propose contradicts edge E15: N19 contradicts A2 (Anna's reframe). Status: live disagreement. N19 is the located crux.]`
 
 MARIA: And that's the segment. Look at where we started and where we are. Anna came in with a three-legged defense of accredited zoos — conservation, public understanding, individual welfare. Ben came in with a capabilities objection. An hour in, almost everything on the board is shared. N12 — that a life has a shape it is owed — is shared (axiom-marked by both debaters from their respective frames). N16 — that welfare metrics are the instrument for detecting frustrated capacities — is shared. N17 (the metaphysical version) is parked, by mutual agreement, as unfalsifiable from here.
 

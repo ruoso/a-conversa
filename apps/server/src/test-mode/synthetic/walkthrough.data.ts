@@ -104,7 +104,7 @@ export const walkthroughFixtureData: VendoredFixture = {
       payload: {
         node_id: '10000010-0000-4000-8000-0000000000a0',
         wording:
-          "Anna's opening: AZA-accredited zoos do more good than harm — net positives for conservation, public understanding, and individual animals.",
+          'AZA-accredited zoos do more good than harm — net positives for conservation, public understanding, and individual animals.',
         created_by: '10000001-0000-4000-8000-00000000a001',
         created_at: '2026-03-01T18:00:05.000Z',
       },
@@ -795,7 +795,7 @@ export const walkthroughFixtureData: VendoredFixture = {
       payload: {
         node_id: '10000010-0000-4000-8000-0000000000b0',
         wording:
-          "Ben's leg: confinement of wide-ranging cognitively complex animals imposes a morally significant cost independent of welfare outcomes.",
+          'Confinement of wide-ranging, cognitively complex animals imposes a morally significant cost independent of welfare outcomes.',
         created_by: '10000001-0000-4000-8000-00000000b001',
         created_at: '2026-03-01T18:00:50.000Z',
       },
@@ -3299,7 +3299,7 @@ export const walkthroughFixtureData: VendoredFixture = {
         annotation_id: '10000030-0000-4000-8000-000000000002',
         kind: 'reframe',
         content:
-          'If welfare is the access to constitutive capacities, then the husbandry-netting question is the operational form of the N11 dispute.',
+          'If welfare is the access to constitutive capacities, then the husbandry-netting question is the operational form of the constitutive-capacities dispute, not a sidestep of it.',
         target_node_id: '10000010-0000-4000-8000-000000000006',
         target_edge_id: null,
         created_by: '10000001-0000-4000-8000-00000000a001',
@@ -3884,7 +3884,7 @@ export const walkthroughFixtureData: VendoredFixture = {
       payload: {
         node_id: '10000010-0000-4000-8000-000000000019',
         wording:
-          'What is owed (N12) precedes welfare-aggregation; the netting question is downstream of that priority, not its operational form.',
+          'What is owed — that a life has a shape it is owed — precedes welfare-aggregation; the netting question is downstream of that priority, not its operational form.',
         created_by: '10000001-0000-4000-8000-00000000b001',
         created_at: '2026-03-01T18:04:17.000Z',
       },
