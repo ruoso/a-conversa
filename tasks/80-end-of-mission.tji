@@ -1,0 +1,14 @@
+# 80 — End-of-mission documentation tasks
+#
+# Post-MVP editorial and documentation tasks that mark the project's milestone
+# state in human-readable docs. These are not deployment blockers but belong in
+# the WBS so they stay tracked and visible.
+
+task end_of_mission "End-of-mission documentation" {
+  task design_md_update "Update DESIGN.md to mark MVP scope complete" {
+    effort 0.5d
+    allocate team
+    complete 100
+    note "Refinement: tasks/refinements/end_of_mission/design_md_update.md. Prepend MVP-scope-complete Status blockquote to DESIGN.md now that M1–M8 + M8-audits are all complete."
+  }
+}

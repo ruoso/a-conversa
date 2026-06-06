@@ -111,7 +111,7 @@ task milestones "Milestones" {
 
   task m_first_show_recorded "M10: First YouTube show recorded" {
     milestone
-    depends !m_replay_mvp, !m_deployment_ready
+    depends !m_replay_mvp, !m_deployment_ready, end_of_mission.design_md_update
     note "The proof-of-concept YouTube show is recorded using the platform end-to-end. Validates the format on real participants and an audience. Show-readiness polish (operator keyboard shortcuts, participant diagnostics + history views, audience segment/chapter markers) gates this milestone — not v1-MVP-essential, but wanted before recording a real show."
   }
 }
