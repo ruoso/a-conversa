@@ -24,6 +24,24 @@ export type ParticipantTab = 'graph' | 'proposals' | 'my-agreements';
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
 
+/**
+ * A one-shot, imperative request to re-frame the graph canvas on a set
+ * of entities. The diagnostics list lives in the operate-route footer
+ * (a `ParticipantLayout` sibling of `main`), so it cannot reach the
+ * Cytoscape `Core` directly; it dispatches one of these
+ * (`requestCanvasFocus`) and a thin effect inside `<GraphView>`
+ * (`useCanvasFocusEffect`) consumes it and calls `cy.animate({ fit })`.
+ * The monotonic `nonce` is load-bearing: it is the consumer's ref-guard
+ * key and lets an identical re-tap re-center. Mirrors the moderator
+ * `uiStore` twin line-for-line. Refinement:
+ * `part_diagnostic_focus` Decision §D1/§D2.
+ */
+export interface FocusRequest {
+  readonly nodeIds: readonly string[];
+  readonly edgeIds: readonly string[];
+  readonly nonce: number;
+}
+
 export interface UiState {
   /** Which top-of-main tab is foregrounded. */
   currentTab: ParticipantTab;
@@ -36,10 +54,22 @@ export interface UiState {
    * enforces the "at most one open" contract.
    */
   expandedProposalId: string | null;
+  /**
+   * The latest canvas-focus command, or `null` before any has fired.
+   * Each `requestCanvasFocus` call replaces it with a fresh object whose
+   * `nonce` has advanced by one. Transient, in-memory only.
+   */
+  focusRequest: FocusRequest | null;
   setCurrentTab: (tab: ParticipantTab) => void;
   setZoom: (zoom: number) => void;
   /** Overwrite the open-row slot atomically. Passing `null` collapses. */
   setExpandedProposalId: (id: string | null) => void;
+  /**
+   * Dispatch a fresh canvas-focus command for the given entity set. The
+   * new `focusRequest` is a distinct object reference with `nonce` =
+   * previous nonce + 1 (1 from the initial `null`).
+   */
+  requestCanvasFocus: (target: { nodeIds: readonly string[]; edgeIds: readonly string[] }) => void;
 }
 
 function clampZoom(zoom: number): number {
@@ -52,8 +82,17 @@ export const useUiStore = create<UiState>()(
     currentTab: 'graph',
     zoom: 1,
     expandedProposalId: null,
+    focusRequest: null,
     setCurrentTab: (currentTab) => set({ currentTab }),
     setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
     setExpandedProposalId: (expandedProposalId) => set({ expandedProposalId }),
+    requestCanvasFocus: (target) =>
+      set((state) => ({
+        focusRequest: {
+          nodeIds: target.nodeIds,
+          edgeIds: target.edgeIds,
+          nonce: (state.focusRequest?.nonce ?? 0) + 1,
+        },
+      })),
   })),
 );

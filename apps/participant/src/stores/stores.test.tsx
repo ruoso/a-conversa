@@ -162,6 +162,41 @@ describe('useUiStore — expandedProposalId', () => {
   });
 });
 
+describe('useUiStore — requestCanvasFocus', () => {
+  const NODE_1 = 'node-1';
+  const NODE_2 = 'node-2';
+  const EDGE_1 = 'edge-1';
+
+  it('(a) defaults to a null focusRequest at module load', () => {
+    expect(useUiStore.getState().focusRequest).toBeNull();
+  });
+
+  it('(b) requestCanvasFocus sets the ids and nonce 1 from the initial null', () => {
+    useUiStore.getState().requestCanvasFocus({ nodeIds: [NODE_1, NODE_2], edgeIds: [EDGE_1] });
+    const request = useUiStore.getState().focusRequest;
+    expect(request?.nodeIds).toEqual([NODE_1, NODE_2]);
+    expect(request?.edgeIds).toEqual([EDGE_1]);
+    expect(request?.nonce).toBe(1);
+  });
+
+  it('(c) a second call advances the nonce to 2 and replaces the ids', () => {
+    useUiStore.getState().requestCanvasFocus({ nodeIds: [NODE_1], edgeIds: [] });
+    useUiStore.getState().requestCanvasFocus({ nodeIds: [NODE_2], edgeIds: [EDGE_1] });
+    const request = useUiStore.getState().focusRequest;
+    expect(request?.nodeIds).toEqual([NODE_2]);
+    expect(request?.edgeIds).toEqual([EDGE_1]);
+    expect(request?.nonce).toBe(2);
+  });
+
+  it('(d) mints a fresh focusRequest object reference on each call', () => {
+    useUiStore.getState().requestCanvasFocus({ nodeIds: [NODE_1], edgeIds: [] });
+    const first = useUiStore.getState().focusRequest;
+    useUiStore.getState().requestCanvasFocus({ nodeIds: [NODE_1], edgeIds: [] });
+    const second = useUiStore.getState().focusRequest;
+    expect(second).not.toBe(first);
+  });
+});
+
 describe('React components re-render on store updates', () => {
   function VoteProbe(): ReactElement {
     const votes = useVoteStore((state) => state.votes);

@@ -353,6 +353,7 @@
     "participant.diagnostics.countAria",
     "participant.diagnostics.severity.blocking",
     "participant.diagnostics.severity.advisory",
+    "participant.diagnostics.focusAria",
     "audience.placeholder.title",
     "audience.placeholder.body",
     "testMode.placeholder.title",

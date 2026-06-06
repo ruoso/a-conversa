@@ -16,12 +16,18 @@
 //     toggle.
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+import {
+  I18nProvider,
+  affectedEntities,
+  createI18nInstance,
+  type I18nInstance,
+} from '@a-conversa/shell';
 
 import { ParticipantDiagnosticsList } from './ParticipantDiagnosticsList';
+import { useUiStore } from '../stores/uiStore';
 import { useWsStore } from '../ws/wsStore';
 
 const SESSION = '00000000-0000-4000-8000-000000000099';
@@ -68,10 +74,27 @@ function multiWarrantPayload(sequence: number): DiagnosticPayload {
   };
 }
 
+// A cycle whose node list repeats an id — exercises the dedup before
+// stamping/focusing (`affectedEntities` does not deduplicate).
+function cycleWithDuplicatePayload(sequence: number): DiagnosticPayload {
+  return {
+    sessionId: SESSION,
+    kind: 'cycle',
+    severity: 'blocking',
+    status: 'fired',
+    sequence,
+    diagnostic: { kind: 'cycle', nodes: [NODE_A, NODE_B, NODE_A] },
+  };
+}
+
 function applyDiagnostic(payload: DiagnosticPayload): void {
   act(() => {
     useWsStore.getState().applyDiagnostic(payload);
   });
+}
+
+function dedupe(ids: readonly string[]): string[] {
+  return [...new Set(ids)];
 }
 
 let i18n: I18nInstance;
@@ -83,6 +106,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  useUiStore.setState({ currentTab: 'graph', focusRequest: null });
 });
 
 function renderList(): ReturnType<typeof render> {
@@ -173,6 +197,124 @@ describe('<ParticipantDiagnosticsList> — populated inventory', () => {
     const toggle = screen.getByTestId('participant-diagnostics-toggle');
     expect(toggle.getAttribute('data-count')).toBe('2');
     expect(toggle.getAttribute('data-tone')).toBe('blocking');
+  });
+});
+
+describe('<ParticipantDiagnosticsList> — tap to focus', () => {
+  function focusButtonForKind(kind: string): HTMLElement {
+    const row = screen
+      .getAllByTestId('participant-diagnostic-row')
+      .find((r) => r.getAttribute('data-diagnostic-kind') === kind);
+    if (row === undefined) throw new Error(`no row for kind ${kind}`);
+    return within(row).getByTestId('participant-diagnostic-focus-button');
+  }
+
+  it('renders a focus button in every row', () => {
+    applyDiagnostic(cyclePayload(5));
+    applyDiagnostic(multiWarrantPayload(1));
+    renderList();
+    openPanel();
+    expect(screen.getAllByTestId('participant-diagnostic-focus-button')).toHaveLength(2);
+  });
+
+  it('clicking the focus button switches to the graph tab and dispatches that row’s region', () => {
+    const cycle = cyclePayload(5);
+    applyDiagnostic(cycle);
+    renderList();
+    openPanel();
+
+    // Start on another tab to prove the tap foregrounds the graph tab.
+    act(() => {
+      useUiStore.getState().setCurrentTab('proposals');
+    });
+    expect(useUiStore.getState().focusRequest).toBeNull();
+
+    fireEvent.click(focusButtonForKind('cycle'));
+
+    expect(useUiStore.getState().currentTab).toBe('graph');
+    const request = useUiStore.getState().focusRequest;
+    const expected = affectedEntities(cycle);
+    expect(request?.nodeIds).toEqual(dedupe(expected.nodes));
+    expect(request?.edgeIds).toEqual(dedupe(expected.edges));
+    expect(request?.nonce).toBe(1);
+  });
+
+  it('clicking a non-head (advisory) row dispatches that row’s region, not the head’s', () => {
+    const cycle = cyclePayload(5); // blocking head
+    const multi = multiWarrantPayload(1); // advisory, not the head
+    applyDiagnostic(cycle);
+    applyDiagnostic(multi);
+    renderList();
+    openPanel();
+
+    fireEvent.click(focusButtonForKind('multi-warrant'));
+
+    const request = useUiStore.getState().focusRequest;
+    const expected = affectedEntities(multi);
+    expect(request?.nodeIds).toEqual(dedupe(expected.nodes));
+    expect(request?.edgeIds).toEqual(dedupe(expected.edges));
+  });
+
+  it('dispatches deduped node ids when affectedEntities repeats one', () => {
+    const dup = cycleWithDuplicatePayload(5);
+    applyDiagnostic(dup);
+    renderList();
+    openPanel();
+
+    fireEvent.click(focusButtonForKind('cycle'));
+
+    const request = useUiStore.getState().focusRequest;
+    expect(request?.nodeIds).toEqual([NODE_A, NODE_B]);
+  });
+
+  it('stamps data-diagnostic-affected-nodes / -edges as the deduped affectedEntities per row', () => {
+    const cycle = cyclePayload(5);
+    const contradiction = contradictionPayload(3);
+    applyDiagnostic(cycle);
+    applyDiagnostic(contradiction);
+    renderList();
+    openPanel();
+
+    for (const row of screen.getAllByTestId('participant-diagnostic-row')) {
+      const kind = row.getAttribute('data-diagnostic-kind');
+      const payload = kind === 'cycle' ? cycle : contradiction;
+      const expected = affectedEntities(payload);
+      expect(row.getAttribute('data-diagnostic-affected-nodes')).toBe(
+        dedupe(expected.nodes).join(' '),
+      );
+      expect(row.getAttribute('data-diagnostic-affected-edges')).toBe(
+        dedupe(expected.edges).join(' '),
+      );
+    }
+  });
+
+  it('stamps an empty edges seam when the diagnostic affects no edges', () => {
+    applyDiagnostic(cyclePayload(5));
+    renderList();
+    openPanel();
+    const row = screen.getByTestId('participant-diagnostic-row');
+    expect(row.getAttribute('data-diagnostic-affected-edges')).toBe('');
+  });
+
+  it('the focus button aria-label resolves via participant.diagnostics.focusAria', () => {
+    applyDiagnostic(cyclePayload(5));
+    renderList();
+    openPanel();
+    const label = focusButtonForKind('cycle').getAttribute('aria-label') ?? '';
+    // The interpolated kind title (not the raw key) must be present.
+    expect(label).toContain('Cycle in supports');
+    expect(label).not.toContain('focusAria');
+  });
+});
+
+describe('participant.diagnostics.focusAria — i18n parity', () => {
+  it('resolves in en-US / pt-BR / es-419', async () => {
+    for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
+      const instance = await createI18nInstance(locale);
+      const value = instance.t('participant.diagnostics.focusAria', { title: 'Cycle' });
+      expect(value).not.toBe('participant.diagnostics.focusAria');
+      expect(value).toContain('Cycle');
+    }
   });
 });
 

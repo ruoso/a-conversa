@@ -1044,7 +1044,8 @@
       "severity": {
         "blocking": "Bloqueante",
         "advisory": "Consultivo"
-      }
+      },
+      "focusAria": "Enfocar el grafo en {title}"
     }
   },
   "audience": {

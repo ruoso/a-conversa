@@ -195,6 +195,7 @@ import cytoscape, {
 import { useTranslation } from 'react-i18next';
 
 import { useSelectionStore, type Selection } from '../stores/selectionStore';
+import { useCanvasFocusEffect } from './useCanvasFocusEffect';
 import { type Annotation } from './annotations';
 import { type AxiomMark } from './axiomMarks';
 import {
@@ -1229,6 +1230,16 @@ export function GraphView({
     // suppression directive is required; this comment documents the
     // intent for the human reviewer.
   }, []);
+
+  // Canvas-focus consumer — the producer half (the diagnostics list in
+  // the operate-route footer) dispatches a `focusRequest` onto
+  // `useUiStore`; this hook re-frames the viewport on the affected
+  // region when the request's `nonce` advances. It reads the React-
+  // visible `cyInstance` slot (not the imperative ref) so a pending
+  // request dispatched before the instance lands — the
+  // tab-switch-then-mount path — is handled once `cyInstance` is set
+  // (`part_diagnostic_focus` Constraint §2 + Decision §D2).
+  useCanvasFocusEffect(cyInstance);
 
   // The projection chain (per-facet status index, axiom-mark index,
   // node + edge annotation indexes, diagnostic-highlight index, own-

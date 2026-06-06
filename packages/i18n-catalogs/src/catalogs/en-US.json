@@ -1044,7 +1044,8 @@
       "severity": {
         "blocking": "Blocking",
         "advisory": "Advisory"
-      }
+      },
+      "focusAria": "Focus the graph on {title}"
     }
   },
   "audience": {

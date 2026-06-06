@@ -24,8 +24,9 @@ import { useId, useMemo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import { diagnosticIdentityKey, orderActiveDiagnostics } from '@a-conversa/shell';
+import { affectedEntities, diagnosticIdentityKey, orderActiveDiagnostics } from '@a-conversa/shell';
 
+import { useUiStore } from '../stores/uiStore';
 import { useWsStore } from '../ws/wsStore';
 
 export interface ParticipantDiagnosticsListProps {
@@ -56,6 +57,14 @@ export function ParticipantDiagnosticsList(props: ParticipantDiagnosticsListProp
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const panelId = useId();
+
+  // Focus-command producers (Constraint §5). The list is in the footer,
+  // a `ParticipantLayout` sibling of `main`; tapping a row foregrounds
+  // the graph tab (idempotent when already on it) and dispatches a
+  // canvas-focus request that `<GraphView>`'s `useCanvasFocusEffect`
+  // consumes (Decision §D1). No callback threads through the footer.
+  const setCurrentTab = useUiStore((state) => state.setCurrentTab);
+  const requestCanvasFocus = useUiStore((state) => state.requestCanvasFocus);
 
   const activeDiagnostics = useWsStore(
     (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_ACTIVE_DIAGNOSTICS,
@@ -137,6 +146,12 @@ export function ParticipantDiagnosticsList(props: ParticipantDiagnosticsListProp
             >
               {ordered.map((payload) => {
                 const key = diagnosticIdentityKey(payload);
+                // Dedup the affected ids before stamping/focusing —
+                // `affectedEntities` does NOT deduplicate (Constraint §7).
+                const affected = affectedEntities(payload);
+                const affectedNodeIds = [...new Set(affected.nodes)];
+                const affectedEdgeIds = [...new Set(affected.edges)];
+                const kindTitle = t(`diagnostics.${payload.kind}.title`);
                 return (
                   <li
                     key={key}
@@ -144,25 +159,45 @@ export function ParticipantDiagnosticsList(props: ParticipantDiagnosticsListProp
                     data-diagnostic-key={key}
                     data-diagnostic-kind={payload.kind}
                     data-diagnostic-severity={payload.severity}
+                    data-diagnostic-affected-nodes={affectedNodeIds.join(' ')}
+                    data-diagnostic-affected-edges={affectedEdgeIds.join(' ')}
                     className={rowClassesFor(payload.severity)}
                   >
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        data-testid="participant-diagnostic-severity"
-                        className={badgeClassesFor(payload.severity)}
-                      >
-                        {t(`participant.diagnostics.severity.${payload.severity}`)}
-                      </span>
-                      <span
-                        data-testid="participant-diagnostic-kind-title"
-                        className="text-sm font-medium"
-                      >
-                        {t(`diagnostics.${payload.kind}.title`)}
-                      </span>
-                    </div>
-                    <p data-testid="participant-diagnostic-detail" className="mt-0.5 text-xs">
-                      {t(`diagnostics.${payload.kind}.detail`)}
-                    </p>
+                    {/* A real `<button>` (not a click-handled `<li>`) for
+                        Enter/Space activation + focus-ring for free
+                        (Decision §D3). Tapping foregrounds the graph tab
+                        and dispatches the focus request (Constraint §5/§6). */}
+                    <button
+                      type="button"
+                      data-testid="participant-diagnostic-focus-button"
+                      aria-label={t('participant.diagnostics.focusAria', { title: kindTitle })}
+                      onClick={() => {
+                        setCurrentTab('graph');
+                        requestCanvasFocus({
+                          nodeIds: affectedNodeIds,
+                          edgeIds: affectedEdgeIds,
+                        });
+                      }}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          data-testid="participant-diagnostic-severity"
+                          className={badgeClassesFor(payload.severity)}
+                        >
+                          {t(`participant.diagnostics.severity.${payload.severity}`)}
+                        </span>
+                        <span
+                          data-testid="participant-diagnostic-kind-title"
+                          className="text-sm font-medium"
+                        >
+                          {kindTitle}
+                        </span>
+                      </div>
+                      <p data-testid="participant-diagnostic-detail" className="mt-0.5 text-xs">
+                        {t(`diagnostics.${payload.kind}.detail`)}
+                      </p>
+                    </button>
                   </li>
                 );
               })}

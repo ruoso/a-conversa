@@ -42,7 +42,7 @@ import {
 } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
-import { applyDiagnostic } from './fixtures/wsStoreSeed';
+import { applyDiagnostic, seedWsStore } from './fixtures/wsStoreSeed';
 
 const NODE_A = 'node-a';
 const NODE_B = 'node-b';
@@ -80,6 +80,7 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
 async function reachDebaterOperate(
   browser: Browser,
   topic: string,
+  opts: { testMode?: boolean } = {},
 ): Promise<{ page: Page; sessionId: string }> {
   const context = await freshContext(browser);
   const page = await context.newPage();
@@ -102,12 +103,68 @@ async function reachDebaterOperate(
   });
   await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
 
-  await page.goto(`/p/sessions/${sessionId}`);
+  // The focus scenarios read `cy.pan()`/`cy.zoom()` off the
+  // `window.__aConversaCyInstance` seam, which is gated on the
+  // `?aconversaTestMode` query flag (`GraphView.shouldExposeCyTestSeam`).
+  const operatePath = opts.testMode
+    ? `/p/sessions/${sessionId}?aconversaTestMode=1`
+    : `/p/sessions/${sessionId}`;
+  await page.goto(operatePath);
   await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
 
   return { page, sessionId };
 }
+
+/** Cytoscape viewport `{ pan, zoom }` read off the test seam, serialized. */
+async function readViewport(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const cy = (
+      window as unknown as {
+        __aConversaCyInstance?: { pan(): { x: number; y: number }; zoom(): number };
+      }
+    ).__aConversaCyInstance;
+    if (!cy) throw new Error('__aConversaCyInstance is not exposed on window');
+    return JSON.stringify({ pan: cy.pan(), zoom: cy.zoom() });
+  });
+}
+
+/** Wait until the live Cytoscape instance knows the given node ids. */
+async function waitForCyNodes(page: Page, nodeIds: readonly string[]): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((ids: readonly string[]) => {
+          const cy = (
+            window as unknown as {
+              __aConversaCyInstance?: { getElementById(id: string): { nonempty(): boolean } };
+            }
+          ).__aConversaCyInstance;
+          if (!cy) return false;
+          return ids.every((id) => cy.getElementById(id).nonempty());
+        }, nodeIds),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+// A small multi-node graph (a chain) so framing a 2-node subset at one
+// end re-frames the viewport away from the whole-graph fit.
+const GRAPH_NODES = [
+  { nodeId: 'node-a', wording: 'Alpha' },
+  { nodeId: 'node-b', wording: 'Bravo' },
+  { nodeId: 'node-c', wording: 'Charlie' },
+  { nodeId: 'node-d', wording: 'Delta' },
+  { nodeId: 'node-e', wording: 'Echo' },
+  { nodeId: 'node-f', wording: 'Foxtrot' },
+];
+const GRAPH_EDGES = [
+  { edgeId: 'edge-ab', source: 'node-a', target: 'node-b' },
+  { edgeId: 'edge-bc', source: 'node-b', target: 'node-c' },
+  { edgeId: 'edge-cd', source: 'node-c', target: 'node-d' },
+  { edgeId: 'edge-de', source: 'node-d', target: 'node-e' },
+  { edgeId: 'edge-ef', source: 'node-e', target: 'node-f' },
+];
 
 test.describe('Participant operate footer — structural-diagnostics list', () => {
   test('two diagnostics seeded → toggle reports count 2, list renders two rows blocking-first', async ({
@@ -187,6 +244,87 @@ test.describe('Participant operate footer — structural-diagnostics list', () =
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByTestId('participant-diagnostic-empty')).toBeVisible();
     await expect(page.getByTestId('participant-diagnostic-row')).toHaveCount(0);
+
+    await page.close();
+  });
+
+  test('tapping a diagnostic row re-frames the canvas on its affected region', async ({
+    browser,
+  }) => {
+    const { page, sessionId } = await reachDebaterOperate(
+      browser,
+      'Participant diagnostics focus — same-tab re-frame',
+      { testMode: true },
+    );
+
+    await seedWsStore(page, { sessionId, nodes: GRAPH_NODES, edges: GRAPH_EDGES });
+    await waitForCyNodes(page, ['node-a', 'node-b']);
+    const before = await readViewport(page);
+
+    // A blocking cycle over a 2-node subset at one end of the chain — not
+    // already framed by the whole-graph fit.
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 30,
+      diagnostic: { kind: 'cycle', nodes: ['node-a', 'node-b'] },
+    });
+
+    const toggle = page.getByTestId('participant-diagnostics-toggle');
+    await expect(toggle).toHaveAttribute('data-count', '1');
+    await toggle.click();
+
+    const row = page.getByTestId('participant-diagnostic-row').first();
+    await expect(row).toHaveAttribute('data-diagnostic-affected-nodes', 'node-a node-b');
+
+    await row.getByTestId('participant-diagnostic-focus-button').click();
+
+    // The `duration: 250` animation settles asynchronously — poll until
+    // the viewport differs from the pre-tap frame.
+    await expect.poll(() => readViewport(page), { timeout: 10_000 }).not.toBe(before);
+
+    await page.close();
+  });
+
+  test('tapping a diagnostic from the proposals tab switches to graph and re-frames', async ({
+    browser,
+  }) => {
+    const { page, sessionId } = await reachDebaterOperate(
+      browser,
+      'Participant diagnostics focus — cross-tab navigation',
+      { testMode: true },
+    );
+
+    await seedWsStore(page, { sessionId, nodes: GRAPH_NODES, edges: GRAPH_EDGES });
+    await waitForCyNodes(page, ['node-a', 'node-b']);
+    // Baseline whole-graph frame captured while the canvas is mounted.
+    const before = await readViewport(page);
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 30,
+      diagnostic: { kind: 'cycle', nodes: ['node-a', 'node-b'] },
+    });
+
+    // Foreground the proposals tab — the canvas unmounts but the footer
+    // (and the diagnostics toggle) stays visible.
+    await page.getByTestId('participant-proposals-tabbar-proposals').click();
+    await expect(page.getByTestId('route-operate-graph-region')).toHaveCount(0);
+
+    const toggle = page.getByTestId('participant-diagnostics-toggle');
+    await toggle.click();
+    await page.getByTestId('participant-diagnostic-focus-button').first().click();
+
+    // The tap switches back to the graph tab (remounting the canvas) and
+    // the pending focus request re-frames it once `cyInstance` lands.
+    await expect(page.getByTestId('route-operate-graph-region')).toBeVisible({ timeout: 15_000 });
+    await waitForCyNodes(page, ['node-a', 'node-b']);
+    await expect.poll(() => readViewport(page), { timeout: 10_000 }).not.toBe(before);
 
     await page.close();
   });
