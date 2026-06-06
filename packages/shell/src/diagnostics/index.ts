@@ -29,3 +29,5 @@ export {
   type WireMultiWarrantDiagnostic,
   type WireSelfContradictsHint,
 } from './diagnostic-highlights.js';
+
+export { orderActiveDiagnostics } from './order-active-diagnostics.js';

@@ -191,6 +191,7 @@ export {
   flattenActiveDiagnosticsForEdgeFire,
   flattenActiveDiagnosticsForFire,
   nodeHasDiagnostic,
+  orderActiveDiagnostics,
   projectDiagnosticHighlights,
   type DiagnosticEdgeFireTuple,
   type DiagnosticFireTuple,

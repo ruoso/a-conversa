@@ -422,6 +422,7 @@ task participant_ui "Participant (debater) UI" {
     task part_diagnostics_list "Diagnostics list accessible from status indicator" {
       effort 1d
       allocate team
+      complete 100
     }
     task part_diagnostic_focus "Tap a flag to focus the affected region" {
       effort 0.5d

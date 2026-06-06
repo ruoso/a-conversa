@@ -1,12 +1,16 @@
 // Tests for `orderActiveDiagnostics` — the shared total order over the
-// active-diagnostics map consumed by both `<DiagnosticSuggestionsPanel>`
-// (focuses the head) and `<DiagnosticFlagPane>` (lists the whole order).
+// active-diagnostics map consumed by the moderator's flag pane /
+// suggestions panel / blocking banner AND the participant's diagnostics
+// list.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_diagnostic_flag_pane.md
-//             (Acceptance §1, Decision §D2)
+// Refinement: tasks/refinements/participant-ui/part_diagnostics_list.md
+//             (Acceptance §1 — the comparator extracted to the shell as
+//             its second caller; this is the moderator suite moved here.)
+// Predecessor: tasks/refinements/moderator-ui/mod_diagnostic_flag_pane.md
+//             (Decision §D2 — the order rule the suggestions panel's
+//             focus-pick used to own inline.)
 //
-// Per ADR 0022 these are committed Vitest cases. They pin the order rule
-// the suggestions panel's focus-pick used to own inline:
+// Per ADR 0022 these are committed Vitest cases. They pin:
 //
 //   - blocking sorts before advisory;
 //   - within a severity, ascending `sequence`;
@@ -16,9 +20,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import { diagnosticIdentityKey } from '@a-conversa/shell';
-
-import { orderActiveDiagnostics } from './orderActiveDiagnostics';
+import { diagnosticIdentityKey } from './diagnostic-highlights.js';
+import { orderActiveDiagnostics } from './order-active-diagnostics.js';
 
 const SESSION = '00000000-0000-4000-8000-000000000099';
 

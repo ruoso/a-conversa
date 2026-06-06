@@ -1034,6 +1034,17 @@
     "myAgreementsPane": {
       "emptyState": "Você ainda não concordou com nenhuma faceta.",
       "paneAriaLabel": "Meus acordos"
+    },
+    "diagnostics": {
+      "header": "Diagnósticos ativos",
+      "empty": "Nenhum problema estrutural em aberto no momento.",
+      "toggleLabel": "Diagnósticos",
+      "toggleAria": "{count, plural, =0 {Nenhum diagnóstico ativo} one {# diagnóstico ativo} other {# diagnósticos ativos}}",
+      "countAria": "{count, plural, one {# diagnóstico ativo} other {# diagnósticos ativos}}",
+      "severity": {
+        "blocking": "Bloqueante",
+        "advisory": "Consultivo"
+      }
     }
   },
   "audience": {

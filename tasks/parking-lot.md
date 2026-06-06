@@ -231,3 +231,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Question**: the pt-BR and es-419 translations for the two new `audience.replay.playback.*` keys (`speedAriaLabel` and the ICU `speedOption` format) were machine-drafted; they need native-speaker review for accuracy and register.
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: when the v1 surfaces are string-complete, review the `speedAriaLabel` and `speedOption` entries in the `audience.replay.playback.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
+### 2026-06-05 — i18n native review — participant.diagnostics.* block (pt-BR, es-419)
+
+- **Source**: closer for `participant_ui.part_diagnostics_view.part_diagnostics_list` (refinement Acceptance §4; implementer return summary).
+- **Question**: the pt-BR and es-419 translations for the new `participant.diagnostics.*` catalog block (panel header, empty message, severity labels, open/close + count aria) were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: when the v1 surfaces are string-complete, review the `participant.diagnostics.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.

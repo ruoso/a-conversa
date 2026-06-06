@@ -1034,6 +1034,17 @@
     "myAgreementsPane": {
       "emptyState": "You haven't agreed to any facets yet.",
       "paneAriaLabel": "My agreements"
+    },
+    "diagnostics": {
+      "header": "Active diagnostics",
+      "empty": "No structural problems are open right now.",
+      "toggleLabel": "Diagnostics",
+      "toggleAria": "{count, plural, =0 {No active diagnostics} one {# active diagnostic} other {# active diagnostics}}",
+      "countAria": "{count, plural, one {# active diagnostic} other {# active diagnostics}}",
+      "severity": {
+        "blocking": "Blocking",
+        "advisory": "Advisory"
+      }
     }
   },
   "audience": {

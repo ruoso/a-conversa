@@ -35,9 +35,13 @@
 // Composition (per the refinement's "What this task is"):
 //
 //   - `<ParticipantLayout header={<ParticipantChrome />} main={<OperateRouteBody id={id} />}
-//     footer={<ParticipantStatusIndicator />} />` — same shape every
-//     other participant route uses (the chrome + footer are uniform
-//     across routes per `part_landscape_layout` + `part_status_indicator`).
+//     footer={<ParticipantOperateFooter sessionId={id} />} />` — the
+//     chrome is uniform across routes (`part_landscape_layout`); the
+//     footer composes the shared `<ParticipantStatusIndicator>` PLUS the
+//     operate-only structural-diagnostics affordance + list
+//     (`part_diagnostics_list`, Decision §2). The lobby/invite routes
+//     keep `footer={<ParticipantStatusIndicator />}` verbatim — only the
+//     live operate surface carries diagnostics.
 //   - The body owns the auth guard branch (belt-and-suspenders against
 //     the mid-mount auth flip; mirrors the lobby + invite-acceptance
 //     shape) and renders the two-column main: `<GraphView>` on the
@@ -55,7 +59,7 @@ import { useAuth, useWsClient } from '@a-conversa/shell';
 
 import { ParticipantLayout } from '../layout/ParticipantLayout';
 import { ParticipantChrome } from '../layout/ParticipantChrome';
-import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator';
+import { ParticipantOperateFooter } from '../layout/ParticipantOperateFooter';
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
@@ -195,7 +199,7 @@ export function OperateRoute(): ReactElement {
     <ParticipantLayout
       header={<ParticipantChrome />}
       main={<OperateRouteBody id={id} />}
-      footer={<ParticipantStatusIndicator />}
+      footer={<ParticipantOperateFooter sessionId={id} />}
     />
   );
 }
