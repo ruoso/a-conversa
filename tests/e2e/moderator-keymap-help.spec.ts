@@ -14,9 +14,10 @@
 //
 //   1. Pressing `?` shows the overlay.
 //   2. A known reachable row (snapshot) renders its chord + label.
-//   3. A reachable: false row (action.commit) is present and dimmed —
-//      proving the deferred commit chord is advertised-but-dim today
-//      (the wiring the orchestrator asked for).
+//   3. The commit row is now reachable (mod_proposal_selection_commit_chord
+//      shipped the live binding) — present, NOT dimmed; a still-deferred
+//      mode-entry row (mode.decompose) is the dimmed / coming-soon
+//      exemplar that keeps the dimmed-row rendering covered.
 //   4. Escape closes the overlay.
 //   5. The sidebar help button opens it.
 //   6. Typing `?` into the capture wording textarea does NOT open the
@@ -105,7 +106,7 @@ test.describe('moderator keymap-help overlay — `?` toggles the GLOBAL_KEYMAP c
     await expect(snapshotRow).toContainText('Snapshot');
   });
 
-  test('Test 3 — the deferred commit row is present, dimmed (reachable=false)', async ({
+  test('Test 3 — the commit row is reachable (not dimmed); a mode row is the dimmed exemplar', async ({
     page,
   }) => {
     await reachOperate(page, 'Keymap help overlay coming-soon-row regression check.');
@@ -114,10 +115,19 @@ test.describe('moderator keymap-help overlay — `?` toggles the GLOBAL_KEYMAP c
     await page.keyboard.press('?');
     await expect(page.getByTestId('keymap-help-overlay')).toBeVisible();
 
+    // Commit is now live (mod_proposal_selection_commit_chord) — advertised
+    // AND reachable, with no coming-soon badge.
     const commitRow = page.getByTestId('keymap-help-row-action.commit');
-    await expect(commitRow, 'the commit chord is advertised even though deferred').toBeVisible();
-    await expect(commitRow).toHaveAttribute('data-keymap-entry-reachable', 'false');
-    await expect(page.getByTestId('keymap-help-coming-soon-action.commit')).toBeVisible();
+    await expect(commitRow, 'the commit chord is advertised').toBeVisible();
+    await expect(commitRow).toHaveAttribute('data-keymap-entry-reachable', 'true');
+    await expect(page.getByTestId('keymap-help-coming-soon-action.commit')).toHaveCount(0);
+
+    // The mode-entry chords stay deferred — they keep the dimmed /
+    // coming-soon rendering covered.
+    const decomposeRow = page.getByTestId('keymap-help-row-mode.decompose');
+    await expect(decomposeRow).toBeVisible();
+    await expect(decomposeRow).toHaveAttribute('data-keymap-entry-reachable', 'false');
+    await expect(page.getByTestId('keymap-help-coming-soon-mode.decompose')).toBeVisible();
   });
 
   test('Test 4 — Escape closes the overlay', async ({ page }) => {

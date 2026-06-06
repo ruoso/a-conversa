@@ -115,14 +115,14 @@ const actionShortcuts: readonly GlobalShortcut[] = [
     reachable: true,
   },
   {
-    // Commit — registered but deferred (Decision §5). The live binding
-    // and the proposal-selection model it requires land in
-    // `mod_proposal_selection_commit_chord`.
+    // Commit — live (mod_proposal_selection_commit_chord). Bound in
+    // `useGlobalKeymap` via the `useProposalCommitChord()` bridge; commits
+    // the currently-selected pending proposal when its gate is open.
     id: 'action.commit',
     category: 'action',
     chord: { key: 'enter', platformModifier: true, shift: true },
     labelKey: 'moderator.commitButton.label',
-    reachable: false,
+    reachable: true,
   },
 ];
 

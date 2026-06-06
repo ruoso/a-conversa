@@ -86,14 +86,21 @@ describe('KeymapHelpOverlay', () => {
 
   it('(c) reachable: false rows are dimmed with a coming-soon badge; reachable: true rows are not', () => {
     render(<KeymapHelpOverlay />);
-    const commitRow = document.querySelector('[data-testid="keymap-help-row-action.commit"]');
-    expect(commitRow?.getAttribute('data-keymap-entry-reachable')).toBe('false');
-    expect(
-      document.querySelector('[data-testid="keymap-help-coming-soon-action.commit"]'),
-    ).not.toBeNull();
-
+    // The mode-entry chords remain unreachable (declared for the overlay
+    // but not yet bound) — they are the dimmed / coming-soon exemplar.
     const decomposeRow = document.querySelector('[data-testid="keymap-help-row-mode.decompose"]');
     expect(decomposeRow?.getAttribute('data-keymap-entry-reachable')).toBe('false');
+    expect(
+      document.querySelector('[data-testid="keymap-help-coming-soon-mode.decompose"]'),
+    ).not.toBeNull();
+
+    // Commit is now reachable (mod_proposal_selection_commit_chord shipped
+    // the proposal-selection model + the live binding) — NOT dimmed.
+    const commitRow = document.querySelector('[data-testid="keymap-help-row-action.commit"]');
+    expect(commitRow?.getAttribute('data-keymap-entry-reachable')).toBe('true');
+    expect(
+      document.querySelector('[data-testid="keymap-help-coming-soon-action.commit"]'),
+    ).toBeNull();
 
     const snapshotRow = document.querySelector('[data-testid="keymap-help-row-action.snapshot"]');
     expect(snapshotRow?.getAttribute('data-keymap-entry-reachable')).toBe('true');

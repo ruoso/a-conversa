@@ -15,11 +15,14 @@
 // cross-cutting, document-scoped action chords.
 //   - Snapshot (`Cmd/Ctrl+S`) — bound here.
 //   - Propose (`Cmd/Ctrl+Enter`) — NOT bound here; stays textarea-owned
-//     in `CaptureTextInput` (you must be composing to propose).
-//   - Commit (`Cmd/Ctrl+Shift+Enter`) — registered in `GLOBAL_KEYMAP`
-//     but NOT handled here; deferred to
-//     `mod_proposal_selection_commit_chord`, which adds the
-//     proposal-selection model and plugs its handler into this seam.
+//     in `CaptureTextInput` (you must be composing to propose). Note the
+//     shift-less `Enter` chord is deliberately NOT matched below.
+//   - Commit (`Cmd/Ctrl+Shift+Enter`) — bound here (mod_proposal_selection_commit_chord).
+//     The dispatcher stays context-free: it resolves to
+//     `useCommitChordStore.getState().run?.()`, the imperative callback
+//     the route-mounted `useProposalCommitChord()` bridge registers. The
+//     WsClient-bound commit work lives entirely in that bridge — see
+//     Decision §2.
 //   - Single-letter kind/role/meta-move chords and the mode-aware `Esc`
 //     stay component-owned via `attachCaptureKeymap`.
 //
@@ -38,6 +41,7 @@
 import { useEffect } from 'react';
 
 import { useSnapshotFlowStore } from './useSnapshotFlowStore';
+import { useCommitChordStore } from './useCommitChordStore';
 
 /**
  * Detect whether the current runtime is macOS. Reads
@@ -57,16 +61,16 @@ export function isMacPlatform(): boolean {
 export function useGlobalKeymap(): void {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      // --- Snapshot (Cmd/Ctrl+S) -------------------------------------
+      // --- Shared action-chord discipline ----------------------------
 
       // 1. Repeat-skip: auto-repeat from a held key is not a deliberate
-      // gesture; the modal opens once per physical press.
+      // gesture; each action chord fires once per physical press.
       if (event.repeat) return;
 
       // 2. Modifier-required: macOS uses Cmd (`metaKey`); other
-      // platforms use Ctrl (`ctrlKey`). Shift is permitted (caps-lock
-      // equivalent); `altKey` is rejected so it does not eat
-      // accelerator chords the host browser may bind.
+      // platforms use Ctrl (`ctrlKey`). Shift is per-chord (snapshot
+      // allows it, commit requires it); `altKey` is rejected so it does
+      // not eat accelerator chords the host browser may bind.
       if (event.altKey) return;
       const isMac = isMacPlatform();
       const hasRequiredModifier = isMac ? event.metaKey : event.ctrlKey;
@@ -80,19 +84,32 @@ export function useGlobalKeymap(): void {
         if (event.metaKey) return;
       }
 
-      // 3. Case-insensitive key match — under shift `event.key` is
-      // `'S'`; the lowercase form resolves identically.
-      if (event.key.toLowerCase() !== 's') return;
+      // Case-insensitive key match — under shift `event.key` is `'S'` /
+      // `'Enter'`; the lowercase form resolves identically.
+      const key = event.key.toLowerCase();
 
-      // Match — swallow the browser save dialog and open the flow.
-      event.preventDefault();
-      useSnapshotFlowStore.getState().open();
+      // --- Snapshot (Cmd/Ctrl+S) -------------------------------------
+      // Shift is permitted (caps-lock equivalent); it is not required.
+      if (key === 's') {
+        // Match — swallow the browser save dialog and open the flow.
+        event.preventDefault();
+        useSnapshotFlowStore.getState().open();
+        return;
+      }
 
-      // NOTE: the commit chord (`Cmd/Ctrl+Shift+Enter`) plugs in here
-      // once `mod_proposal_selection_commit_chord` ships the
-      // proposal-selection model. It is intentionally absent today
-      // (Decision §5) — no global commit handler with no defensible
-      // target.
+      // --- Commit (Cmd/Ctrl+Shift+Enter) -----------------------------
+      // Shift is REQUIRED — this distinguishes the commit chord from the
+      // shift-less propose chord (`Cmd/Ctrl+Enter`), which stays
+      // textarea-owned and is intentionally NOT matched here. The
+      // dispatcher stays context-free: it invokes the imperative
+      // callback the `useProposalCommitChord()` bridge registered. When
+      // no bridge is mounted (`run === null`), the optional-chaining
+      // call is a safe no-op.
+      if (key === 'enter' && event.shiftKey) {
+        event.preventDefault();
+        useCommitChordStore.getState().run?.();
+        return;
+      }
     }
 
     document.addEventListener('keydown', onKeyDown);

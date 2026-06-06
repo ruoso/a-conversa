@@ -267,6 +267,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: review the `moderator.globalKeymap.escLabel` entry in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
 
+### 2026-06-06 — Arrow-key roving focus across pending-proposal rows
+
+- **Source**: closer for `moderator_ui.mod_keyboard_shortcuts.mod_proposal_selection_commit_chord` (Decision §5).
+- **Question**: should arrow-up / arrow-down navigate the selection across pending-proposal rows (roving focus) so the moderator can cycle through proposals entirely from the keyboard, without a mouse click to select?
+- **Why parked**: click-to-select plus the commit chord is a complete, shippable keyboard loop and is exactly what the task scoped. Arrow-key navigation is a separable UX enhancement; Decision §5 explicitly rejected it in this leaf as widening scope past the 1.5d estimate, and the refinement directs it to the parking lot rather than the WBS.
+- **Suggested resolution**: if the moderator UX warrants a fully mouse-free proposal-review loop, spec a `mod_pending_proposal_row_roving_focus` task covering arrow-key `roving tabindex` on `PendingProposalsPane` rows, updated keyboard tests, and Playwright cover.
+
 ### 2026-06-06 — i18n native review — moderator.globalKeymap.helpLabel + moderator.keymapHelp.* (pt-BR, es-419)
 
 - **Source**: closer for `moderator_ui.mod_keyboard_shortcuts.mod_keymap_help_overlay` (refinement Acceptance §i18n discipline; implementer return summary).

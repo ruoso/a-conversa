@@ -90,9 +90,17 @@ describe('GLOBAL_KEYMAP — expected action / navigation ids (b)', () => {
     expect(byId.get('action.propose')?.reachable).toBe(true);
   });
 
-  it('commit is present and NOT reachable (deferred)', () => {
+  it('commit is present and reachable (mod_proposal_selection_commit_chord)', () => {
     expect(byId.has('action.commit')).toBe(true);
-    expect(byId.get('action.commit')?.reachable).toBe(false);
+    expect(byId.get('action.commit')?.reachable).toBe(true);
+    // The chord, labelKey, and category are unchanged by the reachability
+    // flip — only the live binding landed.
+    expect(byId.get('action.commit')?.chord).toEqual({
+      key: 'enter',
+      platformModifier: true,
+      shift: true,
+    });
+    expect(byId.get('action.commit')?.labelKey).toBe('moderator.commitButton.label');
   });
 
   it('esc is present and reachable', () => {

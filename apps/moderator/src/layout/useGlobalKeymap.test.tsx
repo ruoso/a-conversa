@@ -16,16 +16,21 @@
 //   (g) the listener detaches on unmount,
 //   (h) editable-target focus does NOT bail (open() fires even when
 //       an <input> is the active element — universal Cmd+S semantics),
-//   (i) Cmd/Ctrl+Shift+Enter (the deferred commit chord) is a no-op in
-//       this task — the dispatcher has no commit handler yet. This pins
-//       the deferral so `mod_proposal_selection_commit_chord`'s first
-//       commit test fails-first against a real gap.
+//   (i) Cmd/Ctrl+Shift+Enter (the commit chord, now live per
+//       `mod_proposal_selection_commit_chord`):
+//         (i1) invokes the registered `useCommitChordStore` `run`
+//              callback (spy fired, preventDefault called, repeat
+//              ignored);
+//         (i2) is a safe no-op when no `run` is registered (no throw).
+//       The whole suite runs with NO `<WsClientProvider>` — the
+//       dispatcher stays context-free (Decision §2).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { act, type ReactElement } from 'react';
 
 import { resetSnapshotFlowStore, useSnapshotFlowStore } from './useSnapshotFlowStore';
+import { resetCommitChordStore, useCommitChordStore } from './useCommitChordStore';
 import { useGlobalKeymap } from './useGlobalKeymap';
 
 function HookProbe(): ReactElement {
@@ -61,11 +66,13 @@ function dispatchKeyDown(init: KeyboardEventInit): KeyboardEvent {
 
 beforeEach(() => {
   resetSnapshotFlowStore();
+  resetCommitChordStore();
 });
 
 afterEach(() => {
   cleanup();
   resetSnapshotFlowStore();
+  resetCommitChordStore();
 });
 
 describe('useGlobalKeymap — snapshot, macOS branch (Cmd+S)', () => {
@@ -281,33 +288,83 @@ describe('useGlobalKeymap — snapshot open() called once per physical press', (
   });
 });
 
-describe('useGlobalKeymap — commit chord is deferred (i)', () => {
-  // The commit chord (`Cmd/Ctrl+Shift+Enter`) is registered in
-  // GLOBAL_KEYMAP but has NO live handler in this task (Decision §5).
-  // These cases pin the no-op so `mod_proposal_selection_commit_chord`
-  // adds its first commit test against a genuine gap.
-  it('(i-mac) Cmd+Shift+Enter is a no-op — does not open the snapshot flow', () => {
+describe('useGlobalKeymap — commit chord is live (i)', () => {
+  // The commit chord (`Cmd/Ctrl+Shift+Enter`) now resolves to
+  // `useCommitChordStore.getState().run?.()` (Decision §2). The
+  // dispatcher stays context-free — these cases run with NO
+  // `<WsClientProvider>`. The WsClient-bound commit work is the bridge
+  // hook's concern (`useProposalCommitChord.test.tsx`), not this one's.
+
+  it('(i1-mac) Cmd+Shift+Enter invokes the registered run, prevents default, and does NOT open snapshot', () => {
     const restore = stubPlatform('MacIntel');
+    const run = vi.fn();
+    useCommitChordStore.getState().setRun(run);
     render(<HookProbe />);
     let event!: KeyboardEvent;
     act(() => {
       event = dispatchKeyDown({ key: 'Enter', metaKey: true, shiftKey: true });
     });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    // The commit chord must NOT leak into the snapshot branch.
     expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
-    // No handler claims the chord, so it is not prevented either.
-    expect(event.defaultPrevented).toBe(false);
     restore();
   });
 
-  it('(i-other) Ctrl+Shift+Enter is a no-op — does not open the snapshot flow', () => {
+  it('(i1-other) Ctrl+Shift+Enter invokes the registered run and prevents default', () => {
     const restore = stubPlatform('Win32');
+    const run = vi.fn();
+    useCommitChordStore.getState().setRun(run);
     render(<HookProbe />);
     let event!: KeyboardEvent;
     act(() => {
       event = dispatchKeyDown({ key: 'Enter', ctrlKey: true, shiftKey: true });
     });
-    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    restore();
+  });
+
+  it('(i1-repeat) a held commit chord (event.repeat) does NOT re-fire run', () => {
+    const restore = stubPlatform('Win32');
+    const run = vi.fn();
+    useCommitChordStore.getState().setRun(run);
+    render(<HookProbe />);
+    act(() => {
+      dispatchKeyDown({ key: 'Enter', ctrlKey: true, shiftKey: true, repeat: true });
+    });
+    expect(run).not.toHaveBeenCalled();
+    restore();
+  });
+
+  it('(i1-no-shift) Cmd/Ctrl+Enter WITHOUT shift (the propose chord) is NOT claimed by the dispatcher', () => {
+    const restore = stubPlatform('Win32');
+    const run = vi.fn();
+    useCommitChordStore.getState().setRun(run);
+    render(<HookProbe />);
+    let event!: KeyboardEvent;
+    act(() => {
+      event = dispatchKeyDown({ key: 'Enter', ctrlKey: true });
+    });
+    expect(run).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+    restore();
+  });
+
+  it('(i2) with no run registered the commit chord is a safe no-op (no throw)', () => {
+    const restore = stubPlatform('Win32');
+    // No setRun — `run` is null.
+    expect(useCommitChordStore.getState().run).toBeNull();
+    render(<HookProbe />);
+    let event!: KeyboardEvent;
+    expect(() => {
+      act(() => {
+        event = dispatchKeyDown({ key: 'Enter', ctrlKey: true, shiftKey: true });
+      });
+    }).not.toThrow();
+    // The chord still matched and was swallowed (preventDefault) even
+    // though there was nothing to run.
+    expect(event.defaultPrevented).toBe(true);
     restore();
   });
 });

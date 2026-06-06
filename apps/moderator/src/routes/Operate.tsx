@@ -101,6 +101,7 @@ import { SnapshotLabelInputMount } from '../layout/SnapshotLabelInputMount';
 import { KeymapHelpButton } from '../layout/KeymapHelpButton';
 import { KeymapHelpMount } from '../layout/KeymapHelpMount';
 import { useGlobalKeymap } from '../layout/useGlobalKeymap';
+import { useProposalCommitChord } from '../layout/useProposalCommitChord';
 import { useKeymapHelpShortcut } from '../layout/useKeymapHelpShortcut';
 import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
 import { useCaptureStore } from '../stores/captureStore';
@@ -156,6 +157,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // the moderator is on the operate page and reflects the snapshot
   // trigger flag onto the layout root as a stable Playwright seam.
   useGlobalKeymap();
+  // Commit-chord bridge — mount once INSIDE `<WsClientProvider>` so it can
+  // capture the context-only `WsClient` and register the imperative
+  // commit-the-selected-proposal callback the document-level dispatcher
+  // invokes on `Cmd/Ctrl+Shift+Enter` (mod_proposal_selection_commit_chord
+  // Decision §2).
+  useProposalCommitChord();
   // Keymap-help overlay — mount the bare-`?` toggle hook at route scope
   // (mod_keymap_help_overlay). A NAVIGATION chord with an editable-
   // target bail (the opposite contract from `useGlobalKeymap`), so it

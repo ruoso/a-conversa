@@ -50,7 +50,7 @@
 // happens on each `applyEvent` write (the WS writer creates a new
 // array via `[...session.events, event]`).
 
-import { useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
@@ -61,12 +61,11 @@ import {
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
 import {
-  buildFacetStatusIndexFromBroadcast,
-  computeFacetStatuses,
   projectVotesByFacet,
   type FacetStatusIndex,
   type VotesByFacetIndex,
 } from '@a-conversa/shell';
+import { deriveFacetStatusIndex } from '../graph/facetStatusIndex';
 import { projectVotesByProposal } from '../graph/selectors';
 import {
   deriveAllAgree,
@@ -84,6 +83,7 @@ import {
 import { summaryText } from '../graph/proposalSummary';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 import { useCommitAction, type UseCommitActionArgs } from './useCommitAction';
+import { useSelectedProposalStore } from '../stores/selectedProposalStore';
 import { useMarkMetaDisagreementAction } from './useMarkMetaDisagreementAction';
 import { useWithdrawProposalAction } from './useWithdrawProposalAction';
 import { useAuth } from '@a-conversa/shell';
@@ -137,7 +137,14 @@ const FILTER_CHIP_ACTIVE_CLASSES = 'border-slate-700 bg-slate-700 text-white';
 // Per `mod_per_facet_breakdown` Decision §2 / Constraints, the row
 // grew from a single-line flex container to a two-line stack: the
 // header keeps its one-line shape; the breakdown sits below it.
-const ROW_CLASSES = 'flex flex-col gap-1 rounded border border-slate-200 bg-white px-2 py-1';
+const ROW_CLASSES =
+  'flex cursor-pointer flex-col gap-1 rounded border border-slate-200 bg-white px-2 py-1';
+// Per `mod_proposal_selection_commit_chord` Decision §4 — the
+// "focus mode" selection ring. The selected row is the target the
+// `Cmd/Ctrl+Shift+Enter` commit chord will act on, so it gets an
+// unambiguous sky ring + matching border. WCAG: decorative emphasis only;
+// the commit affordance's own state is still carried by the button.
+const ROW_SELECTED_CLASSES = 'ring-2 ring-sky-500 ring-offset-1 border-sky-500';
 // `flex-wrap`: kind chip + summary + author + timestamp + commit +
 // mark-meta + withdraw is seven items, and the three buttons alone sum
 // wider than the 20rem sidebar. Wrapping pushes the buttons to a new
@@ -191,7 +198,7 @@ const WITHDRAW_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
  * proposal-arm payload's `proposal_id` AND the proposal-arm fallback
  * for sub-kinds that have no facet target.
  */
-function commitTargetForProposal(
+export function commitTargetForProposal(
   proposal: ProposalPayload,
   proposalEventId: string,
 ): UseCommitActionArgs {
@@ -305,6 +312,7 @@ function PendingProposalRow(props: {
   readonly votesByProposalIndex: VotesByProposalIndex;
   readonly currentParticipantIds: ReadonlySet<string>;
   readonly connectionOpen: boolean;
+  readonly isSelected: boolean;
 }): ReactElement {
   const {
     row,
@@ -316,6 +324,7 @@ function PendingProposalRow(props: {
     votesByProposalIndex,
     currentParticipantIds,
     connectionOpen,
+    isSelected,
   } = props;
   // The commit-button + tooltip + wire-error region need ICU
   // interpolation; the parent's `t` prop is the narrow
@@ -468,8 +477,16 @@ function PendingProposalRow(props: {
     <li
       data-testid="pending-proposal-row"
       data-proposal-id={row.proposalEventId}
-      className={ROW_CLASSES}
+      data-selected={isSelected ? 'true' : 'false'}
+      className={isSelected ? `${ROW_CLASSES} ${ROW_SELECTED_CLASSES}` : ROW_CLASSES}
       title={summary}
+      // Click the row BODY to make it the "focus" proposal the commit
+      // chord targets (Decision §4). The per-row controls below
+      // `stopPropagation` so committing / withdrawing / marking does not
+      // also re-select. Single-select: this replaces any prior selection.
+      onClick={() => {
+        useSelectedProposalStore.getState().select(row.proposalEventId);
+      }}
     >
       <div className={ROW_HEADER_CLASSES}>
         <span data-testid="pending-proposal-row-kind" className={KIND_CHIP_CLASSES}>
@@ -494,7 +511,8 @@ function PendingProposalRow(props: {
           aria-disabled={commitDisabled}
           aria-label={commitAriaLabel}
           title={commitTitle}
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             void commit();
           }}
           className={COMMIT_BUTTON_CLASSES}
@@ -509,7 +527,8 @@ function PendingProposalRow(props: {
           disabled={markDisabled}
           aria-disabled={markDisabled}
           aria-label={markAriaLabel}
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             void markMetaDisagreement();
           }}
           className={MARK_META_BUTTON_CLASSES}
@@ -525,7 +544,8 @@ function PendingProposalRow(props: {
             disabled={withdrawDisabled}
             aria-disabled={withdrawDisabled}
             aria-label={withdrawAriaLabel}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               void withdraw();
             }}
             className={WITHDRAW_BUTTON_CLASSES}
@@ -632,33 +652,14 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // bypass the server-emit pipe) so facet styling still reflects
   // pending proposals already in the events log. Broadcast wins per
   // `(entityKind, entityId, facet)` cell when both are present.
-  const eventsBasedFacetStatusIndex = useMemo(() => computeFacetStatuses(events ?? []), [events]);
-  const facetStatusIndex = useMemo<FacetStatusIndex>(() => {
-    const broadcastIndex =
-      pendingProposalFacetStatus === undefined || pendingProposalFacetStatus.size === 0
-        ? null
-        : buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus);
-    if (broadcastIndex === null) return eventsBasedFacetStatusIndex;
-    const mergedNodes = new Map(eventsBasedFacetStatusIndex.nodes);
-    for (const [id, cells] of broadcastIndex.nodes) {
-      const existing = mergedNodes.get(id);
-      mergedNodes.set(id, existing ? { ...existing, ...cells } : cells);
-    }
-    const mergedEdges = new Map(eventsBasedFacetStatusIndex.edges);
-    for (const [id, cells] of broadcastIndex.edges) {
-      const existing = mergedEdges.get(id);
-      mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
-    }
-    // The broadcast carries no annotation facets
-    // (`buildFacetStatusIndexFromBroadcast` returns an empty `annotations`
-    // bucket), so the events-derived annotation statuses pass through the
-    // merge unchanged.
-    return {
-      nodes: mergedNodes,
-      edges: mergedEdges,
-      annotations: eventsBasedFacetStatusIndex.annotations,
-    };
-  }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
+  // Shared with the keyboard commit chord (`deriveFacetStatusIndex`) so
+  // the chord's gate input cannot drift from the row button's
+  // (Decision §3). Broadcast wins per cell; the events-derived
+  // annotation statuses pass through unchanged.
+  const facetStatusIndex = useMemo<FacetStatusIndex>(
+    () => deriveFacetStatusIndex(events ?? [], pendingProposalFacetStatus),
+    [events, pendingProposalFacetStatus],
+  );
 
   // Per `mod_vote_indicators_in_sidebar` Decision §3 + §10, the
   // per-(entityId, facet) vote bucket is computed ONCE per pane
@@ -691,6 +692,42 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // uniform `data-commit-gate-reason="session-not-connected"` when the
   // socket is anything other than `'open'`.
   const connectionOpen = useWsStore((state) => state.connectionStatus === 'open');
+
+  // Per `mod_proposal_selection_commit_chord` — the "focus" proposal the
+  // commit chord targets. Read from the module store so the same id is
+  // visible to the route-mounted `useProposalCommitChord()` bridge via
+  // `getState()`. Subscribing here re-renders the pane (and re-styles the
+  // selected row) the instant the selection changes.
+  const selectedProposalId = useSelectedProposalStore((state) => state.selectedProposalId);
+
+  // Selection is a model, not a view artifact (Constraints): a selected
+  // id that has left the DERIVED pending list (committed / withdrawn /
+  // superseded) is cleared so the chord can never fire against a stale
+  // target. Keyed on the unfiltered `rows` so filtering / scrolling — a
+  // pure view concern — never clears the selection.
+  useEffect(() => {
+    if (
+      selectedProposalId !== null &&
+      !rows.some((row) => row.proposalEventId === selectedProposalId)
+    ) {
+      useSelectedProposalStore.getState().clear();
+    }
+  }, [rows, selectedProposalId]);
+
+  // `Esc` clears the selection (Decision §4 / Constraints). A bare-key
+  // document listener — additive to the mode-aware `Esc` in
+  // `captureKeymap` (deselecting and exiting a mode do not conflict).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        useSelectedProposalStore.getState().clear();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   // Per `mod_proposal_filter_search` Decision §5 — two local-component
   // state cells driving the filter strip. No Zustand slice, no URL
@@ -813,6 +850,15 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
       data-testid="pending-proposals-pane"
       aria-label={paneAriaLabel}
       className={PANE_CONTAINER_CLASSES}
+      // A click on the pane BACKGROUND (not on a row or a control —
+      // `e.target === e.currentTarget`) clears the selection (Decision §4).
+      // Row clicks bubble with `e.target` set to the row, so they select
+      // rather than clear.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          useSelectedProposalStore.getState().clear();
+        }
+      }}
     >
       {filterStrip}
       {showDefaultEmpty ? (
@@ -839,6 +885,7 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
               votesByProposalIndex={votesByProposalIndex}
               currentParticipantIds={currentParticipantIds}
               connectionOpen={connectionOpen}
+              isSelected={row.proposalEventId === selectedProposalId}
             />
           ))}
         </ol>

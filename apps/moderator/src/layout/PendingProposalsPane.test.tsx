@@ -35,6 +35,10 @@ import { PendingProposalsPane } from './PendingProposalsPane';
 import { createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { resetCommitStore, useCommitStore } from './useCommitAction';
+import {
+  resetSelectedProposalStore,
+  useSelectedProposalStore,
+} from '../stores/selectedProposalStore';
 import { resetWithdrawProposalStore } from './useWithdrawProposalAction';
 import { AuthValueProvider, WsClientProvider } from '@a-conversa/shell';
 import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
@@ -189,12 +193,14 @@ beforeEach(async () => {
   useWsStore.getState().reset();
   resetCommitStore();
   resetWithdrawProposalStore();
+  resetSelectedProposalStore();
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 
 afterEach(() => {
   cleanup();
+  resetSelectedProposalStore();
 });
 
 describe('PendingProposalsPane — empty state', () => {
@@ -1445,5 +1451,148 @@ describe('PendingProposalsPane — commit button per row', () => {
     const button = screen.getByTestId('commit-button');
     expect(button.getAttribute('data-commit-state')).toBe('disabled');
     expect(button.getAttribute('data-commit-gate-reason')).toBe('proposal-meta-disagreement');
+  });
+});
+
+// Per `mod_proposal_selection_commit_chord` — the row-selection
+// affordance that feeds the commit chord its target (Decision §4):
+//   - clicking the row body sets `selectedProposalId` + `data-selected`;
+//   - clicking the commit button does NOT also toggle selection
+//     (the controls `stopPropagation`);
+//   - a pane-background click and `Esc` clear the selection;
+//   - a selected id that leaves the derived pending list is cleared.
+describe('PendingProposalsPane — row selection', () => {
+  const SEL_DEBATER_A = '00000000-0000-4000-8000-0000000000d1';
+  const SEL_DEBATER_B = '00000000-0000-4000-8000-0000000000d2';
+
+  function selJoinedEvent(seq: number, userId: string, role: 'debater-A' | 'debater-B'): Event {
+    return {
+      id: envId('j', seq),
+      sessionId: SESSION,
+      sequence: seq,
+      kind: 'participant-joined',
+      actor: userId,
+      payload: {
+        user_id: userId,
+        role,
+        screen_name: `User-${role}`,
+        joined_at: '2026-05-16T00:00:00.000Z',
+      },
+      createdAt: '2026-05-16T00:00:00.000Z',
+    };
+  }
+
+  function selVoteEvent(seq: number, participant: string): Event {
+    return {
+      id: envId('v', seq),
+      sessionId: SESSION,
+      sequence: seq,
+      kind: 'vote',
+      actor: participant,
+      payload: {
+        target: 'proposal' as const,
+        proposal_id: PROPOSAL_P,
+        participant,
+        choice: 'agree' as const,
+        voted_at: '2026-05-16T00:01:05.000Z',
+      },
+      createdAt: '2026-05-16T00:01:05.000Z',
+    };
+  }
+
+  function seedAllAgreeRow(): void {
+    useWsStore.getState().setConnectionStatus('open');
+    useWsStore.getState().applyEvent(selJoinedEvent(1, SEL_DEBATER_A, 'debater-A'));
+    useWsStore.getState().applyEvent(selJoinedEvent(2, SEL_DEBATER_B, 'debater-B'));
+    useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+    useWsStore.getState().applyEvent(selVoteEvent(4, SEL_DEBATER_A));
+    useWsStore.getState().applyEvent(selVoteEvent(5, SEL_DEBATER_B));
+  }
+
+  it('clicking the row body selects it — sets selectedProposalId + data-selected="true"', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    renderPane();
+    const row = screen.getByTestId('pending-proposal-row');
+    expect(row.getAttribute('data-selected')).toBe('false');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('pending-proposal-row-summary'));
+    });
+
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBe(PROPOSAL_P);
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('true');
+  });
+
+  it('clicking the commit button does NOT toggle selection (controls stopPropagation)', () => {
+    act(() => {
+      seedAllAgreeRow();
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    // Sanity — the button is enabled so its click handler is live (a
+    // disabled button would not bubble at all, weakening the assertion).
+    expect(button.getAttribute('data-commit-state')).toBe('enabled');
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBeNull();
+
+    act(() => {
+      button.click();
+    });
+
+    // The button's commit fired, but the row was NOT selected — the
+    // `stopPropagation` kept the click from reaching the row-body handler.
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBeNull();
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('false');
+  });
+
+  it('a pane-background click clears the selection', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useSelectedProposalStore.getState().select(PROPOSAL_P);
+    });
+    renderPane();
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('true');
+
+    act(() => {
+      // Click the pane container directly — `e.target === e.currentTarget`.
+      fireEvent.click(screen.getByTestId('pending-proposals-pane'));
+    });
+
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBeNull();
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('false');
+  });
+
+  it('Esc clears the selection', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useSelectedProposalStore.getState().select(PROPOSAL_P);
+    });
+    renderPane();
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('true');
+
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBeNull();
+    expect(screen.getByTestId('pending-proposal-row').getAttribute('data-selected')).toBe('false');
+  });
+
+  it('a selected id that leaves the derived pending list is cleared', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useSelectedProposalStore.getState().select(PROPOSAL_P);
+    });
+    renderPane();
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBe(PROPOSAL_P);
+
+    // The proposal commits → it leaves the derived pending list. The
+    // pane's effect clears the now-stale selection.
+    act(() => {
+      useWsStore.getState().applyEvent(commitEvent(2, PROPOSAL_P));
+    });
+
+    expect(useSelectedProposalStore.getState().selectedProposalId).toBeNull();
   });
 });

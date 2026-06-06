@@ -42,7 +42,7 @@ import { create } from 'zustand';
 
 import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
-import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
+import { WsRequestError, WsRequestTimeoutError, type WsClient } from '@a-conversa/shell';
 import type { FacetName } from '@a-conversa/shared-types';
 
 /**
@@ -196,6 +196,85 @@ function slotKey(args: UseCommitActionArgs): string {
 }
 
 /**
+ * Shared commit-dispatch core — the envelope-shaping + per-slot in-flight
+ * (`useCommitStore`) body, extracted from `useCommitAction.commit()` so
+ * the row button AND the keyboard commit chord
+ * (`useProposalCommitChord`) drive the IDENTICAL path: same
+ * `target`-armed envelope (ADR 0030), same in-flight slot keying (a
+ * chord + a button press for the same target de-duplicate rather than
+ * double-send). Pure of React — `timeoutText` is pre-resolved by the
+ * caller so this function stays renderless and easy to test (mirrors the
+ * existing `toWireError(err, timeoutText)` discipline).
+ *
+ * The in-flight guard, the `expectedSequence` read, and the
+ * success/error transitions are byte-for-byte the prior `commit()` body;
+ * only their home moved.
+ *
+ * @param client The WS client (`useWsClient()`'s value at the call site).
+ * @param sessionId The route session id.
+ * @param target The facet OR proposal commit target.
+ * @param timeoutText Pre-localized fallback for the timeout wire error.
+ */
+export async function sendCommit(
+  client: WsClient,
+  sessionId: string,
+  target: UseCommitActionArgs,
+  timeoutText: string,
+): Promise<void> {
+  const slot = slotKey(target);
+
+  // In-flight guard — a concurrent trigger (a second click, or a chord
+  // racing a click) while the prior round-trip is still in flight is a
+  // no-op. Mirrors `useVoteAction`'s gate.
+  if (useCommitStore.getState().committing.has(slot)) {
+    return;
+  }
+
+  // Flip in-flight + clear any prior error for this slot. The order
+  // matters: the button's `data-commit-state` transitions to
+  // `"in-flight"` before the WS send fires.
+  const store = useCommitStore.getState();
+  store.setCommitting(slot, true);
+  store.setError(slot, undefined);
+
+  try {
+    // Build the canonical `commit` payload. The wire shape is a
+    // `target`-discriminated union per ADR 0030 §2 + §9; the facet arm
+    // carries the `(entity_kind, entity_id, facet)` triple, the proposal
+    // arm carries the proposal id.
+    const expectedSequence =
+      useWsStore.getState().sessionState[sessionId]?.lastAppliedSequence ?? 0;
+    if (isFacetArgs(target)) {
+      await client.send('commit', {
+        sessionId,
+        expectedSequence,
+        target: 'facet',
+        entity_kind: target.entity_kind,
+        entity_id: target.entity_id,
+        facet: target.facet,
+      });
+    } else {
+      await client.send('commit', {
+        sessionId,
+        expectedSequence,
+        target: 'proposal',
+        proposalId: target.proposal_id,
+      });
+    }
+
+    // Success — the broadcast `commit` event has arrived, the pane
+    // re-renders without the row. Clear the in-flight slot.
+    useCommitStore.getState().setCommitting(slot, false);
+  } catch (err) {
+    // Failure — the proposal is still pending on the server. Clear
+    // in-flight; surface the wire error inline for the row to render.
+    const store2 = useCommitStore.getState();
+    store2.setCommitting(slot, false);
+    store2.setError(slot, toWireError(err, timeoutText));
+  }
+}
+
+/**
  * The per-target commit-action hook. Accepts a facet target OR a
  * proposal target; returns the imperative `commit()` callback +
  * observable `inFlight` / `lastError` slices.
@@ -223,64 +302,11 @@ export function useCommitAction(args: UseCommitActionArgs): UseCommitActionResul
   const lastError = useCommitStore((s) => s.errors.get(slot));
 
   async function commit(): Promise<void> {
-    // In-flight guard — a concurrent click while the prior round-trip
-    // is still in flight is a no-op. Mirrors `useVoteAction`'s gate.
-    if (useCommitStore.getState().committing.has(slot)) {
-      return;
-    }
-
-    // Flip in-flight + clear any prior error for this slot. The order
-    // matters: the button's `data-commit-state` transitions to
-    // `"in-flight"` before the WS send fires, so a test that asserts
-    // the in-flight visual immediately after the click observes the
-    // post-flip state.
-    const store = useCommitStore.getState();
-    store.setCommitting(slot, true);
-    store.setError(slot, undefined);
-
-    try {
-      // Build the canonical `commit` payload. The wire shape is a
-      // `target`-discriminated union per ADR 0030 §2 + §9; the facet
-      // arm carries the `(entity_kind, entity_id, facet)` triple, the
-      // proposal arm carries the proposal id.
-      const expectedSequence =
-        useWsStore.getState().sessionState[sessionId]?.lastAppliedSequence ?? 0;
-      if (isFacetArgs(args)) {
-        await client.send('commit', {
-          sessionId,
-          expectedSequence,
-          target: 'facet',
-          entity_kind: args.entity_kind,
-          entity_id: args.entity_id,
-          facet: args.facet,
-        });
-      } else {
-        await client.send('commit', {
-          sessionId,
-          expectedSequence,
-          target: 'proposal',
-          proposalId: args.proposal_id,
-        });
-      }
-
-      // Success — the broadcast `commit` event has arrived (the server
-      // broadcasts BEFORE replying the ack per ws_commit_message.md
-      // Decisions), `derivePendingProposals` filters out the row, and
-      // the pane re-renders without it. Remove slot from the in-flight
-      // set; the row is gone so the in-flight signal is moot but
-      // cleanup keeps the store tidy.
-      useCommitStore.getState().setCommitting(slot, false);
-    } catch (err) {
-      // Failure — the proposal is still pending on the server (the
-      // engine rejected, or the request timed out). Remove slot from
-      // in-flight; surface the wire error inline. The row stays in
-      // the pane; the moderator can retry by re-clicking (which also
-      // clears the error before the next attempt).
-      const timeoutText = t('moderator.commitButton.timeoutError');
-      const store2 = useCommitStore.getState();
-      store2.setCommitting(slot, false);
-      store2.setError(slot, toWireError(err, timeoutText));
-    }
+    // Delegate to the shared dispatch core — same path the keyboard
+    // commit chord drives. `timeoutText` is pre-resolved here (inside
+    // render) so the core stays React-free.
+    const timeoutText = t('moderator.commitButton.timeoutError');
+    await sendCommit(client, sessionId, args, timeoutText);
   }
 
   return {
