@@ -206,13 +206,18 @@ export interface ComponentSlot {
  * (the caller translates each component so its current bounding-box
  * top-left lands on the returned slot).
  *
- * Algorithm: next-fit-decreasing-height shelf packing. Boxes are placed
- * tallest-first into left-to-right rows; a row wraps when the next box
- * would exceed a target row width chosen so the overall packed box
- * approximates `targetAspect`. The tallest-first order plus a
- * size-then-index tiebreak keeps the packing a pure function of the
- * component sizes — same graph, same layout — preserving the determinism
- * `selectDeterministicRoots` already gives the per-component passes.
+ * Algorithm: next-fit-decreasing-height shelf packing — boxes placed
+ * tallest-first into left-to-right rows, a row wrapping when the next box
+ * would exceed the row width. The row width is what sets the arrangement's
+ * aspect (a wider row fits more side-by-side = fewer, wider rows; a
+ * narrower one stacks them = more, taller rows). Rather than estimate one
+ * width from the packed AREA — which underestimates badly for wide-but-
+ * short boxes and strings components down the page when there's
+ * horizontal room — we evaluate the candidate widths at which the row
+ * composition changes and keep the arrangement whose bounding-box aspect
+ * is closest (in log-ratio) to `targetAspect`. The tallest-first order +
+ * size/index tiebreak keep it a pure function of the component sizes,
+ * preserving determinism.
  */
 export function packComponentBoxes(
   sizes: readonly ComponentSize[],
@@ -223,38 +228,64 @@ export function packComponentBoxes(
     options?.targetAspect !== undefined && options.targetAspect > 0
       ? options.targetAspect
       : DEFAULT_PACK_ASPECT;
-  const slots: ComponentSlot[] = new Array<ComponentSlot>(sizes.length);
-  if (sizes.length === 0) return slots;
-
-  let totalArea = 0;
-  let maxWidth = 0;
-  for (const size of sizes) {
-    totalArea += size.w * size.h;
-    if (size.w > maxWidth) maxWidth = size.w;
-  }
-  // Width of a box with the packed area and the target aspect:
-  // `w = sqrt(area * aspect)`. Never narrower than the widest component,
-  // so a single oversized component never forces an impossible row.
-  const targetRowWidth = Math.max(maxWidth, Math.sqrt(totalArea * targetAspect));
+  if (sizes.length === 0) return [];
+  if (sizes.length === 1) return [{ x: 0, y: 0 }];
 
   const order = sizes
     .map((size, index) => ({ size, index }))
     .sort((a, b) => b.size.h - a.size.h || b.size.w - a.size.w || a.index - b.index);
 
+  // Candidate row widths: the cumulative widths in pack order span the
+  // arrangements from "one box per row" up to "all in a single row" — the
+  // composition only changes at these thresholds.
+  const candidateWidths = new Set<number>();
+  let cumulative = 0;
+  for (let i = 0; i < order.length; i++) {
+    const entry = order[i];
+    if (entry === undefined) continue;
+    cumulative += (i > 0 ? spacing : 0) + entry.size.w;
+    candidateWidths.add(cumulative);
+  }
+
+  let best: { slots: ComponentSlot[]; score: number; rowWidth: number } | null = null;
+  for (const rowWidth of candidateWidths) {
+    const packed = shelfPack(order, rowWidth, spacing);
+    const aspect = packed.height > 0 ? packed.width / packed.height : Number.POSITIVE_INFINITY;
+    const score = Math.abs(Math.log(aspect) - Math.log(targetAspect));
+    // On a score tie prefer the WIDER row (fewer, wider rows) so a wide
+    // screen fills horizontally rather than stacking.
+    if (best === null || score < best.score || (score === best.score && rowWidth > best.rowWidth)) {
+      best = { slots: packed.slots, score, rowWidth };
+    }
+  }
+  return best === null ? [] : best.slots;
+}
+
+/** One next-fit-decreasing-height shelf pass at a fixed row width;
+ * returns the per-box slots (input order) plus the packed bounding size. */
+function shelfPack(
+  order: ReadonlyArray<{ readonly size: ComponentSize; readonly index: number }>,
+  rowWidth: number,
+  spacing: number,
+): { slots: ComponentSlot[]; width: number; height: number } {
+  const slots: ComponentSlot[] = new Array<ComponentSlot>(order.length);
   let cursorX = 0;
   let cursorY = 0;
   let rowHeight = 0;
+  let maxRight = 0;
   for (const { size, index } of order) {
-    if (cursorX > 0 && cursorX + size.w > targetRowWidth) {
+    if (cursorX > 0 && cursorX + size.w > rowWidth) {
       cursorX = 0;
       cursorY += rowHeight + spacing;
       rowHeight = 0;
     }
     slots[index] = { x: cursorX, y: cursorY };
-    cursorX += size.w + spacing;
+    const right = cursorX + size.w;
+    if (right > maxRight) maxRight = right;
+    cursorX = right + spacing;
     if (size.h > rowHeight) rowHeight = size.h;
   }
-  return slots;
+  return { slots, width: maxRight, height: cursorY + rowHeight };
 }
 
 /**

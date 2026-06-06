@@ -258,4 +258,29 @@ describe('packComponentBoxes', () => {
     expect(slots[0]).toEqual({ x: 0, y: 0 });
     expect(slots[1]).toEqual({ x: 100 + COMPONENT_SPACING, y: 0 });
   });
+
+  it('(18) packs wide-but-short components horizontally on a wide target, not stacked vertically', () => {
+    // Regression for the area-based row-width heuristic: wide-but-short
+    // boxes have small total area, so `sqrt(area * aspect)` under-sized
+    // the row and stacked them one-per-row even with horizontal room.
+    const sizes: ComponentSize[] = Array.from({ length: 4 }, () => ({ w: 400, h: 100 }));
+    const slots = packComponentBoxes(sizes, { spacing: 80, targetAspect: 1.875 });
+
+    // Not one-per-row: at least one row holds 2+ components (shared y).
+    const distinctRows = new Set(slots.map((s) => s.y)).size;
+    expect(distinctRows).toBeLessThan(sizes.length);
+
+    // The packed bounding box reads landscape (wider than tall), tracking
+    // the landscape target instead of stringing down the page.
+    let right = 0;
+    let bottom = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      const size = sizes[i];
+      const slot = slots[i];
+      if (size === undefined || slot === undefined) throw new Error('missing size/slot');
+      right = Math.max(right, slot.x + size.w);
+      bottom = Math.max(bottom, slot.y + size.h);
+    }
+    expect(right).toBeGreaterThan(bottom);
+  });
 });
