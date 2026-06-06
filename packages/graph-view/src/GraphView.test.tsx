@@ -719,6 +719,55 @@ describe('<GraphView>', () => {
     expect(captured.roots).toEqual([NODE_A]);
   });
 
+  it('(p2) runs a `breadthfirst` layout pass when a NEW edge arrives between two already-placed nodes', () => {
+    // A new node OR a new edge is a "new element" and re-tidies the
+    // graph. An `edge-created` between two existing nodes introduces no
+    // new node id, so a node-only gate would leave the edge routed
+    // across the stale arrangement (overlapping cards / edges). The
+    // element-sync effect tracks edge ids alongside node ids so the
+    // layout re-runs on the new edge.
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    // Two new-node arrivals → two layout passes so far.
+    expect(spies.layoutRun).toHaveBeenCalledTimes(2);
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    // The new edge triggers a third pass even though no new node landed.
+    expect(spies.layoutRun).toHaveBeenCalledTimes(3);
+    const lastCall = spies.layout.mock.calls.at(-1)?.[0] as BreadthFirstLayoutOptions | undefined;
+    if (lastCall === undefined || lastCall.name !== 'breadthfirst') {
+      throw new Error('expected breadthfirst layout options on the edge-triggered pass');
+    }
+    // With the edge present NODE_B now has an incoming edge, so the
+    // deterministic-roots selection narrows to NODE_A alone.
+    expect(lastCall.roots).toEqual([NODE_A]);
+  });
+
+  it('(p3) does NOT run a layout pass on a property-only re-projection (no new node or edge)', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    expect(spies.layoutRun).toHaveBeenCalledTimes(3);
+    // A classify-node proposal + commit flips NODE_A's kind label but
+    // introduces no new element — the cached positions are reused and no
+    // further layout runs (the camera / arrangement stays stable).
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 5, proposalEnvelopeId: PROPOSAL_A }));
+    expect(spies.layoutRun).toHaveBeenCalledTimes(3);
+  });
+
   // ---------------------------------------------------------------
   // aud_clean_typography — broadcast typography pins on STYLESHEET.
   // ---------------------------------------------------------------

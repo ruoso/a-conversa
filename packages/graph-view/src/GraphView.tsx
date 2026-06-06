@@ -398,6 +398,17 @@ export function GraphView({
   // completes and MUST NOT trigger a re-render — the events memo
   // already drives the re-render cadence.
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
+  // Companion to `knownNodeIdsRef` for edge ids. The layout pass also
+  // fires when a truly-new EDGE arrives — an `edge-created` between two
+  // already-placed nodes (a rebuttal / contradiction between existing
+  // statements) introduces no new node id, so a node-only gate would
+  // leave the new edge routed across the untouched layout, overlapping
+  // the existing cards / edges. Re-tidying on any new element (node OR
+  // edge) keeps the arrangement readable as the graph grows; property-
+  // only re-projections (classification flips, votes, decoration ticks)
+  // still introduce no new id, skip the layout, and reuse the cached
+  // positions verbatim.
+  const knownEdgeIdsRef = useRef<Set<string>>(new Set());
   // Position cache mirrored from the participant's pattern: cache
   // every emitted node's `{x, y}` after each layout pass so cy.json
   // re-applies them on the next tick. The audience baseline has no
@@ -451,6 +462,7 @@ export function GraphView({
       setCyState(null);
       cyRef?.(null);
       knownNodeIdsRef.current = new Set();
+      knownEdgeIdsRef.current = new Set();
       positionCacheRef.current = new Map();
       hasFitOnceRef.current = false;
     };
@@ -499,18 +511,27 @@ export function GraphView({
 
   // Element sync — runs on every events / translation change. Runs
   // a `breadthfirst` layout pass only when at least one truly-new
-  // node id appears; existing-only re-projections (the empty
-  // baseline today, decoration ticks once sibling tasks land) skip
-  // the layout.
+  // ELEMENT (node OR edge) id appears; existing-only re-projections
+  // (decoration ticks, classification flips, vote arrivals) introduce
+  // no new id and skip the layout, preserving the cached positions so
+  // the camera and arrangement stay stable on property-only changes.
   useEffect(() => {
     const cy = cyInstanceRef.current;
     if (cy === null) return;
-    const trulyNewNodeIds: string[] = [];
+    // A new node OR a new edge re-tidies the whole graph. Edges are
+    // tracked alongside nodes (see `knownEdgeIdsRef`) so an
+    // `edge-created` between two already-placed nodes still recomputes
+    // the layout instead of routing the new edge across the stale
+    // arrangement.
+    let hasNewElement = false;
     for (const element of elements) {
-      if (element.group !== 'nodes') continue;
       const id = element.data?.id;
       if (typeof id !== 'string') continue;
-      if (!knownNodeIdsRef.current.has(id)) trulyNewNodeIds.push(id);
+      if (element.group === 'nodes') {
+        if (!knownNodeIdsRef.current.has(id)) hasNewElement = true;
+      } else if (element.group === 'edges') {
+        if (!knownEdgeIdsRef.current.has(id)) hasNewElement = true;
+      }
     }
     cy.json({ elements });
     // Skip the layout pass when the canvas has no measurable
@@ -522,13 +543,21 @@ export function GraphView({
     const height = cy.height();
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-    if (cy.elements().length > 0 && viewportReady && trulyNewNodeIds.length > 0) {
+    if (cy.elements().length > 0 && viewportReady && hasNewElement) {
       cy.layout(buildAudienceLayoutOptions(elements)).run();
     }
     cy.nodes().forEach((node) => {
       const position = node.position();
       positionCacheRef.current.set(node.id(), { x: position.x, y: position.y });
       knownNodeIdsRef.current.add(node.id());
+    });
+    // Record every currently-rendered edge id so the NEXT sync tick
+    // treats it as known — a property-only re-projection of the same
+    // edge set then skips the layout, while a fresh `edge-created`
+    // re-tidies. Dangling edges are filtered out of `elements` above, so
+    // `cy.edges()` only carries the edges actually on the canvas.
+    cy.edges().forEach((edge) => {
+      knownEdgeIdsRef.current.add(edge.id());
     });
     // One-shot auto-fit on the first non-empty render. `fit: false` on
     // the layout options keeps subsequent event arrivals from snapping
