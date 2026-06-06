@@ -983,8 +983,9 @@ describe('projectGraph (audience baseline)', () => {
   });
 
   // ---------------------------------------------------------------
-  // aud_decomposition_animation — per-node `decomposed` stamping at
-  // commit of a `decompose` / `interpretive-split` proposal.
+  // Supersession — a committed decompose / interpretive-split (the
+  // parent) or restructure (the old node) OMITS the superseded node
+  // (and any edge touching it) from the emitted graph entirely.
   // ---------------------------------------------------------------
 
   const COMPONENT_X = '00000000-0000-4000-8000-0000000000c1';
@@ -1048,7 +1049,33 @@ describe('projectGraph (audience baseline)', () => {
     };
   }
 
-  it('(dec1) a pending decompose proposal does NOT stamp `decomposed` on the parent', () => {
+  function makeRestructureProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    oldNodeId: string;
+    newNodeId: string;
+    newWording: string;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: {
+          kind: 'edit-wording',
+          edit_kind: 'restructure',
+          node_id: opts.oldNodeId,
+          new_wording: opts.newWording,
+          new_node_id: opts.newNodeId,
+        },
+      },
+      createdAt: '2026-05-29T00:00:00.000Z',
+    };
+  }
+
+  it('(dec1) a pending (uncommitted) decompose leaves the parent in the graph', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
@@ -1064,15 +1091,14 @@ describe('projectGraph (audience baseline)', () => {
       }),
     ];
     const { nodes } = projectGraph(events);
-    const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBeUndefined();
-    const x = nodes.find((n) => n.data.id === COMPONENT_X);
-    const y = nodes.find((n) => n.data.id === COMPONENT_Y);
-    expect(x?.data.decomposed).toBeUndefined();
-    expect(y?.data.decomposed).toBeUndefined();
+    // Supersession only takes effect on COMMIT — the pending proposal
+    // leaves all three nodes in the graph.
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeDefined();
+    expect(nodes.find((n) => n.data.id === COMPONENT_X)).toBeDefined();
+    expect(nodes.find((n) => n.data.id === COMPONENT_Y)).toBeDefined();
   });
 
-  it('(dec2) a committed decompose stamps `decomposed: true` on the parent and preserves its other data', () => {
+  it('(dec2) a committed decompose OMITS the parent and keeps the components', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Parent wording' }),
       makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
@@ -1089,23 +1115,13 @@ describe('projectGraph (audience baseline)', () => {
       makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_DEC_1 }),
     ];
     const { nodes } = projectGraph(events);
-    const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBe(true);
-    // Existing fields preserved across the stamping spread.
-    expect(parent?.data.wording).toBe('Parent wording');
-    expect(parent?.data.kind).toBeNull();
-    expect(parent?.data.facetStatuses).toBeDefined();
-    expect(parent?.data.rollupStatus).toBeDefined();
-    expect(parent?.data.axiomMarks).toEqual([]);
-    expect(parent?.data.annotations).toEqual([]);
-    // Components do NOT carry `decomposed`.
-    const x = nodes.find((n) => n.data.id === COMPONENT_X);
-    const y = nodes.find((n) => n.data.id === COMPONENT_Y);
-    expect(x?.data.decomposed).toBeUndefined();
-    expect(y?.data.decomposed).toBeUndefined();
+    // The superseded parent is gone; the components remain.
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
+    expect(nodes.find((n) => n.data.id === COMPONENT_X)).toBeDefined();
+    expect(nodes.find((n) => n.data.id === COMPONENT_Y)).toBeDefined();
   });
 
-  it('(dec3) a committed interpretive-split stamps `decomposed: true` on the parent', () => {
+  it('(dec3) a committed interpretive-split OMITS the parent', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
@@ -1124,15 +1140,10 @@ describe('projectGraph (audience baseline)', () => {
       makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_SPLIT_1 }),
     ];
     const { nodes } = projectGraph(events);
-    const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBe(true);
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
   });
 
-  it('(dec4) a superseding decompose proposal: first pending, second pending+committed stamps cleanly', () => {
-    // Two decompose proposals fired in sequence (the first is never
-    // committed; the second is). The projector resolves the commit via
-    // the second envelope's id, so `decomposed: true` lands without
-    // `p1` shadowing.
+  it('(dec4) a superseding decompose (first pending, second committed) OMITS the parent', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
@@ -1158,11 +1169,10 @@ describe('projectGraph (audience baseline)', () => {
       makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_DEC_2 }),
     ];
     const { nodes } = projectGraph(events);
-    const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBe(true);
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
   });
 
-  it('(dec5) a commit against a classify-node proposal does NOT stamp `decomposed`', () => {
+  it('(dec5) a commit against a classify-node proposal does NOT omit the node', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeClassifyProposal({
@@ -1175,17 +1185,12 @@ describe('projectGraph (audience baseline)', () => {
     ];
     const { nodes } = projectGraph(events);
     const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBeUndefined();
-    // The existing classify-node arm still fires.
+    // classify-node is not a supersession — the node stays, classified.
+    expect(parent).toBeDefined();
     expect(parent?.data.kind).toBe('fact');
   });
 
-  it('(dec6) a subsequent classify-node commit on a decomposed parent does NOT unset `decomposed`', () => {
-    // The `data.decomposed` flag is monotonic per Decision §2: once
-    // stamped, the projector never unsets it. A later classify-node
-    // commit on the same parent stamps `kind` via the existing arm but
-    // preserves `decomposed: true` through the `{...existing.data}`
-    // spread.
+  it('(dec6) a committed decompose OMITS the parent even if a later classify-node commit targets it', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
@@ -1209,9 +1214,46 @@ describe('projectGraph (audience baseline)', () => {
       makeCommit({ sequence: 7, proposalEnvelopeId: PROPOSAL_A }),
     ];
     const { nodes } = projectGraph(events);
-    const parent = nodes.find((n) => n.data.id === NODE_A);
-    expect(parent?.data.decomposed).toBe(true);
-    expect(parent?.data.kind).toBe('normative');
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
+  });
+
+  it('(dec7) a committed decompose drops edges with the superseded parent as an endpoint', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 4, edgeId: EDGE_A, source: NODE_B, target: NODE_A }),
+      makeDecomposeProposal({
+        sequence: 5,
+        envelopeId: PROPOSAL_DEC_1,
+        parentNodeId: NODE_A,
+        components: [{ nodeId: COMPONENT_X, wording: 'X', classification: 'fact' }],
+      }),
+      makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_DEC_1 }),
+    ];
+    const { nodes, edges } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
+    // The edge into the superseded parent is dropped too.
+    expect(edges.find((e) => e.data.id === EDGE_A)).toBeUndefined();
+    expect(nodes.find((n) => n.data.id === NODE_B)).toBeDefined();
+  });
+
+  it('(dec8) a committed restructure OMITS the old node and keeps the freshly-minted node', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Old wording' }),
+      makeRestructureProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        oldNodeId: NODE_A,
+        newNodeId: NODE_B,
+        newWording: 'Restructured wording',
+      }),
+      makeNodeCreated({ sequence: 3, nodeId: NODE_B, wording: 'Restructured wording' }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeUndefined();
+    expect(nodes.find((n) => n.data.id === NODE_B)).toBeDefined();
   });
 
   it('(j) is invariant under the POSITION of a participant-joined interleaved between node-created and its classify commit', () => {

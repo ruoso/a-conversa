@@ -455,6 +455,16 @@ export function projectGraph(events: readonly Event[]): {
   // `pendingClassifications` above, scoped to the two multi-component
   // sub-kinds. Refinement: aud_decomposition_animation Decision §2.
   const pendingDecompositions = new Map<string, string>();
+  // Restructure edits mint a `new_node_id` (created via its own
+  // `node-created`) and supersede the old node. Track (proposal id →
+  // superseded old node id) so the commit can drop the old node.
+  const pendingRestructures = new Map<string, string>();
+  // Node ids superseded by a COMMITTED decompose / interpretive-split (the
+  // parent) or restructure (the old node). These are omitted from the
+  // emitted graph entirely at the end of the walk — a superseded node is no
+  // longer part of the live argument, and leaving it (even with distinct
+  // formatting) only clutters the read-only surfaces.
+  const supersededNodeIds = new Set<string>();
 
   for (const event of events) {
     if (event.kind === 'node-created') {
@@ -568,6 +578,10 @@ export function projectGraph(events: readonly Event[]): {
         pendingDecompositions.set(event.id, inner.parent_node_id);
       } else if (inner.kind === 'interpretive-split') {
         pendingDecompositions.set(event.id, inner.parent_node_id);
+      } else if (inner.kind === 'edit-wording' && inner.edit_kind === 'restructure') {
+        // Restructure's `node_id` is the OLD node being superseded; the
+        // `new_node_id` replacement arrives via its own `node-created`.
+        pendingRestructures.set(event.id, inner.node_id);
       }
       continue;
     }
@@ -603,22 +617,16 @@ export function projectGraph(events: readonly Event[]): {
         }
         continue;
       }
-      // `decompose` / `interpretive-split` fallback per
-      // `aud_decomposition_animation` Decision §2: stamp
-      // `data.decomposed: true` on the proposal's `parent_node_id`.
-      const decomposeParentId = pendingDecompositions.get(event.payload.proposal_id);
-      if (decomposeParentId !== undefined) {
-        const idx = nodeIndexById.get(decomposeParentId);
-        if (idx !== undefined) {
-          const existing = nodes[idx];
-          if (existing !== undefined) {
-            nodes[idx] = {
-              group: 'nodes',
-              data: { ...existing.data, decomposed: true },
-            };
-          }
-        }
-        continue;
+      // A committed decompose / interpretive-split supersedes the parent
+      // node; a committed restructure supersedes the old node. Record the
+      // superseded id — the node (and any edge touching it) is dropped from
+      // the emitted graph at the end of the walk, rather than lingering as
+      // faded clutter on the read-only surfaces.
+      const supersededId =
+        pendingDecompositions.get(event.payload.proposal_id) ??
+        pendingRestructures.get(event.payload.proposal_id);
+      if (supersededId !== undefined) {
+        supersededNodeIds.add(supersededId);
       }
       continue;
     }
@@ -677,7 +685,19 @@ export function projectGraph(events: readonly Event[]): {
     edges.push(hostEdge);
   }
 
-  return { nodes, edges };
+  if (supersededNodeIds.size === 0) {
+    return { nodes, edges };
+  }
+  // Drop superseded nodes and any edge with a superseded endpoint. The
+  // `<GraphView>` element memo also filters dangling edges, but pruning
+  // here keeps the projection self-consistent for every consumer.
+  return {
+    nodes: nodes.filter((node) => !supersededNodeIds.has(node.data.id)),
+    edges: edges.filter(
+      (edge) =>
+        !supersededNodeIds.has(edge.data.source) && !supersededNodeIds.has(edge.data.target),
+    ),
+  };
 }
 
 /**
