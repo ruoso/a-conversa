@@ -557,12 +557,16 @@ export function GraphView({
     cy.edges().forEach((edge) => {
       knownEdgeIdsRef.current.add(edge.id());
     });
-    // One-shot auto-fit on the first non-empty render. `fit: false` on
-    // the layout options keeps subsequent event arrivals from snapping
-    // the camera; this branch re-centers the camera exactly once so the
-    // graph is visible in the viewport from the first render. The
+    // Auto-fit the camera to the WHOLE graph whenever the structure
+    // grows (and at least once on the first non-empty render). The
+    // layout / packing re-flows on every structural change — components
+    // get repositioned across the canvas — so the camera must re-frame
+    // to keep them all in view; without this the one-shot fit stayed
+    // zoomed on the first component while later components packed off
+    // screen. Pure decoration ticks (no new node/edge) do NOT re-fit, so
+    // the camera holds steady between structural changes. The
     // mount-effect cleanup resets the ref so a re-mount fits again.
-    if (cy.elements().length > 0 && viewportReady && !hasFitOnceRef.current) {
+    if (cy.elements().length > 0 && viewportReady && (structureGrew || !hasFitOnceRef.current)) {
       cy.fit(undefined, PADDING);
       hasFitOnceRef.current = true;
     }

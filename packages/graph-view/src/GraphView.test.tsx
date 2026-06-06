@@ -669,6 +669,19 @@ describe('<GraphView>', () => {
     expect(spies.fit).toHaveBeenCalledWith(undefined, PADDING);
   });
 
+  it('(m2) re-fits the camera on each structural change so all components stay framed', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(spies.fit).toHaveBeenCalledTimes(1);
+    // A second (disconnected) node grows the structure and re-packs the
+    // canvas, so the camera must re-fit to keep the new component in view
+    // — the one-shot fit otherwise stayed zoomed on the first component.
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    expect(spies.fit).toHaveBeenCalledTimes(2);
+  });
+
   it('(n) does NOT call `cy.fit` again on subsequent renders with the same node set', () => {
     const result = renderView();
     const cy = result.getCy();
