@@ -50,4 +50,45 @@ task post_implementation_audits "Post-implementation audits" {
       Source commit: participant_ui.part_entity_detail_panel_annotation_view landing commit.
     ->8-
   }
+
+  task per_facet_step_pill "Render per-node content as HTML (cytoscape-node-html-label): compose the step pill + wording + annotations in one component inside the node box, retire the per-node DOM overlays, and redesign the pill into a per-facet 'next step' indicator (audience + landing, via @a-conversa/graph-view)" {
+    effort 5d
+    allocate team
+    depends audience.aud_graph_rendering.aud_per_facet_visualization
+    note -8<-
+      Refinement: tasks/refinements/post_implementation_audits/per_facet_step_pill.md
+
+      Deferred enhancement, parked here on 2026-06-06 at the maintainer's direction (NOT a
+      gate-not-fired re-defer — a deliberate "do this later" call). Grew in scope during refinement
+      from a pill tweak into a rendering-model change; ADR-level.
+
+      Core change (Decision §0, R: chosen): the read-only graph-view surfaces stop drawing per-node
+      content as a Cytoscape canvas label plus a stack of floating DOM overlays, and instead render
+      each node as ONE HTML component bound to its node via cytoscape-node-html-label. The step pill
+      (header), wording (body), and annotation / axiom-mark badges (footer) compose INSIDE the node
+      box; the plugin owns pan/zoom positioning, so PerFacetPillOverlay + AnnotationOverlay +
+      AxiomMarkOverlay and their renderedBoundingBox anchoring + scale(zoom)/--halo-zoom machinery
+      collapse into the component and are deleted. Needs a new dependency and an ADR (amend ADR 0004,
+      whose Cytoscape-draws-to-canvas posture this refines for these surfaces). Earlier rejections of
+      the plugin (aud_per_facet_visualization §1B; participant part_per_facet_state_styling §6) were
+      made with one overlay feature + a detail-panel fallback; with ~8 overlays + a rich step pill +
+      recurring zoom-scaling maintenance, consolidating to per-node HTML is now the simplifying move.
+
+      Pill redesign (rides on §0): a single content-rich step pill replaces the three name-only
+      <FacetPill> chips — current facet in wording -> classification -> substance order, candidate
+      value (CLASSIFICATION: Fact / SUBSTANCE: Holds), a checkbox per debater (empty / agree /
+      dispute), and a compact settled summary (Fact . Holds check) once all three commit. Data is
+      derivable from the event log via projectVotesByFacet / computeFacetStatuses /
+      deriveSlotOccupants + the projector's classification cache + a new substance cache.
+
+      Serves BOTH the audience broadcast surface and the landing walkthrough from one edit (shared
+      @a-conversa/graph-view per ADR 0039). Shared shell <FacetPill> and the moderator / participant
+      / sidebar surfaces stay unchanged; the interactive moderator stays on ReactFlow.
+
+      Pending (no complete marker) — unimplemented. The refinement carries the full scope, the settled
+      R-decisions (per-node-HTML rendering; debaters-only roster; compact settled summary), and the
+      open questions (ADR scope; transient-halo migration to CSS; per-node-HTML PERFORMANCE at OBS
+      1080p — the main migration risk; node-frame placement; glyph/color; meta-disagreement mid-flow).
+    ->8-
+  }
 }
