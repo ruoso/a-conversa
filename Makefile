@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode _bring-up migrate down down-v logs ps seed unblocked clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate down down-v logs ps seed unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -30,6 +30,10 @@ help:
 	@echo "  make up-prod-mode   like 'make up' but WITHOUT the dev override — boot gates match CI/production"
 	@echo "                      (used by .github/workflows/ci.yml's e2e-playwright job)"
 	@echo "  make up-app         alias for 'make up' (back-compat; the old up/up-app split is gone)"
+	@echo "  make up-backing     bring up ONLY the backing services (postgres + authelia) — no app container"
+	@echo "  make dev-app        build, then run the app on the HOST against the backing services"
+	@echo "                      (assumes 'make up-backing'; rewrites in-compose hostnames to host ports)"
+	@echo "  make dev            'make up-backing' then 'make dev-app' — the host-app dev loop in one command"
 	@echo "  make migrate        apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "                      — usually unnecessary now that 'make up' applies migrations on app startup"
 	@echo "  make down           stop the dev stack (volumes preserved)"
@@ -112,6 +116,66 @@ up: _bring-up
 # can also reach for this when they want to reproduce a CI failure.
 up-prod-mode: COMPOSE_FILES := $(COMPOSE_FILES_PROD)
 up-prod-mode: _bring-up
+
+# --- Host-app dev loop -------------------------------------------------
+#
+# `make up` runs everything (postgres + authelia + app) inside Compose,
+# rebuilding the app image on every change — fine for a smoke check, slow
+# for an edit/run loop. The pair below splits that: bring up only the
+# backing services in Compose, then run the app process on the HOST
+# against them (`pnpm` start, no image rebuild). `make dev` chains both.
+#
+# Two hostnames that resolve INSIDE the Compose network have to be
+# remapped for a host-side process:
+#   - DATABASE_URL's `@postgres:` host → `@localhost:` (postgres
+#     publishes 5432 on the host; same rewrite `make migrate` uses).
+#   - NODE_EXTRA_CA_CERTS → the on-disk cert path so Node trusts
+#     Authelia's self-signed dev cert during OIDC discovery (the
+#     compose `app` service mounts the same file at a container path).
+# OIDC_ISSUER_URL is left as `authelia.aconversa.local` — OIDC discovery
+# is lazy (first login, not boot), so the app starts fine without it
+# resolving; browser login still needs the /etc/hosts alias the `up`
+# banner documents.
+#
+# Runs with NODE_ENV=development so the production boot gates relax
+# against `.env.example` placeholders — the same posture `compose.dev.yaml`
+# gives the in-Compose app.
+
+# Backing services only — postgres + authelia, no app container.
+# `--wait` blocks until both report healthy (their compose healthchecks).
+up-backing:
+	@if [ ! -f .env ]; then \
+		echo "[ensuring .env from .env.example]"; \
+		cp .env.example .env; \
+	fi
+	@docker compose $(COMPOSE_FILES_DEV) up -d --wait postgres authelia
+	@echo ""
+	@echo "Backing services ready (app NOT started — run 'make dev-app'):"
+	@echo "  postgres   localhost:5432"
+	@echo "  authelia   https://authelia.aconversa.local:9091"
+
+# Run the app on the host against the backing services. Builds first
+# because the Fastify server fail-fasts at boot without the frontend
+# `dist/` bundles (apps/root, apps/moderator, the surfaces). Runs in the
+# foreground; Ctrl-C stops the app but leaves the backing services up
+# (`make down` / `make down-v` to stop those). See the block comment
+# above for the env rewrites.
+dev-app:
+	@if [ ! -f .env ]; then \
+		echo "[dev-app] .env missing — run 'make up-backing' first to seed it from .env.example"; \
+		exit 1; \
+	fi
+	@pnpm run build
+	@echo "[dev-app] starting app on http://localhost:3000 (Ctrl-C to stop; backing services stay up)"
+	@set -a; . ./.env; set +a; \
+		DATABASE_URL=$$(echo "$$DATABASE_URL" | sed 's|@postgres:|@localhost:|') \
+		NODE_ENV=development \
+		NODE_EXTRA_CA_CERTS="$$(pwd)/infra/authelia/tls/cert.pem" \
+		pnpm --filter @a-conversa/server start
+
+# One-command host-app dev loop: backing services in Compose, app on the
+# host. Equivalent to `make up-backing && make dev-app`.
+dev: up-backing dev-app
 
 # Alias for `make up`. Kept so existing muscle memory / docs that
 # reference `make up-app` still work; the split it used to enforce
