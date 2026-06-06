@@ -373,6 +373,15 @@ export interface GraphViewProps {
   readonly cyRef?: (cy: Core | null) => void;
 }
 
+/** Structural equality of two id sets — same size and same members. */
+function sameIdSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
 export function GraphView({
   events,
   instanceKey,
@@ -392,21 +401,14 @@ export function GraphView({
   // for external consumers.
   const [cyState, setCyState] = useState<Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Track node ids the component has already seen so the element-sync
-  // effect can decide whether to run a `breadthfirst` layout pass.
-  // `useRef` (not `useState`) because writes happen AFTER layout
-  // completes and MUST NOT trigger a re-render — the events memo
-  // already drives the re-render cadence.
+  // The node / edge id sets as of the LAST layout pass. The element-sync
+  // effect compares the incoming structure against these to decide
+  // whether to re-run the layout: any id added OR removed re-tidies; an
+  // unchanged id set (a decoration-only tick) skips it. `useRef` (not
+  // `useState`) because writes happen AFTER layout completes and MUST NOT
+  // trigger a re-render — the events memo already drives the re-render
+  // cadence.
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
-  // Track edge ids the component has already seen, parallel to
-  // `knownNodeIdsRef`. A new edge changes the graph's connectivity — and
-  // therefore the `breadthfirst` hierarchy (roots, depth, sibling
-  // grouping) — even when it introduces no new node, so an edge arrival
-  // must also trigger a re-layout. Without this the graph keeps the
-  // positions from the last node-addition pass: nodes that were laid out
-  // as roots (no incoming edge yet) stay in their flat starting row even
-  // after edges arrive that would give the graph depth. `useRef` for the
-  // same post-layout-write rationale as `knownNodeIdsRef`.
   const knownEdgeIdsRef = useRef<Set<string>>(new Set());
   // Position cache mirrored from the participant's pattern: cache
   // every emitted node's `{x, y}` after each layout pass so cy.json
@@ -508,29 +510,29 @@ export function GraphView({
     return [...localizedNodes, ...localizedEdges];
   }, [events, t]);
 
-  // Element sync — runs on every events / translation change. Runs
-  // a `breadthfirst` layout pass when the graph's STRUCTURE grows —
-  // i.e. at least one truly-new node OR truly-new edge id appears. A
-  // new edge re-roots / re-tiers the hierarchy even with no new node,
-  // so it must re-tidy the layout; without it, edge arrivals would
-  // leave the graph in its prior (often flat, all-roots) arrangement.
-  // Pure decoration ticks (a kind-label flip, a per-facet status
-  // change — same node and edge id sets) still skip the layout.
+  // Element sync — runs on every events / translation change. Re-runs the
+  // component layout + packing whenever the graph's STRUCTURE changes:
+  // any node or edge id ADDED or REMOVED. Additions re-tier the hierarchy
+  // (a new edge re-roots a component); removals — walking a scripted demo
+  // backwards, or a retraction mid-broadcast — leave stale gaps that need
+  // re-tidying. `knownNodeIdsRef` / `knownEdgeIdsRef` hold the id sets as
+  // of the LAST layout, so a pure decoration tick (same id sets, only a
+  // kind-label / per-facet status changed) compares equal and skips both
+  // the layout and the re-fit.
   useEffect(() => {
     const cy = cyInstanceRef.current;
     if (cy === null) return;
-    const trulyNewNodeIds: string[] = [];
-    const trulyNewEdgeIds: string[] = [];
+    const currentNodeIds = new Set<string>();
+    const currentEdgeIds = new Set<string>();
     for (const element of elements) {
       const id = element.data?.id;
       if (typeof id !== 'string') continue;
-      if (element.group === 'nodes') {
-        if (!knownNodeIdsRef.current.has(id)) trulyNewNodeIds.push(id);
-      } else if (element.group === 'edges') {
-        if (!knownEdgeIdsRef.current.has(id)) trulyNewEdgeIds.push(id);
-      }
+      if (element.group === 'nodes') currentNodeIds.add(id);
+      else if (element.group === 'edges') currentEdgeIds.add(id);
     }
-    const structureGrew = trulyNewNodeIds.length > 0 || trulyNewEdgeIds.length > 0;
+    const structureChanged =
+      !sameIdSet(currentNodeIds, knownNodeIdsRef.current) ||
+      !sameIdSet(currentEdgeIds, knownEdgeIdsRef.current);
     cy.json({ elements });
     // Skip the layout pass when the canvas has no measurable
     // viewport (happy-dom: `cy.width()` reports 0). Cytoscape
@@ -541,7 +543,7 @@ export function GraphView({
     const height = cy.height();
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-    if (cy.elements().length > 0 && viewportReady && structureGrew) {
+    if (cy.elements().length > 0 && viewportReady && structureChanged) {
       // Lay out each connected component on its own and bin-pack the
       // boxes into 2D — disconnected argument threads fill the canvas
       // instead of stringing out into one flat row (which a single
@@ -549,24 +551,25 @@ export function GraphView({
       // global depth array across components).
       layoutAndPackComponents(cy);
     }
+    // Record the structure we just synced (reflects additions AND
+    // removals) and cache each surviving node's position for the next
+    // tick's `elements` memo.
+    knownNodeIdsRef.current = currentNodeIds;
+    knownEdgeIdsRef.current = currentEdgeIds;
     cy.nodes().forEach((node) => {
       const position = node.position();
       positionCacheRef.current.set(node.id(), { x: position.x, y: position.y });
-      knownNodeIdsRef.current.add(node.id());
-    });
-    cy.edges().forEach((edge) => {
-      knownEdgeIdsRef.current.add(edge.id());
     });
     // Auto-fit the camera to the WHOLE graph whenever the structure
-    // grows (and at least once on the first non-empty render). The
+    // changes (and at least once on the first non-empty render). The
     // layout / packing re-flows on every structural change — components
     // get repositioned across the canvas — so the camera must re-frame
     // to keep them all in view; without this the one-shot fit stayed
     // zoomed on the first component while later components packed off
-    // screen. Pure decoration ticks (no new node/edge) do NOT re-fit, so
-    // the camera holds steady between structural changes. The
+    // screen. Pure decoration ticks (no node/edge add or remove) do NOT
+    // re-fit, so the camera holds steady between structural changes. The
     // mount-effect cleanup resets the ref so a re-mount fits again.
-    if (cy.elements().length > 0 && viewportReady && (structureGrew || !hasFitOnceRef.current)) {
+    if (cy.elements().length > 0 && viewportReady && (structureChanged || !hasFitOnceRef.current)) {
       cy.fit(undefined, PADDING);
       hasFitOnceRef.current = true;
     }

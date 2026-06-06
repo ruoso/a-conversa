@@ -791,6 +791,38 @@ describe('<GraphView>', () => {
     expect(spies.layoutAndPack).toHaveBeenCalledTimes(1);
   });
 
+  it('(p4) re-runs the layout when walking BACKWARDS removes a node or edge', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    // Build up: node A, node B, edge A→B — three structural changes.
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+    );
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(3);
+    // Walk back one step (drop the edge-created event): the edge id is
+    // removed from the graph → structural change → re-tidy.
+    const withoutEdge = currentEvents.slice(0, 2);
+    act(() => {
+      rerenderWithEvents?.(withoutEdge);
+    });
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(4);
+    // Walk back again (drop node B): a node removal also re-tidies.
+    const onlyNodeA = currentEvents.slice(0, 1);
+    act(() => {
+      rerenderWithEvents?.(onlyNodeA);
+    });
+    expect(spies.layoutAndPack).toHaveBeenCalledTimes(5);
+  });
+
   // ---------------------------------------------------------------
   // aud_clean_typography — broadcast typography pins on STYLESHEET.
   // ---------------------------------------------------------------
