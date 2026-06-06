@@ -98,7 +98,10 @@ import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { SnapshotActionButton } from '../layout/SnapshotActionButton';
 import { SnapshotLabelInputMount } from '../layout/SnapshotLabelInputMount';
+import { KeymapHelpButton } from '../layout/KeymapHelpButton';
+import { KeymapHelpMount } from '../layout/KeymapHelpMount';
 import { useGlobalKeymap } from '../layout/useGlobalKeymap';
+import { useKeymapHelpShortcut } from '../layout/useKeymapHelpShortcut';
 import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
 import { useCaptureStore } from '../stores/captureStore';
 import { attachCaptureKeymap } from '../layout/captureKeymap';
@@ -153,6 +156,11 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // the moderator is on the operate page and reflects the snapshot
   // trigger flag onto the layout root as a stable Playwright seam.
   useGlobalKeymap();
+  // Keymap-help overlay — mount the bare-`?` toggle hook at route scope
+  // (mod_keymap_help_overlay). A NAVIGATION chord with an editable-
+  // target bail (the opposite contract from `useGlobalKeymap`), so it
+  // lives in its own hook rather than the action-chord dispatcher.
+  useKeymapHelpShortcut();
   const isSnapshotLabelInputOpen = useSnapshotFlowStore((state) => state.isLabelInputOpen);
   // Read the mode to drive the bottom-strip slot swap. In decompose
   // mode the `textInput` slot mounts `<DecomposeComponentsGrid>`
@@ -353,6 +361,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
         rightSidebar={
           <>
             <SnapshotActionButton />
+            <KeymapHelpButton />
             <RightSidebar
               pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
               diagnosticFlagsSlot={<DiagnosticFlagPane sessionId={sessionId} />}
@@ -367,6 +376,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
        * the grid (mod_snapshot_label_input Decision §3).
        */}
       <SnapshotLabelInputMount />
+      {/*
+       * Sibling of `<OperateLayout>`, next to `<SnapshotLabelInputMount>`
+       * — the `?`-toggled keymap-help overlay (mod_keymap_help_overlay
+       * Decision §3). Same fixed-overlay-outside-the-grid rationale.
+       */}
+      <KeymapHelpMount />
     </main>
   );
 }

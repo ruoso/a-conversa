@@ -266,3 +266,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Question**: the pt-BR and es-419 translations for the new `moderator.globalKeymap.escLabel` key ("Exit mode / clear target") were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: review the `moderator.globalKeymap.escLabel` entry in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
+### 2026-06-06 — i18n native review — moderator.globalKeymap.helpLabel + moderator.keymapHelp.* (pt-BR, es-419)
+
+- **Source**: closer for `moderator_ui.mod_keyboard_shortcuts.mod_keymap_help_overlay` (refinement Acceptance §i18n discipline; implementer return summary).
+- **Question**: the pt-BR and es-419 translations for the new `moderator.globalKeymap.helpLabel` ("Show keyboard shortcuts") and all `moderator.keymapHelp.*` keys (title, closeLabel, comingSoon, and the six `category.*` headers) were machine-drafted; they need native-speaker review for accuracy and register.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: review the `moderator.globalKeymap.helpLabel` and `moderator.keymapHelp.*` entries in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.

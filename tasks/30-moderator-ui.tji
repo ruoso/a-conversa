@@ -706,6 +706,7 @@ task moderator_ui "Moderator UI" {
     task mod_keymap_help_overlay "Keymap help overlay" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_global_keymap
     }
     task mod_proposal_selection_commit_chord "Proposal-selection model + Cmd/Ctrl+Shift+Enter commit-of-selected chord" {

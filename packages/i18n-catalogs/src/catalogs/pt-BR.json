@@ -476,7 +476,21 @@
       "shortcutHint": "Cmd/Ctrl+S"
     },
     "globalKeymap": {
-      "escLabel": "Sair do modo / limpar alvo"
+      "escLabel": "Sair do modo / limpar alvo",
+      "helpLabel": "Mostrar atalhos de teclado"
+    },
+    "keymapHelp": {
+      "title": "Atalhos de teclado",
+      "closeLabel": "Fechar",
+      "comingSoon": "em breve",
+      "category": {
+        "kind": "Tipos de alegação",
+        "edgeRole": "Papéis de aresta",
+        "metaMoveKind": "Tipos de meta-movimento",
+        "action": "Ações",
+        "navigation": "Navegação",
+        "mode": "Modos"
+      }
     },
     "snapshotLabelInput": {
       "title": "Capturar um instantâneo da posição atual",

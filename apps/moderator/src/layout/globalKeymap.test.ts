@@ -99,6 +99,13 @@ describe('GLOBAL_KEYMAP — expected action / navigation ids (b)', () => {
     expect(byId.get('navigation.esc')?.reachable).toBe(true);
   });
 
+  it('help (the `?` overlay toggle) is present, reachable, and bound to `?`', () => {
+    const help = byId.get('navigation.help');
+    expect(help?.reachable).toBe(true);
+    expect(help?.chord).toEqual({ key: '?' });
+    expect(help?.labelKey).toBe('moderator.globalKeymap.helpLabel');
+  });
+
   it('mode-entry chords are present and NOT reachable', () => {
     for (const id of ['mode.decompose', 'mode.warrant-elicitation', 'mode.operationalization']) {
       expect(byId.has(id)).toBe(true);

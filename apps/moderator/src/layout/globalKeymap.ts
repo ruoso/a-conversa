@@ -137,6 +137,19 @@ const navigationShortcuts: readonly GlobalShortcut[] = [
     labelKey: 'moderator.globalKeymap.escLabel',
     reachable: true,
   },
+  {
+    // Help — the `?` overlay toggle. Bound in its own
+    // `useKeymapHelpShortcut` hook (a bare-key navigation chord with an
+    // editable-target bail, the opposite of the action-chord family —
+    // mod_keymap_help_overlay Decision §2), NOT in `useGlobalKeymap`.
+    // Registered here so the overlay can document how it is opened — a
+    // registry row is a description, not a binding site.
+    id: 'navigation.help',
+    category: 'navigation',
+    chord: { key: '?' },
+    labelKey: 'moderator.globalKeymap.helpLabel',
+    reachable: true,
+  },
 ];
 
 const modeShortcuts: readonly GlobalShortcut[] = [

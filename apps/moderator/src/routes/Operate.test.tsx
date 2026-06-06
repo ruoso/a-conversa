@@ -29,6 +29,7 @@ import { AuthProvider, createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { useCaptureStore } from '../stores/captureStore';
 import { resetSnapshotFlowStore, useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
+import { resetKeymapHelpStore, useKeymapHelpStore } from '../layout/useKeymapHelpStore';
 
 // ────────────────────────────────────────────────────────────────────────
 // Stub the heavy children so the test renders the install effect
@@ -131,6 +132,7 @@ afterEach(() => {
   useWsStore.getState().reset();
   useCaptureStore.getState().reset();
   resetSnapshotFlowStore();
+  resetKeymapHelpStore();
   // Belt-and-suspenders: scrub the window namespace in case a test
   // left a leak behind (e.g., a test that failed before unmount ran).
   const w = window as unknown as { __testHooks?: Record<string, unknown> };
@@ -348,6 +350,51 @@ describe('Operate route — F10 snapshot-label modal mount wiring (mod_snapshot_
     });
     await waitFor(() => {
       expect(document.querySelector('[data-testid="snapshot-label-input-modal"]')).toBeNull();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('Operate route — `?` keymap-help overlay wiring (mod_keymap_help_overlay)', () => {
+  it('mounts <KeymapHelpButton /> in the rightSidebar slot', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="keymap-help-button"]')).not.toBeNull();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it('pressing `?` at the document level flips the overlay open; Escape closes it', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="route-operate"]')).not.toBeNull();
+    });
+    // Overlay starts closed → KeymapHelpMount renders null.
+    expect(document.querySelector('[data-testid="keymap-help-overlay"]')).toBeNull();
+    expect(useKeymapHelpStore.getState().isOpen).toBe(false);
+
+    // Bare `?` toggles the overlay open (no editable target focused).
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '?', bubbles: true, cancelable: true }),
+      );
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="keymap-help-overlay"]')).not.toBeNull();
+    });
+
+    // Escape closes it (the overlay's local window-level listener).
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="keymap-help-overlay"]')).toBeNull();
     });
     await act(async () => {
       await Promise.resolve();

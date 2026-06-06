@@ -476,7 +476,21 @@
       "shortcutHint": "Cmd/Ctrl+S"
     },
     "globalKeymap": {
-      "escLabel": "Exit mode / clear target"
+      "escLabel": "Exit mode / clear target",
+      "helpLabel": "Show keyboard shortcuts"
+    },
+    "keymapHelp": {
+      "title": "Keyboard shortcuts",
+      "closeLabel": "Close",
+      "comingSoon": "coming soon",
+      "category": {
+        "kind": "Claim kinds",
+        "edgeRole": "Edge roles",
+        "metaMoveKind": "Meta-move kinds",
+        "action": "Actions",
+        "navigation": "Navigation",
+        "mode": "Modes"
+      }
     },
     "snapshotLabelInput": {
       "title": "Snapshot the current position",
