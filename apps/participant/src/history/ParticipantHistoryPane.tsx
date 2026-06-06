@@ -12,16 +12,45 @@
 // log alone is not guaranteed complete after a snapshot-state catch-up, so a
 // history/audit view must read the REST endpoint.
 
-import { useMemo, type ReactElement } from 'react';
+import { useCallback, useMemo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 import { useSessionEventLog } from '@a-conversa/shell';
-import type { Event } from '@a-conversa/shared-types';
+import type { Event, EventKind } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
 import { deriveHistoryRows, type HistoryRow } from './deriveHistoryRows';
+import {
+  deriveActorOptions,
+  deriveAvailableKinds,
+  EMPTY_FILTER,
+  isDefaultFilter,
+  matchesHistoryFilter,
+  SYSTEM_ACTOR_SENTINEL,
+  type HistoryFilter,
+} from './historyFilter';
 
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+
+// The filter strip (`part_history_filtering`) — a reduced mirror of the
+// moderator's pinned strip (Decision §D8: gated on a non-empty ready log
+// rather than always pinned). The chip vocabulary mirrors the row's kind
+// chip (`slate-100` / `slate-700`); the pressed state inverts to the
+// `slate-700` tone.
+const FILTER_STRIP_CLASSES =
+  'flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-3 py-2';
+const FILTER_GROUP_CLASSES = 'flex flex-wrap items-center gap-1';
+const FILTER_CHIP_BASE_CLASSES =
+  'flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500';
+const FILTER_CHIP_ACTIVE_CLASSES = 'bg-slate-700 text-white hover:bg-slate-800';
+const FILTER_CHIP_INACTIVE_CLASSES = 'bg-slate-100 text-slate-700 hover:bg-slate-200';
+const FILTER_CLEAR_CLASSES =
+  'flex-shrink-0 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500';
+
+/** Compose the chip className for a toggle chip given its pressed state. */
+function chipClasses(pressed: boolean): string {
+  return `${FILTER_CHIP_BASE_CLASSES} ${pressed ? FILTER_CHIP_ACTIVE_CLASSES : FILTER_CHIP_INACTIVE_CLASSES}`;
+}
 
 /** 8-char id prefix, or the localized "System" label when actor is null. */
 function actorText(actor: string | null, systemLabel: string): string {
@@ -66,6 +95,118 @@ export function ParticipantHistoryPane({
   const resolvedNowMs = nowMs ?? Date.now();
   const systemActorLabel = t('participant.changeHistory.systemActor');
 
+  // Filter state — local component state (Constraint §7): one `HistoryFilter`
+  // cell, no Zustand slice, resets on pane mount by design.
+  const [filter, setFilter] = useState<HistoryFilter>(EMPTY_FILTER);
+
+  const toggleKind = useCallback((kind: EventKind) => {
+    setFilter((prev) => {
+      const kinds = new Set(prev.kinds);
+      if (kinds.has(kind)) kinds.delete(kind);
+      else kinds.add(kind);
+      return { ...prev, kinds };
+    });
+  }, []);
+  const toggleActor = useCallback((actor: string | null) => {
+    setFilter((prev) => {
+      const actors = new Set(prev.actors);
+      if (actors.has(actor)) actors.delete(actor);
+      else actors.add(actor);
+      return { ...prev, actors };
+    });
+  }, []);
+  const clearFilter = useCallback(() => {
+    setFilter(EMPTY_FILTER);
+  }, []);
+
+  // Chip-set derivations — both come from the merged rows (the participant
+  // labels actors exactly as the row does, Decision §D5; no raw-event walk).
+  const availableKinds = useMemo(() => deriveAvailableKinds(rows), [rows]);
+  const actorOptions = useMemo(() => deriveActorOptions(rows), [rows]);
+
+  // Post-merge filter. Identity-stable fast path (Constraint §3) — the
+  // default filter returns the pre-filter `rows` reference directly.
+  const filteredRows = useMemo(() => {
+    if (isDefaultFilter(filter)) return rows;
+    return rows.filter((row) => matchesHistoryFilter(row, filter));
+  }, [rows, filter]);
+  const filterActive = !isDefaultFilter(filter);
+
+  // The strip renders only when the prefetch is ready and the unfiltered log
+  // is non-empty — there are no chips to derive otherwise (Constraint §6,
+  // Decision §D8).
+  const showFilterStrip = status === 'ready' && rows.length > 0;
+
+  const filterStrip = (
+    <div
+      data-testid="participant-history-filter-strip"
+      role="group"
+      aria-label={t('participant.historyFilter.regionAriaLabel')}
+      className={FILTER_STRIP_CLASSES}
+    >
+      <div
+        role="group"
+        aria-label={t('participant.historyFilter.kindGroupAriaLabel')}
+        className={FILTER_GROUP_CLASSES}
+      >
+        {availableKinds.map((kind) => {
+          const pressed = filter.kinds.has(kind);
+          return (
+            <button
+              key={kind}
+              type="button"
+              data-testid="participant-history-filter-kind"
+              data-filter-kind={kind}
+              aria-pressed={pressed}
+              className={chipClasses(pressed)}
+              onClick={() => {
+                toggleKind(kind);
+              }}
+            >
+              {t(`participant.changeHistory.kind.${kind}`)}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        role="group"
+        aria-label={t('participant.historyFilter.actorGroupAriaLabel')}
+        className={FILTER_GROUP_CLASSES}
+      >
+        {actorOptions.map((option) => {
+          const pressed = filter.actors.has(option.actor);
+          const actorAttr = option.actor === null ? SYSTEM_ACTOR_SENTINEL : option.actor;
+          const label = option.actor === null ? systemActorLabel : option.label;
+          return (
+            <button
+              key={actorAttr}
+              type="button"
+              data-testid="participant-history-filter-actor"
+              data-filter-actor={actorAttr}
+              aria-pressed={pressed}
+              className={chipClasses(pressed)}
+              onClick={() => {
+                toggleActor(option.actor);
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {filterActive ? (
+        <button
+          type="button"
+          data-testid="participant-history-filter-clear"
+          className={FILTER_CLEAR_CLASSES}
+          onClick={clearFilter}
+        >
+          {t('participant.historyFilter.clearLabel')}
+        </button>
+      ) : null}
+    </div>
+  );
+
   let body: ReactElement;
   if (status === 'loading') {
     body = (
@@ -95,9 +236,23 @@ export function ParticipantHistoryPane({
       </div>
     );
   } else if (rows.length === 0) {
+    // The merged log is genuinely empty (the strip is hidden, so the filter
+    // is necessarily default here). Distinct from the filtered-empty state.
     body = (
       <p data-testid="participant-history-pane-empty" className="p-6 text-sm text-slate-500">
         {t('participant.changeHistory.emptyState')}
+      </p>
+    );
+  } else if (filteredRows.length === 0) {
+    // A non-default filter narrowed the list to zero (Constraint §5).
+    // `filterActive` is necessarily true here — when the filter is default,
+    // `filteredRows === rows` and a zero count is handled by the branch above.
+    body = (
+      <p
+        data-testid="participant-history-pane-filtered-empty"
+        className="p-6 text-sm text-slate-500"
+      >
+        {t('participant.historyFilter.filteredEmpty')}
       </p>
     );
   } else {
@@ -107,7 +262,7 @@ export function ParticipantHistoryPane({
         role="list"
         className="m-0 flex list-none flex-col gap-1 p-0"
       >
-        {rows.map((row) => (
+        {filteredRows.map((row) => (
           <HistoryRowItem
             key={row.id}
             row={row}
@@ -127,6 +282,7 @@ export function ParticipantHistoryPane({
       aria-label={t('participant.changeHistory.paneAriaLabel')}
       className="flex h-full w-full flex-col overflow-auto bg-white"
     >
+      {showFilterStrip ? filterStrip : null}
       {body}
     </section>
   );

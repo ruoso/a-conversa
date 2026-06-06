@@ -442,6 +442,7 @@ task participant_ui "Participant (debater) UI" {
     task part_history_filtering "Filter / search history" {
       effort 1d
       allocate team
+      complete 100
       depends !part_history_list
     }
   }

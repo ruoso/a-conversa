@@ -19,7 +19,7 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Event } from '@a-conversa/shared-types';
+import type { Event, EventKind } from '@a-conversa/shared-types';
 import { createI18nInstance, I18nProvider, type I18nInstance } from '@a-conversa/shell';
 
 import { ParticipantHistoryPane } from './ParticipantHistoryPane';
@@ -27,6 +27,10 @@ import { useWsStore } from '../ws/wsStore';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+// Two distinct actors whose 8-char prefixes differ, so the actor chips are
+// visually distinguishable in the filter-strip cases below.
+const ACTOR_A = '0000000a-0000-4000-8000-0000000000a1';
+const ACTOR_B = '0000000b-0000-4000-8000-0000000000b1';
 // 2026-06-03T00:01:30.000Z — fixed "now" so relative timestamps stay
 // stable across runs.
 const NOW_MS = Date.parse('2026-06-03T00:01:30.000Z');
@@ -214,5 +218,174 @@ describe('ParticipantHistoryPane — loading / error / empty states', () => {
     renderPane();
     await screen.findByTestId('participant-history-pane-error');
     expect(screen.getByTestId('participant-history-pane-retry')).toBeTruthy();
+  });
+
+  it('hides the filter strip while loading and when the log is empty', async () => {
+    // Loading: the fetch is in flight, no strip.
+    let resolveFetch: (value: Response) => void = () => undefined;
+    global.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    renderPane();
+    expect(screen.getByTestId('participant-history-pane-loading')).toBeTruthy();
+    expect(screen.queryByTestId('participant-history-filter-strip')).toBeNull();
+
+    // Empty: the prefetch resolves with zero events — still no strip.
+    await act(async () => {
+      resolveFetch(jsonResponse({ events: [], nextCursor: null }));
+      await Promise.resolve();
+    });
+    await screen.findByTestId('participant-history-pane-empty');
+    expect(screen.queryByTestId('participant-history-filter-strip')).toBeNull();
+  });
+});
+
+// An event whose only fields that matter downstream are id / sequence /
+// kind / actor / createdAt (the `isEventLike` prefetch guard + the row
+// derivation). The payload is irrelevant to the filter surface, so it is a
+// minimal stand-in cast to `Event`.
+function event(seq: number, kind: EventKind, actor: string | null): Event {
+  return {
+    id: `00000000-0000-4000-8000-${seq.toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: seq,
+    kind,
+    actor,
+    payload: {},
+    createdAt: '2026-06-03T00:01:00.000Z',
+  } as unknown as Event;
+}
+
+/**
+ * A single-page `fetch` serving a fixed mixed log:
+ *   seq 1 node-created / ACTOR_A
+ *   seq 2 vote         / ACTOR_A
+ *   seq 3 node-created / ACTOR_B
+ * Newest-first that is 3, 2, 1. Two present kinds (node-created, vote) and
+ * two present actors (B then A in first-appearance order). `vote` has no
+ * ACTOR_B row, so a `vote` + ACTOR_B filter matches nothing.
+ */
+function mixedLogFetch(): typeof fetch {
+  return vi.fn(() =>
+    Promise.resolve(
+      jsonResponse({
+        events: [
+          event(1, 'node-created', ACTOR_A),
+          event(2, 'vote', ACTOR_A),
+          event(3, 'node-created', ACTOR_B),
+        ],
+        nextCursor: null,
+      }),
+    ),
+  );
+}
+
+function sequencesOf(): string[] {
+  return screen
+    .getAllByTestId('participant-history-row')
+    .map((r) => r.getAttribute('data-sequence') ?? '');
+}
+
+describe('ParticipantHistoryPane — filter strip', () => {
+  it('renders one kind chip per present kind and one actor chip per present actor', async () => {
+    global.fetch = mixedLogFetch();
+    renderPane();
+    await screen.findByTestId('participant-history-filter-strip');
+
+    const kindChips = screen.getAllByTestId('participant-history-filter-kind');
+    expect(kindChips.map((c) => c.getAttribute('data-filter-kind'))).toEqual([
+      'node-created',
+      'vote',
+    ]);
+    const actorChips = screen.getAllByTestId('participant-history-filter-actor');
+    expect(actorChips.map((c) => c.getAttribute('data-filter-actor'))).toEqual([ACTOR_B, ACTOR_A]);
+  });
+
+  it('narrows by kind, then widens to the union of two kind chips', async () => {
+    global.fetch = mixedLogFetch();
+    renderPane();
+    await screen.findByTestId('participant-history-filter-strip');
+    expect(sequencesOf()).toEqual(['3', '2', '1']);
+
+    // Press the node-created chip → only the two node-created rows survive.
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector('[data-filter-kind="node-created"]') as Element,
+    );
+    expect(sequencesOf()).toEqual(['3', '1']);
+
+    // Press the vote chip too → the union restores all three.
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector('[data-filter-kind="vote"]') as Element,
+    );
+    expect(sequencesOf()).toEqual(['3', '2', '1']);
+  });
+
+  it('AND-composes a kind chip and an actor chip down to the intersection', async () => {
+    global.fetch = mixedLogFetch();
+    renderPane();
+    await screen.findByTestId('participant-history-filter-strip');
+
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector('[data-filter-kind="node-created"]') as Element,
+    );
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector(`[data-filter-actor="${ACTOR_A}"]`) as Element,
+    );
+    // node-created AND ACTOR_A → seq 1 only.
+    expect(sequencesOf()).toEqual(['1']);
+  });
+
+  it('shows Clear only when a filter is active and restores the full list', async () => {
+    global.fetch = mixedLogFetch();
+    renderPane();
+    await screen.findByTestId('participant-history-filter-strip');
+    expect(screen.queryByTestId('participant-history-filter-clear')).toBeNull();
+
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector('[data-filter-kind="vote"]') as Element,
+    );
+    expect(sequencesOf()).toEqual(['2']);
+    const clear = screen.getByTestId('participant-history-filter-clear');
+
+    fireEvent.click(clear);
+    expect(sequencesOf()).toEqual(['3', '2', '1']);
+    expect(screen.queryByTestId('participant-history-filter-clear')).toBeNull();
+  });
+
+  it('renders the filtered-empty state (strip still visible) when nothing matches', async () => {
+    global.fetch = mixedLogFetch();
+    renderPane();
+    await screen.findByTestId('participant-history-filter-strip');
+
+    // vote + ACTOR_B → no row (votes are all ACTOR_A).
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector('[data-filter-kind="vote"]') as Element,
+    );
+    fireEvent.click(
+      screen
+        .getByTestId('participant-history-filter-strip')
+        .querySelector(`[data-filter-actor="${ACTOR_B}"]`) as Element,
+    );
+
+    expect(screen.getByTestId('participant-history-pane-filtered-empty')).toBeTruthy();
+    expect(screen.queryByTestId('participant-history-pane-list')).toBeNull();
+    // The strip stays visible so the debater can clear/adjust.
+    expect(screen.getByTestId('participant-history-filter-strip')).toBeTruthy();
+    expect(screen.getByTestId('participant-history-filter-clear')).toBeTruthy();
   });
 });

@@ -1053,6 +1053,13 @@
         "proposal-withdrawn": "Proposal withdrawn"
       }
     },
+    "historyFilter": {
+      "regionAriaLabel": "Change history filters",
+      "kindGroupAriaLabel": "Filter by event kind",
+      "actorGroupAriaLabel": "Filter by actor",
+      "clearLabel": "Clear filters",
+      "filteredEmpty": "No events match the current filter"
+    },
     "pendingProposalsPane": {
       "emptyState": "No pending proposals",
       "systemAuthor": "System",

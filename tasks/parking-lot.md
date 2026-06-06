@@ -238,3 +238,24 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Question**: the pt-BR and es-419 translations for the new `participant.diagnostics.*` catalog block (panel header, empty message, severity labels, open/close + count aria) were machine-drafted; they need native-speaker review for accuracy, register, and philosophical-methodology vocabulary.
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: when the v1 surfaces are string-complete, review the `participant.diagnostics.*` block in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
+### 2026-06-05 — Participant history filter: selected-entity ("target") dimension
+
+- **Source**: closer for `participant_ui.part_history_view.part_history_filtering` (refinement §D4 / Open questions).
+- **Question**: should the participant change-history pane gain the moderator's "rows affecting the selected graph entity" target filter? Delivering it would require: (a) enriching `HistoryRow` with a precomputed `affected: { nodeIds, edgeIds }` set (payload-walking enrichment that `part_history_list` deliberately deferred), and (b) coupling `ParticipantHistoryPane` to the participant graph-selection store. Both extend the `part_history_list` contract and are a product call about whether the debater surface should match the moderator's.
+- **Why parked**: human product decision — scope and row-contract extension that the methodology owner must approve. Agent cannot make this call; no WBS task is appropriate until the call is made.
+- **Suggested resolution**: if the product owner decides the debater surface should mirror the moderator's target dimension, spec a follow-up leaf that (1) enriches `HistoryRow` with the `affected` set, (2) extends `matchesHistoryFilter` with the target dimension, and (3) wires the pane to the selection store.
+
+### 2026-06-05 — Participant history filter: actor chips and rows resolve screen names
+
+- **Source**: closer for `participant_ui.part_history_view.part_history_filtering` (refinement §D5 / Open questions).
+- **Question**: should actor chips (and the `part_history_list` rows they filter) resolve screen names from `participant-joined` events, rather than showing 8-character id prefixes? The moderator's `deriveActorOptions` already does this (via `historyFilter.ts:145–170`). For chip↔row consistency the participant row and chips must change together.
+- **Why parked**: human product decision — whether the debater surface should show resolved screen names is a UX / methodology call, and delivering it belongs with the row contract (`part_history_list` follow-up), not smuggled into the filter leaf. The row contract is stable at the 8-char prefix for now.
+- **Suggested resolution**: if the product owner decides resolved screen names are warranted, spec a `part_history_actor_labels` leaf that enriches the participant `HistoryRow` with a resolved `actorLabel` field (consuming `participant-joined` events) and updates both the row rendering and `deriveActorOptions`.
+
+### 2026-06-05 — Participant history filter: free-text search over payload summaries
+
+- **Source**: closer for `participant_ui.part_history_view.part_history_filtering` (refinement §D6 / Open questions).
+- **Question**: should the participant change-history pane gain a free-text search box once rows carry searchable prose (e.g., a per-kind payload summary deferred by `part_history_list`)? The current `HistoryRow` has no free-text field — only `kind` and `actor` — so a search box today would be redundant with the chips.
+- **Why parked**: product call contingent on a prior product decision (whether to add per-kind payload summaries to `HistoryRow`). No deliverable for the agent until that upstream call is made.
+- **Suggested resolution**: if and when `HistoryRow` gains a searchable `summary` field, revisit adding a free-text search input to `ParticipantHistoryPane` as a follow-up to that enrichment task.

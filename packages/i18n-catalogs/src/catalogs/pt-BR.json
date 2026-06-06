@@ -1053,6 +1053,13 @@
         "proposal-withdrawn": "Proposta retirada"
       }
     },
+    "historyFilter": {
+      "regionAriaLabel": "Filtros do histórico de mudanças",
+      "kindGroupAriaLabel": "Filtrar por tipo de evento",
+      "actorGroupAriaLabel": "Filtrar por autor",
+      "clearLabel": "Limpar filtros",
+      "filteredEmpty": "Nenhum evento corresponde ao filtro atual"
+    },
     "pendingProposalsPane": {
       "emptyState": "Nenhuma proposta pendente",
       "systemAuthor": "Sistema",
