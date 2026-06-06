@@ -278,6 +278,37 @@ describe('AudiencePerFacetPillOverlay', () => {
     }
   });
 
+  it('(q) scales the pill row by the viewport zoom and shrinks the offset gap with it', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'proposed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      // Drive the viewport to a zoomed-out level. The mocked
+      // `renderedBoundingBox` is independent of zoom here, so the row
+      // anchor stays put while the scale + offset derive from `cy.zoom()`.
+      act(() => {
+        cy.zoom(0.5);
+      });
+      await flushRaf();
+      const row = document.querySelector<HTMLElement>(
+        `[data-facet-pill-row][data-element-id="${NODE_A}"]`,
+      );
+      expect(row).not.toBeNull();
+      // The row scales with zoom about its bottom-center anchor so the
+      // pills track the (also-zoom-scaled) node instead of ballooning.
+      expect(row?.style.transform).toBe('translate(-50%, -100%) scale(0.5)');
+      expect(row?.style.transformOrigin).toBe('center bottom');
+      // The 6px offset gap shrinks with the zoom: 50 - 6 * 0.5 = 47.
+      expect(row?.style.top).toBe('47px');
+    } finally {
+      unmount();
+    }
+  });
+
   it('(g) does NOT render a pill row for an edge whose facetStatuses record is non-empty (nodes-only iteration)', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {

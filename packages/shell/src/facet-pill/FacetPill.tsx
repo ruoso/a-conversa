@@ -24,12 +24,18 @@
 // whole-card frame rules from the three predecessor state-styling
 // refinements, scoped to the smaller surface:
 //
-//   - `'proposed'`          → dashed slate border + faded opacity
-//   - `'agreed'`            → solid dark-slate border + full opacity
-//   - `'disputed'`          → solid rose border + ring halo
-//   - `'meta-disagreement'` → double violet border + ring halo
-//   - `'committed'`         → solid slate border at slight opacity (closed; not faded)
-//   - `'withdrawn'`         → dashed slate border at heavier opacity fade (closed; retracted)
+//   - `'proposed'`          → white outline chip, dashed slate border + faded opacity (pending)
+//   - `'agreed'`            → slate-200 FILL, solid dark-slate border + full opacity (voted)
+//   - `'disputed'`          → rose-100 FILL, solid rose border + ring halo (voted)
+//   - `'meta-disagreement'` → violet-100 FILL, double violet border + ring halo (voted)
+//   - `'committed'`         → slate-100 FILL, solid slate border at slight opacity (closed; settled)
+//   - `'withdrawn'`         → white outline chip, dashed slate border at heavier fade (closed; retracted)
+//
+// The pending/open states (`proposed`, `awaiting-proposal`) and the
+// retracted `withdrawn` state are the only ones left as `bg-white`
+// outline chips; every voted/settled state carries a tinted fill so the
+// "has this facet been voted on yet?" question is answerable at a glance
+// (the prior all-white scheme made it barely perceptible at 10px).
 //
 // Unlike the whole-card frame (which falls back to baseline for closed
 // statuses), the pill renders styling for every status — the pill IS the
@@ -70,27 +76,45 @@ export interface FacetPillProps {
 // verbatim. Sharing the constant — vs duplicating the map — means a
 // future state-styling refinement that retunes the graph pill
 // automatically propagates to the sidebar in the same commit.
+// NOTE: the background colour lives in the per-status branch below, NOT
+// here. Pending facets keep a `bg-white` outline-chip look; voted /
+// settled facets get a tinted fill so the two read as figure-vs-ground
+// at a glance (the prior all-`bg-white` scheme made the distinction
+// barely perceptible at the 10px pill size). Keeping `bg-*` out of the
+// base also avoids Tailwind source-order ambiguity between a base
+// `bg-white` and a per-status `bg-slate-200`.
 export const PILL_BASE_CLASSNAME =
-  'inline-flex items-center rounded-full border bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wide whitespace-nowrap';
+  'inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide whitespace-nowrap';
 
+//
+// Pending vs voted-on, made legible: the open/pre-vote states
+// (`proposed`, `awaiting-proposal`) and the retracted `withdrawn` state
+// stay as faded `bg-white` outline chips; the voted / settled states
+// (`agreed`, `disputed`, `meta-disagreement`, `committed`) carry a
+// tinted FILL (`bg-slate-200` / `bg-rose-100` / `bg-violet-100` /
+// `bg-slate-100`) so a settled facet reads as a solid chip against the
+// outline-only pending ones — the figure-vs-ground cue the prior
+// all-white scheme lacked.
 export const PILL_STATUS_CLASSNAME: Readonly<Record<FacetStatus, string>> = {
-  proposed: 'border-dashed border-slate-400 text-slate-500 opacity-60',
-  agreed: 'border-solid border-slate-700 text-slate-700 opacity-100',
-  disputed: 'border-solid border-rose-600 text-rose-700 ring-1 ring-rose-500 opacity-100',
+  proposed: 'bg-white border-dashed border-slate-400 text-slate-500 opacity-60',
+  agreed: 'bg-slate-200 border-solid border-slate-700 text-slate-700 opacity-100',
+  disputed:
+    'bg-rose-100 border-solid border-rose-600 text-rose-700 ring-1 ring-rose-500 opacity-100',
   'meta-disagreement':
-    'border-double border-violet-600 text-violet-700 ring-1 ring-violet-400 opacity-100',
-  committed: 'border-solid border-slate-400 text-slate-600 opacity-90',
-  withdrawn: 'border-dashed border-slate-400 text-slate-500 opacity-50',
+    'bg-violet-100 border-double border-violet-600 text-violet-700 ring-1 ring-violet-400 opacity-100',
+  committed: 'bg-slate-100 border-solid border-slate-400 text-slate-600 opacity-90',
+  withdrawn: 'bg-white border-dashed border-slate-400 text-slate-500 opacity-50',
   // `'awaiting-proposal'` (per ADR 0030 §10) — pre-agreement empty
   // state: the entity exists but no candidate value has been set for
   // the facet yet. The pill renders with the same visual as
-  // `'proposed'` (faded / dashed-slate); the per-facet propose
+  // `'proposed'` (faded / dashed-slate `bg-white` outline chip — a
+  // pending, not-yet-voted facet); the per-facet propose
   // affordance is rendered by the moderator's node card and the
   // participant's detail-panel row (downstream UI tasks
   // `pf_mod_node_card_classification_affordance`,
   // `pf_mod_node_card_substance_affordance`,
   // `pf_part_detail_panel_three_facet_rows`), not by the pill itself.
-  'awaiting-proposal': 'border-dashed border-slate-400 text-slate-500 opacity-60',
+  'awaiting-proposal': 'bg-white border-dashed border-slate-400 text-slate-500 opacity-60',
 };
 
 function FacetPillImpl(props: FacetPillProps): ReactElement {
