@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { useAuth, type I18n } from '@a-conversa/shell';
+import { useAuth, type I18n, type SurfaceModule } from '@a-conversa/shell';
 
 import { importSurfaceModule, injectStyles, loadSurfaceManifest } from './manifest';
 
@@ -74,14 +74,27 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
     void (async () => {
       try {
         setError(undefined);
-        const manifest = await loadSurfaceManifest();
-        const entry = manifest.surfaces[surfaceId];
-        if (entry === undefined) {
-          throw new Error(`surface ${surfaceId} is not present in the manifest`);
-        }
 
-        styleLinks = injectStyles(entry.styleUrls ?? []);
-        const surface = await importSurfaceModule(entry.moduleUrl);
+        // Dev-only path (`make dev`): import the surface from source so the
+        // root Vite dev server transpiles + HMRs it, bypassing the manifest
+        // + built-bundle fetch. Gated on a flag the dev server's `serve`
+        // config defines; undefined in production builds + under Vitest, so
+        // both fall through to the real loading path below. See
+        // `devSurfaces.ts` and `apps/root/vite.config.ts`.
+        let surface: SurfaceModule;
+        if (import.meta.env.VITE_SURFACE_SOURCE) {
+          const { loadDevSurface } = await import('./devSurfaces');
+          surface = await loadDevSurface(surfaceId);
+        } else {
+          const manifest = await loadSurfaceManifest();
+          const entry = manifest.surfaces[surfaceId];
+          if (entry === undefined) {
+            throw new Error(`surface ${surfaceId} is not present in the manifest`);
+          }
+
+          styleLinks = injectStyles(entry.styleUrls ?? []);
+          surface = await importSurfaceModule(entry.moduleUrl);
+        }
 
         if (cancelled) {
           return;
