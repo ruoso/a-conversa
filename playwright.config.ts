@@ -371,11 +371,14 @@ export default defineConfig({
       // `part_graph_render` widens it again to accept
       // `participant-graph-render.spec.ts` (the read-mostly operate
       // route's behavioural pin per Decision §6 of that refinement).
+      // `part_history_list` widens it again to accept
+      // `participant-history.spec.ts` (the History tab + reverse-chrono
+      // change-history list, reachable now this leaf wires the tab).
       // Same browser profile (single locale en-US, ignoreHTTPSErrors
       // for the OIDC redirect, bootstrap auth jar from setup-auth);
       // no new project. Decisions §7 of both refinements.
       testMatch:
-        /participant-(skeleton-smoke|invite-acceptance|lobby|graph-render|pending-proposals)\.spec\.ts$/,
+        /participant-(skeleton-smoke|invite-acceptance|lobby|graph-render|pending-proposals|history)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

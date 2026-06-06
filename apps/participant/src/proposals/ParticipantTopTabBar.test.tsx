@@ -57,14 +57,15 @@ function renderBar(): ReturnType<typeof render> {
 }
 
 describe('<ParticipantTopTabBar>', () => {
-  it('(a) renders three role="tab" buttons with the en-US labels', () => {
+  it('(a) renders four role="tab" buttons with the en-US labels', () => {
     renderBar();
     const buttons = screen.getAllByRole('tab');
-    expect(buttons).toHaveLength(3);
+    expect(buttons).toHaveLength(4);
     expect(screen.getByTestId('participant-proposals-tabbar-graph').textContent).toBe('Graph');
     expect(screen.getByTestId('participant-proposals-tabbar-my-agreements').textContent).toBe(
       'My agreements',
     );
+    expect(screen.getByTestId('participant-proposals-tabbar-history').textContent).toBe('History');
     // The proposals tab carries the label + the badge text in the same
     // button; assert the label substring rather than equality.
     const proposalsButton = screen.getByTestId('participant-proposals-tabbar-proposals');
@@ -183,5 +184,30 @@ describe('<ParticipantTopTabBar>', () => {
     badge = screen.getByTestId('participant-proposals-tabbar-badge');
     expect(badge.getAttribute('data-flashing')).toBe('false');
     expect(badge.className.includes('animate-pulse')).toBe(false);
+  });
+
+  // -----------------------------------------------------------------
+  // Fourth tab — added by `participant_ui.part_history_view.part_history_list`.
+  // Refinement: tasks/refinements/participant-ui/part_history_list.md
+  // -----------------------------------------------------------------
+
+  it('(m) the history tab is visible with the en-US label and inactive by default', () => {
+    renderBar();
+    const tab = screen.getByTestId('participant-proposals-tabbar-history');
+    expect(tab.textContent).toBe('History');
+    expect(tab.getAttribute('data-active')).toBe('false');
+    expect(tab.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('(n) clicking the history tab dispatches setCurrentTab("history")', () => {
+    renderBar();
+    expect(useUiStore.getState().currentTab).toBe('graph');
+    act(() => {
+      fireEvent.click(screen.getByTestId('participant-proposals-tabbar-history'));
+    });
+    expect(useUiStore.getState().currentTab).toBe('history');
+    const tab = screen.getByTestId('participant-proposals-tabbar-history');
+    expect(tab.getAttribute('data-active')).toBe('true');
+    expect(tab.getAttribute('aria-selected')).toBe('true');
   });
 });

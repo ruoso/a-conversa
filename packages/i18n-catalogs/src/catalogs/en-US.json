@@ -1023,7 +1023,35 @@
     "proposalsTab": {
       "graphLabel": "Graph",
       "proposalsLabel": "Proposals",
-      "myAgreementsLabel": "My agreements"
+      "myAgreementsLabel": "My agreements",
+      "historyLabel": "History"
+    },
+    "changeHistory": {
+      "paneAriaLabel": "Change history list",
+      "systemActor": "System",
+      "loading": "Loading change history…",
+      "error": "Couldn't load the change history.",
+      "retry": "Retry",
+      "emptyState": "No events yet",
+      "kind": {
+        "session-created": "Session created",
+        "session-ended": "Session ended",
+        "participant-joined": "Participant joined",
+        "participant-left": "Participant left",
+        "node-created": "Statement created",
+        "edge-created": "Connection created",
+        "annotation-created": "Annotation created",
+        "entity-included": "Entity included",
+        "proposal": "Proposal",
+        "vote": "Vote",
+        "commit": "Commit",
+        "meta-disagreement-marked": "Meta-disagreement marked",
+        "snapshot-created": "Snapshot created",
+        "entity-removed": "Entity removed",
+        "session-mode-changed": "Session mode changed",
+        "withdraw-agreement": "Agreement withdrawn",
+        "proposal-withdrawn": "Proposal withdrawn"
+      }
     },
     "pendingProposalsPane": {
       "emptyState": "No pending proposals",

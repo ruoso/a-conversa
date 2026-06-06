@@ -70,6 +70,7 @@ import {
   ParticipantTopTabBar,
   useNewProposalArrival,
 } from '../proposals';
+import { ParticipantHistoryPane } from '../history/ParticipantHistoryPane';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useUiStore } from '../stores/uiStore';
 import { autoSelectionFromEvent } from '../graph/autoSelect';
@@ -456,6 +457,8 @@ function OperateRouteAuthenticatedBody({
             currentParticipantId={currentParticipantId}
             facetStatusIndex={facetStatusIndex}
           />
+        ) : currentTab === 'history' ? (
+          <ParticipantHistoryPane sessionId={id} />
         ) : (
           <PendingProposalsPane sessionId={id} currentParticipantId={currentParticipantId} />
         )}

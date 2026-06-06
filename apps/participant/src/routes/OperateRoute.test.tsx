@@ -371,6 +371,44 @@ describe('OperateRoute — tab switch flips visible body region', () => {
     expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
     expect(screen.getByTestId('participant-my-agreements-pane')).toBeTruthy();
   });
+
+  // ---------------------------------------------------------------
+  // Fourth tab — added by `participant_ui.part_history_view.part_history_list`.
+  // Refinement: tasks/refinements/participant-ui/part_history_list.md
+  // ---------------------------------------------------------------
+
+  it('(o) switching to "history" mounts <ParticipantHistoryPane> in place of the graph region', async () => {
+    // The history pane prefetches via the global `fetch` (the only
+    // participant view that reads the REST replay endpoint); stub it with
+    // an empty page so the effect resolves cleanly rather than rejecting.
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ events: [], nextCursor: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    try {
+      renderRoute({ auth: authenticatedCallerAuth });
+      expect(screen.getByTestId('route-operate-graph-region')).toBeTruthy();
+      const { act } = await import('@testing-library/react');
+      const { useUiStore } = await import('../stores/uiStore');
+      act(() => {
+        useUiStore.getState().setCurrentTab('history');
+      });
+      // The pane mounts immediately; `findBy*` also flushes the prefetch's
+      // async state update (the stubbed empty page → empty surface) inside
+      // act so the resolved fetch doesn't warn after the test returns.
+      expect(screen.getByTestId('participant-history-pane')).toBeTruthy();
+      await screen.findByTestId('participant-history-pane-empty');
+      expect(screen.queryByTestId('route-operate-graph-region')).toBeNull();
+      expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 
 describe('OperateRoute — entity detail panel selection-change re-render', () => {

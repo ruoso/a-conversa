@@ -70,6 +70,9 @@ export function ParticipantTopTabBar({
           {count}
         </span>
       </TabButton>
+      <TabButton tab="history" active={currentTab === 'history'} onSelect={setCurrentTab}>
+        {t('participant.proposalsTab.historyLabel')}
+      </TabButton>
     </div>
   );
 }

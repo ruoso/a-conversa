@@ -12,13 +12,14 @@ import { create } from 'zustand';
 import { withDevtools } from './devtools.js';
 
 /**
- * The three tabs the top-of-main switcher offers per
- * `docs/participant-ui.md`'s "two primary regions, switchable by tab or
- * split-view" + the `'my-agreements'` retrospective-audit affordance
- * scoped by `part_my_agreements_view`. The set is closed at v1; future
- * tabs add as literal members here.
+ * The tabs the top-of-main switcher offers per `docs/participant-ui.md`'s
+ * "two primary regions, switchable by tab or split-view" + the
+ * `'my-agreements'` retrospective-audit affordance scoped by
+ * `part_my_agreements_view` + the `'history'` change-history view scoped by
+ * `part_history_list`. The set is closed at v1; future tabs add as literal
+ * members here.
  */
-export type ParticipantTab = 'graph' | 'proposals' | 'my-agreements';
+export type ParticipantTab = 'graph' | 'proposals' | 'my-agreements' | 'history';
 
 /** Bounds chosen to match the moderator's `[MIN_ZOOM, MAX_ZOOM]`. */
 export const MIN_ZOOM = 0.25;

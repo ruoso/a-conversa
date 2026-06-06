@@ -437,6 +437,7 @@ task participant_ui "Participant (debater) UI" {
     task part_history_list "Reverse-chronological event list" {
       effort 1d
       allocate team
+      complete 100
     }
     task part_history_filtering "Filter / search history" {
       effort 1d

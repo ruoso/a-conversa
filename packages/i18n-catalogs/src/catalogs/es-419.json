@@ -1023,7 +1023,35 @@
     "proposalsTab": {
       "graphLabel": "Grafo",
       "proposalsLabel": "Propuestas",
-      "myAgreementsLabel": "Mis acuerdos"
+      "myAgreementsLabel": "Mis acuerdos",
+      "historyLabel": "Historial"
+    },
+    "changeHistory": {
+      "paneAriaLabel": "Lista de historial de cambios",
+      "systemActor": "Sistema",
+      "loading": "Cargando historial de cambios…",
+      "error": "No se pudo cargar el historial de cambios.",
+      "retry": "Reintentar",
+      "emptyState": "Aún no hay eventos",
+      "kind": {
+        "session-created": "Sesión creada",
+        "session-ended": "Sesión finalizada",
+        "participant-joined": "Participante se unió",
+        "participant-left": "Participante salió",
+        "node-created": "Enunciado creado",
+        "edge-created": "Conexión creada",
+        "annotation-created": "Anotación creada",
+        "entity-included": "Entidad incluida",
+        "proposal": "Propuesta",
+        "vote": "Voto",
+        "commit": "Consolidación",
+        "meta-disagreement-marked": "Meta-desacuerdo marcado",
+        "snapshot-created": "Instantánea creada",
+        "entity-removed": "Entidad eliminada",
+        "session-mode-changed": "Modo de sesión cambiado",
+        "withdraw-agreement": "Acuerdo retirado",
+        "proposal-withdrawn": "Propuesta retirada"
+      }
     },
     "pendingProposalsPane": {
       "emptyState": "No hay propuestas pendientes",
