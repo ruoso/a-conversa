@@ -296,6 +296,35 @@ describe('AudienceAxiomMarkOverlay', () => {
     }
   });
 
+  it('(q) scales the badge row by the viewport zoom and shrinks the offset gap with it', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(cy, NODE_A, [makeMark(NODE_A, PARTICIPANT_A)], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      act(() => {
+        cy.zoom(0.5);
+      });
+      await flushRaf();
+      const row = document.querySelector<HTMLElement>(
+        `[data-axiom-mark-row][data-element-id="${NODE_A}"]`,
+      );
+      expect(row).not.toBeNull();
+      // The row scales with zoom about its top-center anchor so the badges
+      // track the (also-zoom-scaled) node instead of ballooning.
+      expect(row?.style.transform).toBe('translate(-50%, 0) scale(0.5)');
+      expect(row?.style.transformOrigin).toBe('center top');
+      // The 6px offset gap below the node shrinks with the zoom:
+      // y2 (130) + 6 * 0.5 = 133.
+      expect(row?.style.top).toBe('133px');
+    } finally {
+      unmount();
+    }
+  });
+
   it('(h) multiple Cytoscape events within one frame produce ONE rAF-scheduled commit', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {

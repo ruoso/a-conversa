@@ -319,6 +319,35 @@ describe('AudienceAnnotationOverlay', () => {
     }
   });
 
+  it('(q) scales the badge row by the viewport zoom and shrinks the offset gap with it', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, [makeAnnotation({ id: ANNO_1, targetNodeId: NODE_A })], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      act(() => {
+        cy.zoom(0.5);
+      });
+      await flushRaf();
+      const row = document.querySelector<HTMLElement>(
+        `[data-annotation-row][data-element-id="${NODE_A}"]`,
+      );
+      expect(row).not.toBeNull();
+      // The row scales with zoom about its top-center anchor so the badges
+      // track the (also-zoom-scaled) node instead of ballooning.
+      expect(row?.style.transform).toBe('translate(-50%, 0) scale(0.5)');
+      expect(row?.style.transformOrigin).toBe('center top');
+      // The 30px offset gap below the node shrinks with the zoom:
+      // y2 (130) + 30 * 0.5 = 145.
+      expect(row?.style.top).toBe('145px');
+    } finally {
+      unmount();
+    }
+  });
+
   it('(k) renders exactly one badge row for an edge carrying one Annotation, keyed on the edge id', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {

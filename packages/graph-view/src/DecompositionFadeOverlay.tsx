@@ -84,10 +84,20 @@
 // layer: the halo is a pure visual decoration, screen readers narrate
 // the underlying node via Cytoscape's own a11y plumbing.
 
-import { useRef, type ReactElement, type RefObject } from 'react';
+import { useRef, type CSSProperties, type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
+
+/**
+ * Style record for the halo `<span>`. The `--halo-zoom` custom property
+ * carries the live Cytoscape viewport zoom; the audience stylesheet
+ * sizes the halo as `calc(96px * var(--halo-zoom, 1))` so it scales with
+ * the node instead of staying a fixed 96px and ballooning when zoomed
+ * out. The intersection type keeps strict TypeScript happy about the
+ * `--*` key.
+ */
+type HaloStyle = CSSProperties & Record<'--halo-zoom', string>;
 
 export interface AudienceDecompositionFadeOverlayProps {
   /**
@@ -113,6 +123,8 @@ interface DecompositionPlacement {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /** Cytoscape viewport zoom at commit time; drives `--halo-zoom`. */
+  readonly zoom: number;
 }
 
 export function AudienceDecompositionFadeOverlay({
@@ -152,18 +164,20 @@ export function AudienceDecompositionFadeOverlay({
     >
       {placements.map((p) => {
         const isNew = isNewDecomposition(p.id);
+        const haloStyle: HaloStyle = {
+          position: 'absolute',
+          left: `${String(p.x)}px`,
+          top: `${String(p.y)}px`,
+          transform: 'translate(-50%, -50%)',
+          '--halo-zoom': String(p.zoom),
+        };
         return (
           <span
             key={p.id}
             data-decomposition-anim=""
             data-element-id={p.id}
             className={isNew ? 'aud-decomposition' : ''}
-            style={{
-              position: 'absolute',
-              left: `${String(p.x)}px`,
-              top: `${String(p.y)}px`,
-              transform: 'translate(-50%, -50%)',
-            }}
+            style={haloStyle}
           />
         );
       })}
@@ -173,6 +187,7 @@ export function AudienceDecompositionFadeOverlay({
 
 function commitDecompositionPlacements(cy: Core): readonly DecompositionPlacement[] {
   const next: DecompositionPlacement[] = [];
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     if (node.data('decomposed') !== true) return;
     const bb = node.renderedBoundingBox();
@@ -180,6 +195,7 @@ function commitDecompositionPlacements(cy: Core): readonly DecompositionPlacemen
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
       y: (bb.y1 + bb.y2) / 2,
+      zoom,
     });
   });
   return next;

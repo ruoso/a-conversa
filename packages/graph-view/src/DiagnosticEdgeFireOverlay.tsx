@@ -69,7 +69,7 @@
 // the underlying diagnostic via the future toast / banner surface
 // (not yet shipped on the audience).
 
-import { useMemo, useRef, type ReactElement, type RefObject } from 'react';
+import { useMemo, useRef, type CSSProperties, type ReactElement, type RefObject } from 'react';
 import type { Core, EdgeSingular } from 'cytoscape';
 
 import {
@@ -117,7 +117,19 @@ interface DiagnosticEdgeFirePlacement {
   readonly severity: DiagnosticHighlightSeverity;
   readonly x: number;
   readonly y: number;
+  /** Cytoscape viewport zoom at commit time; drives `--halo-zoom`. */
+  readonly zoom: number;
 }
+
+/**
+ * Style record for a halo `<span>`. The `--halo-zoom` custom property
+ * carries the live Cytoscape viewport zoom; the audience stylesheet
+ * sizes the halo as `calc(96px * var(--halo-zoom, 1))` so it scales with
+ * the edge midpoint instead of staying a fixed 96px and ballooning when
+ * zoomed out. The intersection type keeps strict TypeScript happy about
+ * the `--*` key.
+ */
+type HaloStyle = CSSProperties & Record<'--halo-zoom', string>;
 
 export function AudienceDiagnosticEdgeFireOverlay({
   cy,
@@ -176,6 +188,13 @@ export function AudienceDiagnosticEdgeFireOverlay({
             ? 'aud-diagnostic-fire-blocking'
             : 'aud-diagnostic-fire-advisory'
           : '';
+        const haloStyle: HaloStyle = {
+          position: 'absolute',
+          left: `${String(p.x)}px`,
+          top: `${String(p.y)}px`,
+          transform: 'translate(-50%, -50%)',
+          '--halo-zoom': String(p.zoom),
+        };
         return (
           <span
             key={p.compositeKey}
@@ -185,12 +204,7 @@ export function AudienceDiagnosticEdgeFireOverlay({
             data-identity-key={p.identityKey}
             data-edge-id={p.edgeId}
             className={animClass}
-            style={{
-              position: 'absolute',
-              left: `${String(p.x)}px`,
-              top: `${String(p.y)}px`,
-              transform: 'translate(-50%, -50%)',
-            }}
+            style={haloStyle}
           />
         );
       })}
@@ -204,6 +218,7 @@ function commitDiagnosticEdgeFirePlacements(
   tuples: readonly DiagnosticEdgeFireTuple[],
 ): readonly DiagnosticEdgeFirePlacement[] {
   const next: DiagnosticEdgeFirePlacement[] = [];
+  const zoom = cy.zoom();
   for (const t of tuples) {
     const edge = cy.getElementById(t.edgeId) as EdgeSingular;
     // An edge referenced by a diagnostic but absent from the current
@@ -222,6 +237,7 @@ function commitDiagnosticEdgeFirePlacements(
       severity: t.severity,
       x: (bb.x1 + bb.x2) / 2,
       y: (bb.y1 + bb.y2) / 2,
+      zoom,
     });
   }
   return next;

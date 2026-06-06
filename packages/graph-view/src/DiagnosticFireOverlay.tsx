@@ -102,7 +102,7 @@
 // the underlying diagnostic via the future toast / banner surface
 // (not yet shipped on the audience).
 
-import { useMemo, useRef, type ReactElement, type RefObject } from 'react';
+import { useMemo, useRef, type CSSProperties, type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import {
@@ -150,7 +150,19 @@ interface DiagnosticFirePlacement {
   readonly severity: DiagnosticHighlightSeverity;
   readonly x: number;
   readonly y: number;
+  /** Cytoscape viewport zoom at commit time; drives `--halo-zoom`. */
+  readonly zoom: number;
 }
+
+/**
+ * Style record for a halo `<span>`. The `--halo-zoom` custom property
+ * carries the live Cytoscape viewport zoom; the audience stylesheet
+ * sizes the halo as `calc(96px * var(--halo-zoom, 1))` so it scales with
+ * the node instead of staying a fixed 96px and ballooning when zoomed
+ * out. The intersection type keeps strict TypeScript happy about the
+ * `--*` key.
+ */
+type HaloStyle = CSSProperties & Record<'--halo-zoom', string>;
 
 export function AudienceDiagnosticFireOverlay({
   cy,
@@ -211,6 +223,13 @@ export function AudienceDiagnosticFireOverlay({
             ? 'aud-diagnostic-fire-blocking'
             : 'aud-diagnostic-fire-advisory'
           : '';
+        const haloStyle: HaloStyle = {
+          position: 'absolute',
+          left: `${String(p.x)}px`,
+          top: `${String(p.y)}px`,
+          transform: 'translate(-50%, -50%)',
+          '--halo-zoom': String(p.zoom),
+        };
         return (
           <span
             key={p.compositeKey}
@@ -219,12 +238,7 @@ export function AudienceDiagnosticFireOverlay({
             data-identity-key={p.identityKey}
             data-node-id={p.nodeId}
             className={animClass}
-            style={{
-              position: 'absolute',
-              left: `${String(p.x)}px`,
-              top: `${String(p.y)}px`,
-              transform: 'translate(-50%, -50%)',
-            }}
+            style={haloStyle}
           />
         );
       })}
@@ -238,6 +252,7 @@ function commitDiagnosticFirePlacements(
   tuples: readonly DiagnosticFireTuple[],
 ): readonly DiagnosticFirePlacement[] {
   const next: DiagnosticFirePlacement[] = [];
+  const zoom = cy.zoom();
   for (const t of tuples) {
     const node = cy.getElementById(t.nodeId) as NodeSingular;
     // A node referenced by a diagnostic but absent from the current
@@ -253,6 +268,7 @@ function commitDiagnosticFirePlacements(
       severity: t.severity,
       x: (bb.x1 + bb.x2) / 2,
       y: (bb.y1 + bb.y2) / 2,
+      zoom,
     });
   }
   return next;

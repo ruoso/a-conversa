@@ -100,6 +100,15 @@ interface BadgeRowPlacement {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * Cytoscape viewport zoom captured at commit time. The badge row is a
+   * DOM overlay sized in fixed CSS pixels, but the node geometry it
+   * anchors to (`renderedBoundingBox`) scales with the viewport zoom.
+   * The render path applies `scale(zoom)` about the row's top-center
+   * anchor so the badges keep a constant size relative to the zoom
+   * instead of ballooning when zoomed out (mirrors `PerFacetPillOverlay`).
+   */
+  readonly zoom: number;
   readonly marks: readonly AxiomMark[];
 }
 
@@ -133,7 +142,12 @@ export function AudienceAxiomMarkOverlay({
             position: 'absolute',
             left: `${String(p.x)}px`,
             top: `${String(p.y)}px`,
-            transform: 'translate(-50%, 0)',
+            // Anchor the row's top-center at (x, y), then scale by the
+            // viewport zoom about that point (`transform-origin: center
+            // top`) so the badges stay glued below the node and keep a
+            // constant size relative to the zoom. Mirrors the pill row.
+            transform: `translate(-50%, 0) scale(${String(p.zoom)})`,
+            transformOrigin: 'center top',
             display: 'flex',
             gap: '4px',
           }}
@@ -159,6 +173,10 @@ export function AudienceAxiomMarkOverlay({
 
 function commitAxiomBadgePlacements(cy: Core): readonly BadgeRowPlacement[] {
   const next: BadgeRowPlacement[] = [];
+  // Snapshot the viewport zoom once per commit so the offset gap and the
+  // row scale track the node at the current zoom (`renderedBoundingBox`
+  // is already in zoomed/rendered pixels).
+  const zoom = cy.zoom();
   cy.nodes().forEach((node: NodeSingular) => {
     const marks = node.data('axiomMarks') as readonly AxiomMark[] | undefined;
     if (marks === undefined || marks.length === 0) return;
@@ -166,7 +184,8 @@ function commitAxiomBadgePlacements(cy: Core): readonly BadgeRowPlacement[] {
     next.push({
       id: node.id(),
       x: (bb.x1 + bb.x2) / 2,
-      y: bb.y2 + AXIOM_BADGE_ROW_OFFSET_Y,
+      y: bb.y2 + AXIOM_BADGE_ROW_OFFSET_Y * zoom,
+      zoom,
       marks,
     });
   });
