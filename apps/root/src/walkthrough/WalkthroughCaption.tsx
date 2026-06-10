@@ -39,17 +39,21 @@ export function WalkthroughCaption({ beat }: WalkthroughCaptionProps): ReactElem
       data-testid="walkthrough-caption"
       data-beat={beat?.slug ?? ''}
       aria-labelledby={beat !== undefined ? TITLE_ID : undefined}
-      className="flex h-full flex-col justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-6"
+      // Content-hugging, deliberately compact: the caption shares its
+      // column with the dialogue chat, which claims the remaining graph
+      // height — the marketing beat takes as little room as stays
+      // readable (no h-full / justify-center fill).
+      className="flex flex-col gap-1.5 rounded-2xl border border-slate-200 bg-white p-4"
     >
       {beat !== undefined && base !== undefined ? (
         <>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             {t(`${base}.eyebrow`)}
           </p>
-          <h3 id={TITLE_ID} className="text-xl font-semibold text-slate-900">
+          <h3 id={TITLE_ID} className="text-base font-semibold text-slate-900">
             {t(`${base}.title`)}
           </h3>
-          <p className="text-slate-600">{t(`${base}.body`)}</p>
+          <p className="text-sm text-slate-600">{t(`${base}.body`)}</p>
         </>
       ) : null}
     </aside>

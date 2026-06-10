@@ -93,8 +93,17 @@ export function ChatPanel({ position }: ChatPanelProps): ReactElement {
       <h3 className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {t('landing.demo.chatLabel')}
       </h3>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3" tabIndex={0}>
-        <ul role="log" aria-live="off" className="flex flex-col gap-3">
+      {/* `role="log"` lives on the scroll container, NOT the <ul> — an
+          explicit role on the list would strip its implicit `list` role
+          and orphan the <li> children (axe `listitem`). */}
+      <div
+        ref={scrollRef}
+        role="log"
+        aria-live="off"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        tabIndex={0}
+      >
+        <ul className="flex flex-col gap-3">
           {turns.map((turn) => (
             <ChatMessage key={turn.slug} turn={turn} />
           ))}
