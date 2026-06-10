@@ -40,7 +40,7 @@ export function HeroSection(): ReactElement {
       >
         {t('landing.hero.title')}
       </h1>
-      <p className="mt-4 max-w-2xl text-lg text-slate-600">{t('landing.hero.hypothesis')}</p>
+      <p className="mt-4 text-lg text-slate-600">{t('landing.hero.hypothesis')}</p>
     </section>
   );
 }

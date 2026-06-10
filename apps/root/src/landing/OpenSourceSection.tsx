@@ -42,7 +42,7 @@ export function OpenSourceSection(): ReactElement {
       <h2 id={TITLE_ID} className="text-2xl font-semibold text-slate-900">
         {t('landing.openSource.title')}
       </h2>
-      <p className="mt-4 max-w-2xl text-slate-600">{t('landing.openSource.body')}</p>
+      <p className="mt-4 text-slate-600">{t('landing.openSource.body')}</p>
       <div className="mt-6 flex flex-wrap items-center gap-4">
         <a
           href={GITHUB_REPO_URL}

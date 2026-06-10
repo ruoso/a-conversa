@@ -65,9 +65,9 @@ export function LandingRoute(): ReactElement {
     // vertically centered when it does fit, and now spans the full window
     // width (capped at a generous `max-w-[120rem]` to stay sane on
     // ultrawide displays) so the interactive walkthrough — the page's hero
-    // artifact — gets the room to breathe; the marketing prose stays
-    // readable because each paragraph caps itself at `max-w-2xl`
-    // independently. Cross-breakpoint layout is `landing_responsive_a11y`'s
+    // artifact — gets the room to breathe; the marketing prose fills its
+    // section box (the page-level `max-w-[120rem]` cap is what keeps the
+    // measure sane). Cross-breakpoint layout is `landing_responsive_a11y`'s
     // job (Decision §7); this is the desktop-first scaffold it composes
     // around.
     <main data-testid="route-landing" data-allow-scroll="" className="h-screen overflow-y-auto">
