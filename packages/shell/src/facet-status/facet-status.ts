@@ -290,9 +290,12 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
   //     them back to facets via this).
   //   - Per-entity per-facet `InternalFacetState`s.
   const currentParticipants = new Set<string>();
+  // `priorHasCandidate` snapshots the facet's `hasCandidate` at proposal
+  // time so a later `proposal-withdrawn` can restore the pre-proposal
+  // empty/candidate state (see the `proposal-withdrawn` arm below).
   const proposalTarget = new Map<
     string,
-    { entityKind: EntityKind; entityId: string; facet: FacetName }
+    { entityKind: EntityKind; entityId: string; facet: FacetName; priorHasCandidate: boolean }
   >();
   const nodeStates = new Map<string, Map<FacetName, InternalFacetState>>();
   const edgeStates = new Map<string, Map<FacetName, InternalFacetState>>();
@@ -391,7 +394,6 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
     if (event.kind === 'proposal') {
       const target = targetOf(event.payload.proposal);
       if (target !== null) {
-        proposalTarget.set(event.id, target);
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,
@@ -399,6 +401,7 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
           target.entityId,
           target.facet,
         );
+        proposalTarget.set(event.id, { ...target, priorHasCandidate: state.hasCandidate });
         // Per ADR 0030 §7 + the refactor: a new facet-valued proposal
         // sets a fresh candidate AND clears prior per-participant votes
         // on the facet (the old votes were votes against the old
@@ -579,10 +582,44 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       state.metaDisagreement = true;
       continue;
     }
+    if (event.kind === 'proposal-withdrawn') {
+      // Per ADR 0037: the zero-emission terminator for a withdrawn
+      // proposal. If the withdrawn proposal IS the facet's current
+      // candidate, the candidate is dead: clear the votes cast against
+      // it and restore the facet's pre-proposal candidate state (an
+      // `awaiting-proposal` facet returns to `awaiting-proposal`; a
+      // previously-committed facet falls back to its committed
+      // standing). A stale withdraw — one referencing a proposal that
+      // was already superseded by a newer candidate — is a no-op, which
+      // keeps the rule conservative for the moderator / participant /
+      // audience surfaces that share this projection.
+      const target = proposalTarget.get(event.payload.proposal_id);
+      if (!target) {
+        // A withdrawn structural proposal contributes no facet state;
+        // for a withdrawn meta-move, drop its accumulated votes so a
+        // malformed later commit can't route them onto an annotation.
+        metaMoveProposalVotes.delete(event.payload.proposal_id);
+        continue;
+      }
+      const state = getOrCreateFacetState(
+        nodeStates,
+        edgeStates,
+        target.entityKind,
+        target.entityId,
+        target.facet,
+      );
+      if (state.candidateProposalEventId === event.payload.proposal_id) {
+        state.perParticipant.clear();
+        state.hasCandidate = target.priorHasCandidate;
+        state.candidateProposalEventId = null;
+      }
+      continue;
+    }
     // Other event kinds (annotation-created, session-created,
     // session-ended, entity-included, snapshot-created, ...) do not
     // affect facet status directly. The facet status is purely a
-    // function of proposals + votes + commits + meta-disagreement marks.
+    // function of proposals + votes + commits + meta-disagreement marks
+    // (+ `proposal-withdrawn` clearing an in-flight candidate above).
   }
 
   // Step 2: run the derivation rules on each accumulated state.

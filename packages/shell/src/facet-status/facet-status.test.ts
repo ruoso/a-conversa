@@ -353,6 +353,22 @@ function withdrawAgreementEvent(
   };
 }
 
+function proposalWithdrawnEvent(seq: number, proposalId: string): Event {
+  return {
+    id: envId('W', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'proposal-withdrawn',
+    actor: ACTOR,
+    payload: {
+      proposal_id: proposalId,
+      withdrawn_by: ACTOR,
+      withdrawn_at: '2026-05-28T00:00:27.000Z',
+    },
+    createdAt: '2026-05-28T00:00:27.000Z',
+  };
+}
+
 function metaDisagreementEvent(seq: number, proposalId: string): Event {
   return {
     id: envId('m', seq),
@@ -773,6 +789,74 @@ describe('computeFacetStatuses — annotation substance facet is disputable post
     ];
     const index = computeFacetStatuses(events);
     expect(index.annotations.get(ANNOTATION_M)).toEqual({ substance: 'committed' });
+  });
+});
+
+describe('computeFacetStatuses — proposal-withdrawn clears the in-flight candidate (ADR 0037)', () => {
+  it('a withdrawn first proposal returns the facet to awaiting-proposal and drops its votes', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      classifyProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'dispute'),
+      proposalWithdrawnEvent(5, PROPOSAL_P),
+    ];
+    const index = computeFacetStatuses(events);
+    // The dead candidate neither lingers as 'proposed' nor leaks its
+    // dispute — the facet is empty again.
+    expect(index.nodes.get(NODE_X)?.classification).toBe('awaiting-proposal');
+  });
+
+  it('withdrawing a superseding proposal restores the committed standing', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      classifyProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      commitEvent(6, PROPOSAL_P),
+      // A fresh candidate on the committed facet draws a dispute…
+      classifyProposal(7, PROPOSAL_Q, NODE_X, 'value'),
+      voteEvent(8, PROPOSAL_Q, PARTICIPANT_B, 'dispute'),
+      // …then is withdrawn: the dispute dies with the candidate and the
+      // facet falls back to its committed standing.
+      proposalWithdrawnEvent(9, PROPOSAL_Q),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('committed');
+  });
+
+  it('a stale withdraw (already-superseded proposal) is a no-op', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      classifyProposal(3, PROPOSAL_P, NODE_X),
+      classifyProposal(4, PROPOSAL_Q, NODE_X, 'value'),
+      voteEvent(5, PROPOSAL_Q, PARTICIPANT_A, 'agree'),
+      voteEvent(6, PROPOSAL_Q, PARTICIPANT_B, 'agree'),
+      // P was already superseded by Q; withdrawing it must not disturb
+      // Q's candidacy or the votes cast against Q.
+      proposalWithdrawnEvent(7, PROPOSAL_P),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('agreed');
+  });
+
+  it('a withdrawn meta-move never routes its votes onto a later annotation', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      metaMoveProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      proposalWithdrawnEvent(6, PROPOSAL_P),
+      // A malformed log committing the withdrawn meta-move must not
+      // resurrect the dropped votes.
+      annotationCreatedEvent(7, ANNOTATION_M, NODE_X),
+      commitEvent(8, PROPOSAL_P),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.annotations.get(ANNOTATION_M)).toBeUndefined();
   });
 });
 
