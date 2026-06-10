@@ -1138,6 +1138,76 @@ describe('<GraphView>', () => {
   });
 
   // ---------------------------------------------------------------
+  // withdrawn-state selector entries on STYLESHEET — structural pair +
+  // one mount-time computed-style case. Rule 4 of facetStatus.ts fires
+  // on a `withdraw-agreement` against a committed facet; the paint is
+  // the FacetPill's withdrawn language (dashed slate, heavier fade).
+  // ---------------------------------------------------------------
+
+  it("(wd-a) STYLESHEET carries a node[rollupStatus = 'withdrawn'] entry with dashed slate-400 border at 0.45 opacity", () => {
+    const style = findStylesheetEntry("node[rollupStatus = 'withdrawn']");
+    expect(style['border-style']).toBe('dashed');
+    expect(style['border-color']).toBe('#94a3b8');
+    expect(style.opacity).toBe(0.45);
+  });
+
+  it("(wd-b) STYLESHEET carries an edge[rollupStatus = 'withdrawn'] entry with dashed slate-400 line at 0.45 opacity", () => {
+    const style = findStylesheetEntry("edge[rollupStatus = 'withdrawn']");
+    expect(style['line-style']).toBe('dashed');
+    expect(style['line-color']).toBe('#94a3b8');
+    expect(style['target-arrow-color']).toBe('#94a3b8');
+    expect(style.opacity).toBe(0.45);
+  });
+
+  it('(wd-c) a node whose rollupStatus resolves to "withdrawn" carries the withdrawn-state computed style', () => {
+    // Smallest sequence that fires Rule 4 on a node: a participant
+    // joins, the node is created (inline wording candidate per ADR 0030
+    // §4), a facet-keyed commit closes the wording facet, then the
+    // participant withdraws their agreement on it. Rule 4 surfaces
+    // `wording = 'withdrawn'`; the rollup priority then sets
+    // `data.rollupStatus === 'withdrawn'` (classification/substance are
+    // only `awaiting-proposal`).
+    const result = renderView();
+    seedEvent(participantJoinedEvent({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_A, wording: 'A' }));
+    seedEvent({
+      id: '00000000-0000-4000-8000-00000000fc01',
+      sessionId: SESSION_ID,
+      sequence: 3,
+      kind: 'commit',
+      actor: ACTOR,
+      payload: {
+        target: 'facet',
+        entity_kind: 'node',
+        entity_id: NODE_A,
+        facet: 'wording',
+        committed_by: ACTOR,
+        committed_at: '2026-05-27T00:00:00.000Z',
+      },
+      createdAt: '2026-05-27T00:00:00.000Z',
+    });
+    seedEvent({
+      id: '00000000-0000-4000-8000-00000000fc02',
+      sessionId: SESSION_ID,
+      sequence: 4,
+      kind: 'withdraw-agreement',
+      actor: PARTICIPANT_A,
+      payload: {
+        entity_kind: 'node',
+        entity_id: NODE_A,
+        facet: 'wording',
+        participant: PARTICIPANT_A,
+        withdrawn_at: '2026-05-27T00:00:01.000Z',
+      },
+      createdAt: '2026-05-27T00:00:01.000Z',
+    });
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('rollupStatus')).toBe('withdrawn');
+    expect(cy.getElementById(NODE_A).style('border-style')).toBe('dashed');
+    expect(cy.getElementById(NODE_A).style('border-color')).toBe('rgb(148,163,184)');
+  });
+
+  // ---------------------------------------------------------------
   // aud_decomposition_animation — `node[?decomposed]` selector entry.
   // Structural-only assertions on the STYLESHEET array. The projection-
   // time stamping of `data.decomposed: true` at decompose / interpretive-

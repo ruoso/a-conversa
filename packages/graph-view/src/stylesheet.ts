@@ -128,6 +128,10 @@ export const STATE_COLORS = {
   agreed: '#334155',
   disputed: '#e11d48',
   metaDisagreement: '#7c3aed',
+  // Withdrawn = closed-and-retracted. Matches the shell `FacetPill`'s
+  // withdrawn chip language (dashed slate at a heavier fade than
+  // `proposed`) rather than introducing a new hue — slate-400.
+  withdrawn: '#94a3b8',
 } as const;
 
 /**
@@ -291,6 +295,29 @@ export const STYLESHEET: StylesheetJson = [
     style: {
       'line-color': STATE_COLORS.disputed,
       'target-arrow-color': STATE_COLORS.disputed,
+    },
+  },
+  {
+    // Withdrawn — a committed facet whose agreement was retracted via
+    // `withdraw-agreement` (ADR 0030 §3). Reads as "closed; retracted":
+    // the dashed style of `proposed` at a heavier fade, in the closed
+    // slate tone (matching the shell FacetPill's withdrawn chip), so it
+    // is distinguishable from both the active dashed `proposed` (0.6,
+    // baseline border) and the rose `disputed`.
+    selector: "node[rollupStatus = 'withdrawn']",
+    style: {
+      'border-style': 'dashed',
+      'border-color': STATE_COLORS.withdrawn,
+      opacity: 0.45,
+    },
+  },
+  {
+    selector: "edge[rollupStatus = 'withdrawn']",
+    style: {
+      'line-style': 'dashed',
+      'line-color': STATE_COLORS.withdrawn,
+      'target-arrow-color': STATE_COLORS.withdrawn,
+      opacity: 0.45,
     },
   },
   {

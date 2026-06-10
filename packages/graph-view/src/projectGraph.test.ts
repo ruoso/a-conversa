@@ -1256,6 +1256,128 @@ describe('projectGraph (audience baseline)', () => {
     expect(nodes.find((n) => n.data.id === NODE_B)).toBeDefined();
   });
 
+  // ---------------------------------------------------------------
+  // edit-wording (reword) — a committed reword keeps the node id and
+  // swaps the displayed wording, re-measuring the box dimensions.
+  // ---------------------------------------------------------------
+
+  function makeRewordProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    nodeId: string;
+    newWording: string;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: {
+          kind: 'edit-wording',
+          edit_kind: 'reword',
+          node_id: opts.nodeId,
+          new_wording: opts.newWording,
+        },
+      },
+      createdAt: '2026-05-29T00:00:00.000Z',
+    };
+  }
+
+  it('(rw1) a pending (uncommitted) reword leaves the old wording on the node', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Old wording' }),
+      makeRewordProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        newWording: 'New wording',
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)?.data.wording).toBe('Old wording');
+  });
+
+  it('(rw2) a proposal-keyed reword commit swaps the wording and re-measures the box', () => {
+    const longWording =
+      'A considerably longer replacement wording that wraps across multiple lines and therefore re-measures wider and taller than the original';
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Short' }),
+      makeRewordProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        newWording: longWording,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const before = projectGraph([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Short' }),
+    ]);
+    const { nodes } = projectGraph(events);
+    const node = nodes.find((n) => n.data.id === NODE_A);
+    expect(node?.data.wording).toBe(longWording);
+    // The box was re-measured from the new text, not left at the
+    // node-created measurement.
+    const original = before.nodes.find((n) => n.data.id === NODE_A);
+    expect(node?.data.width).not.toBe(original?.data.width);
+  });
+
+  it('(rw3) a facet-keyed wording commit (ADR 0030 §2) swaps the wording via the per-node candidate', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Old wording' }),
+      makeRewordProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        newWording: 'New wording',
+      }),
+      {
+        id: '00000000-0000-4000-8000-0000000000c6',
+        sessionId: SESSION_ID,
+        sequence: 3,
+        kind: 'commit',
+        actor: ACTOR,
+        payload: {
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'wording',
+          committed_by: ACTOR,
+          committed_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)?.data.wording).toBe('New wording');
+  });
+
+  it('(rw4) a facet-keyed wording commit with NO reword candidate is a no-op (seals the captured text)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Captured wording' }),
+      {
+        id: '00000000-0000-4000-8000-0000000000c7',
+        sessionId: SESSION_ID,
+        sequence: 2,
+        kind: 'commit',
+        actor: ACTOR,
+        payload: {
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'wording',
+          committed_by: ACTOR,
+          committed_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)?.data.wording).toBe('Captured wording');
+  });
+
   it('(j) is invariant under the POSITION of a participant-joined interleaved between node-created and its classify commit', () => {
     // The participant roster is causal (it feeds `data.debaters`), so both
     // logs carry the SAME participant-joined; the test pins that WHERE it

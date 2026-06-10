@@ -459,12 +459,42 @@ export function projectGraph(events: readonly Event[]): {
   // `node-created`) and supersede the old node. Track (proposal id →
   // superseded old node id) so the commit can drop the old node.
   const pendingRestructures = new Map<string, string>();
+  // Reword edits keep the node id and swap its text at COMMIT time (the
+  // node keeps showing the old wording while the candidate gathers
+  // votes; the pill carries the in-flight candidate). Tracked under both
+  // keyings: (proposal id → {nodeId, wording}) for the proposal-keyed
+  // commit arm, and (node id → wording) for the facet-keyed arm, which
+  // has no proposal_id carrier (per ADR 0030 §2 — symmetric with
+  // `currentClassificationByNode`).
+  const pendingRewords = new Map<string, { nodeId: string; wording: string }>();
+  const currentWordingByNode = new Map<string, string>();
   // Node ids superseded by a COMMITTED decompose / interpretive-split (the
   // parent) or restructure (the old node). These are omitted from the
   // emitted graph entirely at the end of the walk — a superseded node is no
   // longer part of the live argument, and leaving it (even with distinct
   // formatting) only clutters the read-only surfaces.
   const supersededNodeIds = new Set<string>();
+
+  // Swap a statement node's displayed wording (a committed reword) and
+  // re-measure its box — the width/height/textMaxWidth `data(...)`
+  // mappers were measured from the old text at `node-created` time.
+  const applyCommittedWording = (nodeId: string, wording: string): void => {
+    const idx = nodeIndexById.get(nodeId);
+    if (idx === undefined) return;
+    const existing = nodes[idx];
+    if (existing === undefined) return;
+    const dimensions = computeNodeDimensions(wording);
+    nodes[idx] = {
+      group: 'nodes',
+      data: {
+        ...existing.data,
+        wording,
+        width: dimensions.width,
+        height: dimensions.height + STEP_PILL_BAND_PX,
+        textMaxWidth: dimensions.textMaxWidth,
+      },
+    };
+  };
 
   for (const event of events) {
     if (event.kind === 'node-created') {
@@ -582,14 +612,29 @@ export function projectGraph(events: readonly Event[]): {
         // Restructure's `node_id` is the OLD node being superseded; the
         // `new_node_id` replacement arrives via its own `node-created`.
         pendingRestructures.set(event.id, inner.node_id);
+      } else if (inner.kind === 'edit-wording' && inner.edit_kind === 'reword') {
+        // Reword keeps the node id; the new text lands at commit.
+        pendingRewords.set(event.id, { nodeId: inner.node_id, wording: inner.new_wording });
+        currentWordingByNode.set(inner.node_id, inner.new_wording);
       }
       continue;
     }
 
     if (event.kind === 'commit') {
       if (event.payload.target === 'facet') {
-        if (event.payload.facet !== 'classification') continue;
         if (event.payload.entity_kind !== 'node') continue;
+        if (event.payload.facet === 'wording') {
+          // A committed reword: swap the displayed text. A wording
+          // commit with no reword candidate (e.g. sealing a captured
+          // node's original text) finds no map entry and is a no-op —
+          // the node already shows that wording.
+          const wording = currentWordingByNode.get(event.payload.entity_id);
+          if (wording !== undefined) {
+            applyCommittedWording(event.payload.entity_id, wording);
+          }
+          continue;
+        }
+        if (event.payload.facet !== 'classification') continue;
         const classification = currentClassificationByNode.get(event.payload.entity_id);
         if (classification === undefined) continue;
         const idx = nodeIndexById.get(event.payload.entity_id);
@@ -603,6 +648,11 @@ export function projectGraph(events: readonly Event[]): {
         continue;
       }
       // target === 'proposal' — the proposal-keyed arm.
+      const reword = pendingRewords.get(event.payload.proposal_id);
+      if (reword !== undefined) {
+        applyCommittedWording(reword.nodeId, reword.wording);
+        continue;
+      }
       const proposal = pendingClassifications.get(event.payload.proposal_id);
       if (proposal !== undefined) {
         const idx = nodeIndexById.get(proposal.nodeId);
