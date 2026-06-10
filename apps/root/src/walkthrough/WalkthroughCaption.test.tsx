@@ -14,7 +14,16 @@ import {
 } from '@a-conversa/graph-view/test-utils';
 
 import { WalkthroughDemoNarrated } from './WalkthroughDemoNarrated';
+import { WALKTHROUGH_BEATS } from './narration';
 import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
+
+// Resolve anchor positions from the live beat table — no position
+// literals, so fixture edits never redden this suite.
+const beatPosition = (slug: string): number => {
+  const beat = WALKTHROUGH_BEATS.find((b) => b.slug === slug);
+  if (beat === undefined) throw new Error(`no walkthrough beat with slug "${slug}"`);
+  return beat.position;
+};
 
 // Cytoscape needs the same noop canvas / ResizeObserver / rAF stubs the
 // stepper suite installs — `WalkthroughDemoNarrated` mounts the real demo.
@@ -56,9 +65,9 @@ describe('WalkthroughDemoNarrated — caption tracks position', () => {
       expect(caption.getAttribute('data-beat')).toBe('opening');
     });
 
-    // pos 100 is the `classification` anchor.
+    // Scrub to the `classification` anchor.
     fireEvent.change(screen.getByTestId('walkthrough-scrubber'), {
-      target: { value: '100' },
+      target: { value: String(beatPosition('classification')) },
     });
     await waitFor(() => {
       expect(caption.getAttribute('data-beat')).toBe('classification');
@@ -74,9 +83,9 @@ describe('WalkthroughDemoNarrated — caption tracks position', () => {
       expect(caption.getAttribute('data-beat')).toBe('opening');
     });
 
-    // Scrub to pos 3 (below the first anchor, 6): no active beat.
+    // Scrub below the first anchor: no active beat.
     fireEvent.change(screen.getByTestId('walkthrough-scrubber'), {
-      target: { value: '3' },
+      target: { value: String(WALKTHROUGH_BEATS[0]!.position - 3) },
     });
     await waitFor(() => {
       expect(caption.getAttribute('data-beat')).toBe('');

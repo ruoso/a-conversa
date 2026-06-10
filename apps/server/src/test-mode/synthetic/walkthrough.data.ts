@@ -140,9 +140,43 @@ export const walkthroughFixtureData: VendoredFixture = {
       created_at: '2026-03-01T18:00:07.000Z',
     },
     {
-      id: 'ee000000-0000-4000-8000-000000000008',
+      id: 'ee000000-0000-4000-8000-000000070001',
       session_id: '10000005-0000-4000-8000-000000000001',
       sequence: 8,
+      kind: 'vote',
+      actor: '10000001-0000-4000-8000-00000000a001',
+      payload: {
+        target: 'facet',
+        entity_kind: 'node',
+        entity_id: '10000010-0000-4000-8000-000000000001',
+        facet: 'wording',
+        participant: '10000001-0000-4000-8000-00000000a001',
+        choice: 'agree',
+        voted_at: '2026-03-01T18:00:07.200Z',
+      },
+      created_at: '2026-03-01T18:00:07.200Z',
+    },
+    {
+      id: 'ee000000-0000-4000-8000-000000070002',
+      session_id: '10000005-0000-4000-8000-000000000001',
+      sequence: 9,
+      kind: 'vote',
+      actor: '10000001-0000-4000-8000-00000000b001',
+      payload: {
+        target: 'facet',
+        entity_kind: 'node',
+        entity_id: '10000010-0000-4000-8000-000000000001',
+        facet: 'wording',
+        participant: '10000001-0000-4000-8000-00000000b001',
+        choice: 'agree',
+        voted_at: '2026-03-01T18:00:07.400Z',
+      },
+      created_at: '2026-03-01T18:00:07.400Z',
+    },
+    {
+      id: 'ee000000-0000-4000-8000-000000000008',
+      session_id: '10000005-0000-4000-8000-000000000001',
+      sequence: 10,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -156,7 +190,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000009',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 9,
+      sequence: 11,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -170,7 +204,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 10,
+      sequence: 12,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -184,7 +218,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 11,
+      sequence: 13,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -199,7 +233,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 12,
+      sequence: 14,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -213,7 +247,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 13,
+      sequence: 15,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -227,7 +261,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 14,
+      sequence: 16,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -241,7 +275,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000000f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 15,
+      sequence: 17,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -255,7 +289,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000010',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 16,
+      sequence: 18,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -269,7 +303,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000011',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 17,
+      sequence: 19,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -285,7 +319,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000012',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 18,
+      sequence: 20,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -301,7 +335,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000013',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 19,
+      sequence: 21,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -317,7 +351,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000014',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 20,
+      sequence: 22,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -331,7 +365,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000015',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 21,
+      sequence: 23,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -345,7 +379,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000016',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 22,
+      sequence: 24,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -359,7 +393,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000017',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 23,
+      sequence: 25,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -400,7 +434,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000018',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 24,
+      sequence: 26,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -415,7 +449,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000019',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 25,
+      sequence: 27,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -430,7 +464,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 26,
+      sequence: 28,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -445,7 +479,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 27,
+      sequence: 29,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -459,7 +493,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 28,
+      sequence: 30,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -474,7 +508,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 29,
+      sequence: 31,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -489,7 +523,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 30,
+      sequence: 32,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -504,7 +538,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000001f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 31,
+      sequence: 33,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -519,7 +553,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000020',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 32,
+      sequence: 34,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -533,7 +567,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000021',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 33,
+      sequence: 35,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -548,7 +582,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000022',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 34,
+      sequence: 36,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -563,7 +597,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000023',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 35,
+      sequence: 37,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -578,7 +612,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000024',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 36,
+      sequence: 38,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -593,7 +627,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000025',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 37,
+      sequence: 39,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -607,7 +641,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000026',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 38,
+      sequence: 40,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -622,7 +656,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000027',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 39,
+      sequence: 41,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -637,7 +671,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000028',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 40,
+      sequence: 42,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -652,7 +686,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000029',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 41,
+      sequence: 43,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -667,7 +701,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 42,
+      sequence: 44,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -681,7 +715,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 43,
+      sequence: 45,
       kind: 'annotation-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -699,7 +733,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 44,
+      sequence: 46,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -713,7 +747,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 45,
+      sequence: 47,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -730,7 +764,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 46,
+      sequence: 48,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -745,7 +779,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000002f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 47,
+      sequence: 49,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -760,7 +794,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000030',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 48,
+      sequence: 50,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -775,7 +809,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000031',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 49,
+      sequence: 51,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -789,7 +823,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000032',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 50,
+      sequence: 52,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -804,7 +838,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000033',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 51,
+      sequence: 53,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -818,7 +852,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000034',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 52,
+      sequence: 54,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -832,7 +866,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000035',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 53,
+      sequence: 55,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -847,7 +881,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000036',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 54,
+      sequence: 56,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -861,7 +895,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000037',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 55,
+      sequence: 57,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -875,7 +909,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000038',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 56,
+      sequence: 58,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -891,7 +925,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000039',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 57,
+      sequence: 59,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -905,7 +939,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 58,
+      sequence: 60,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -931,7 +965,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 59,
+      sequence: 61,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -946,7 +980,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 60,
+      sequence: 62,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -961,7 +995,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 61,
+      sequence: 63,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -976,7 +1010,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 62,
+      sequence: 64,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -990,7 +1024,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000003f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 63,
+      sequence: 65,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1005,7 +1039,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000040',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 64,
+      sequence: 66,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1020,7 +1054,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000041',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 65,
+      sequence: 67,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1035,7 +1069,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000042',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 66,
+      sequence: 68,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1050,7 +1084,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000043',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 67,
+      sequence: 69,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1064,7 +1098,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000044',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 68,
+      sequence: 70,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1079,7 +1113,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000045',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 69,
+      sequence: 71,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1094,7 +1128,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000046',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 70,
+      sequence: 72,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1109,7 +1143,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000047',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 71,
+      sequence: 73,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1124,7 +1158,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000048',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 72,
+      sequence: 74,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1138,7 +1172,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000049',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 73,
+      sequence: 75,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1153,7 +1187,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 74,
+      sequence: 76,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1167,7 +1201,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 75,
+      sequence: 77,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1182,7 +1216,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 76,
+      sequence: 78,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1197,7 +1231,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 77,
+      sequence: 79,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1212,7 +1246,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 78,
+      sequence: 80,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1227,7 +1261,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000004f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 79,
+      sequence: 81,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1241,7 +1275,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000050',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 80,
+      sequence: 82,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1257,7 +1291,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000051',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 81,
+      sequence: 83,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1271,7 +1305,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000052',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 82,
+      sequence: 84,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1286,7 +1320,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000053',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 83,
+      sequence: 85,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1301,7 +1335,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000054',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 84,
+      sequence: 86,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1316,7 +1350,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000055',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 85,
+      sequence: 87,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1331,7 +1365,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000056',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 86,
+      sequence: 88,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1345,7 +1379,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000057',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 87,
+      sequence: 89,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1360,7 +1394,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000058',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 88,
+      sequence: 90,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1375,7 +1409,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000059',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 89,
+      sequence: 91,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1389,7 +1423,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 90,
+      sequence: 92,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1403,7 +1437,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 91,
+      sequence: 93,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1418,7 +1452,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 92,
+      sequence: 94,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1433,7 +1467,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 93,
+      sequence: 95,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1448,7 +1482,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 94,
+      sequence: 96,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1463,7 +1497,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000005f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 95,
+      sequence: 97,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1477,7 +1511,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000060',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 96,
+      sequence: 98,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1492,7 +1526,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000061',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 97,
+      sequence: 99,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1507,7 +1541,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000062',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 98,
+      sequence: 100,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1522,7 +1556,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000063',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 99,
+      sequence: 101,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1537,7 +1571,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000064',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 100,
+      sequence: 102,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1551,7 +1585,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000065',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 101,
+      sequence: 103,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1567,7 +1601,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000066',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 102,
+      sequence: 104,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1581,7 +1615,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000067',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 103,
+      sequence: 105,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1596,7 +1630,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000068',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 104,
+      sequence: 106,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1611,7 +1645,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000069',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 105,
+      sequence: 107,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1626,7 +1660,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 106,
+      sequence: 108,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1641,7 +1675,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 107,
+      sequence: 109,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1655,7 +1689,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 108,
+      sequence: 110,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1671,7 +1705,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 109,
+      sequence: 111,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1685,7 +1719,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 110,
+      sequence: 112,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1700,7 +1734,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000006f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 111,
+      sequence: 113,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1715,7 +1749,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000070',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 112,
+      sequence: 114,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1730,7 +1764,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000071',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 113,
+      sequence: 115,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1745,7 +1779,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000072',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 114,
+      sequence: 116,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1759,7 +1793,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000073',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 115,
+      sequence: 117,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1774,7 +1808,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000074',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 116,
+      sequence: 118,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1788,7 +1822,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000075',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 117,
+      sequence: 119,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1802,7 +1836,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000076',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 118,
+      sequence: 120,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1816,7 +1850,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000077',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 119,
+      sequence: 121,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1831,7 +1865,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000078',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 120,
+      sequence: 122,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1846,7 +1880,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000079',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 121,
+      sequence: 123,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1861,7 +1895,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 122,
+      sequence: 124,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1876,7 +1910,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 123,
+      sequence: 125,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1890,7 +1924,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 124,
+      sequence: 126,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1905,7 +1939,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 125,
+      sequence: 127,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1920,7 +1954,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 126,
+      sequence: 128,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -1935,7 +1969,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000007f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 127,
+      sequence: 129,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -1950,7 +1984,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000080',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 128,
+      sequence: 130,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1964,7 +1998,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000081',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 129,
+      sequence: 131,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1980,7 +2014,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000082',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 130,
+      sequence: 132,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -1994,7 +2028,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000083',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 131,
+      sequence: 133,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2009,7 +2043,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000084',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 132,
+      sequence: 134,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2024,7 +2058,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000085',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 133,
+      sequence: 135,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2039,7 +2073,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000086',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 134,
+      sequence: 136,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2054,7 +2088,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000087',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 135,
+      sequence: 137,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2068,7 +2102,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000088',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 136,
+      sequence: 138,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2084,7 +2118,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000089',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 137,
+      sequence: 139,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2098,7 +2132,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 138,
+      sequence: 140,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2113,7 +2147,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 139,
+      sequence: 141,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2128,7 +2162,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 140,
+      sequence: 142,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2143,7 +2177,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 141,
+      sequence: 143,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2158,7 +2192,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 142,
+      sequence: 144,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2172,7 +2206,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000008f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 143,
+      sequence: 145,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2187,7 +2221,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000090',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 144,
+      sequence: 146,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2202,7 +2236,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000091',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 145,
+      sequence: 147,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2217,7 +2251,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000092',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 146,
+      sequence: 148,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2232,7 +2266,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000093',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 147,
+      sequence: 149,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2246,7 +2280,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000094',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 148,
+      sequence: 150,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2261,7 +2295,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000095',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 149,
+      sequence: 151,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2276,7 +2310,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000096',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 150,
+      sequence: 152,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2290,7 +2324,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000097',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 151,
+      sequence: 153,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2304,7 +2338,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000098',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 152,
+      sequence: 154,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2319,7 +2353,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000099',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 153,
+      sequence: 155,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2334,7 +2368,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 154,
+      sequence: 156,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2349,7 +2383,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009b',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 155,
+      sequence: 157,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2364,7 +2398,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009c',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 156,
+      sequence: 158,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2378,7 +2412,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009d',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 157,
+      sequence: 159,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2393,7 +2427,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009e',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 158,
+      sequence: 160,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2408,7 +2442,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000009f',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 159,
+      sequence: 161,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2423,7 +2457,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 160,
+      sequence: 162,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2438,7 +2472,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 161,
+      sequence: 163,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2452,7 +2486,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 162,
+      sequence: 164,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2468,7 +2502,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 163,
+      sequence: 165,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2482,7 +2516,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 164,
+      sequence: 166,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2497,7 +2531,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 165,
+      sequence: 167,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2512,7 +2546,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 166,
+      sequence: 168,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2527,7 +2561,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 167,
+      sequence: 169,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2542,7 +2576,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 168,
+      sequence: 170,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2556,7 +2590,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000a9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 169,
+      sequence: 171,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2572,7 +2606,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000aa',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 170,
+      sequence: 172,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2586,7 +2620,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ab',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 171,
+      sequence: 173,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2601,7 +2635,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ac',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 172,
+      sequence: 174,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2616,7 +2650,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ad',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 173,
+      sequence: 175,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2631,7 +2665,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ae',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 174,
+      sequence: 176,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2646,7 +2680,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000af',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 175,
+      sequence: 177,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2660,7 +2694,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 176,
+      sequence: 178,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2675,7 +2709,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 177,
+      sequence: 179,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2690,7 +2724,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 178,
+      sequence: 180,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2705,7 +2739,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 179,
+      sequence: 181,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2720,7 +2754,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 180,
+      sequence: 182,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2734,7 +2768,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 181,
+      sequence: 183,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2749,7 +2783,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 182,
+      sequence: 184,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2763,7 +2797,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 183,
+      sequence: 185,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2778,7 +2812,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 184,
+      sequence: 186,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2793,7 +2827,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000b9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 185,
+      sequence: 187,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2808,7 +2842,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ba',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 186,
+      sequence: 188,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2823,7 +2857,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000bb',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 187,
+      sequence: 189,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2837,7 +2871,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000bc',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 188,
+      sequence: 190,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2852,7 +2886,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000bd',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 189,
+      sequence: 191,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2867,7 +2901,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000be',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 190,
+      sequence: 192,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2881,7 +2915,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000bf',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 191,
+      sequence: 193,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2895,7 +2929,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 192,
+      sequence: 194,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2921,7 +2955,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 193,
+      sequence: 195,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2936,7 +2970,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 194,
+      sequence: 196,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -2951,7 +2985,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 195,
+      sequence: 197,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -2966,7 +3000,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 196,
+      sequence: 198,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2980,7 +3014,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 197,
+      sequence: 199,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -2996,7 +3030,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 198,
+      sequence: 200,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3010,7 +3044,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 199,
+      sequence: 201,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3025,7 +3059,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 200,
+      sequence: 202,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3040,7 +3074,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000c9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 201,
+      sequence: 203,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3055,7 +3089,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ca',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 202,
+      sequence: 204,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3070,7 +3104,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000cb',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 203,
+      sequence: 205,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3084,7 +3118,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000cc',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 204,
+      sequence: 206,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3100,7 +3134,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000cd',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 205,
+      sequence: 207,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3114,7 +3148,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ce',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 206,
+      sequence: 208,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3129,7 +3163,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000cf',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 207,
+      sequence: 209,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3144,7 +3178,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 208,
+      sequence: 210,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3159,7 +3193,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 209,
+      sequence: 211,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3174,7 +3208,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 210,
+      sequence: 212,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3188,7 +3222,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 211,
+      sequence: 213,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3204,7 +3238,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 212,
+      sequence: 214,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3218,7 +3252,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 213,
+      sequence: 215,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3233,7 +3267,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 214,
+      sequence: 216,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3248,7 +3282,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 215,
+      sequence: 217,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3263,7 +3297,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 216,
+      sequence: 218,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3278,7 +3312,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000d9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 217,
+      sequence: 219,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3292,7 +3326,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000da',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 218,
+      sequence: 220,
       kind: 'annotation-created',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3310,7 +3344,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000db',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 219,
+      sequence: 221,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3324,7 +3358,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000dc',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 220,
+      sequence: 222,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3341,7 +3375,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000dd',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 221,
+      sequence: 223,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3356,7 +3390,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000de',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 222,
+      sequence: 224,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3371,7 +3405,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000df',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 223,
+      sequence: 225,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3386,7 +3420,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 224,
+      sequence: 226,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3400,7 +3434,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 225,
+      sequence: 227,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3415,7 +3449,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 226,
+      sequence: 228,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3430,7 +3464,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 227,
+      sequence: 229,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3445,7 +3479,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 228,
+      sequence: 230,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3460,7 +3494,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 229,
+      sequence: 231,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3474,7 +3508,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 230,
+      sequence: 232,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3490,7 +3524,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 231,
+      sequence: 233,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3504,7 +3538,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 232,
+      sequence: 234,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3519,7 +3553,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000e9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 233,
+      sequence: 235,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3534,7 +3568,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ea',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 234,
+      sequence: 236,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3549,7 +3583,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000eb',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 235,
+      sequence: 237,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3564,7 +3598,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ec',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 236,
+      sequence: 238,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3578,7 +3612,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ed',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 237,
+      sequence: 239,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3594,7 +3628,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ee',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 238,
+      sequence: 240,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3608,7 +3642,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ef',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 239,
+      sequence: 241,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3623,7 +3657,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f0',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 240,
+      sequence: 242,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3638,7 +3672,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f1',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 241,
+      sequence: 243,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3653,7 +3687,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f2',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 242,
+      sequence: 244,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3668,7 +3702,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f3',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 243,
+      sequence: 245,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3682,7 +3716,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f4',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 244,
+      sequence: 246,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3697,7 +3731,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f5',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 245,
+      sequence: 247,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3712,7 +3746,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f6',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 246,
+      sequence: 248,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3727,7 +3761,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f7',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 247,
+      sequence: 249,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3742,7 +3776,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f8',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 248,
+      sequence: 250,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3756,7 +3790,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000f9',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 249,
+      sequence: 251,
       kind: 'annotation-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3773,7 +3807,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000fa',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 250,
+      sequence: 252,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3787,7 +3821,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000fb',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 251,
+      sequence: 253,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3804,7 +3838,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000fc',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 252,
+      sequence: 254,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3819,7 +3853,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000fd',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 253,
+      sequence: 255,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3834,7 +3868,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000fe',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 254,
+      sequence: 256,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3849,7 +3883,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-0000000000ff',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 255,
+      sequence: 257,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3863,7 +3897,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000100',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 256,
+      sequence: 258,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3878,7 +3912,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000101',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 257,
+      sequence: 259,
       kind: 'node-created',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3893,7 +3927,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000102',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 258,
+      sequence: 260,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3907,7 +3941,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000103',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 259,
+      sequence: 261,
       kind: 'proposal',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3922,7 +3956,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000104',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 260,
+      sequence: 262,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3937,7 +3971,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000105',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 261,
+      sequence: 263,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000a001',
       payload: {
@@ -3952,7 +3986,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000106',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 262,
+      sequence: 264,
       kind: 'vote',
       actor: '10000001-0000-4000-8000-00000000b001',
       payload: {
@@ -3967,7 +4001,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000107',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 263,
+      sequence: 265,
       kind: 'commit',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3981,7 +4015,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000108',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 264,
+      sequence: 266,
       kind: 'edge-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -3997,7 +4031,7 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-000000000109',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 265,
+      sequence: 267,
       kind: 'entity-included',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
@@ -4011,13 +4045,13 @@ export const walkthroughFixtureData: VendoredFixture = {
     {
       id: 'ee000000-0000-4000-8000-00000000010a',
       session_id: '10000005-0000-4000-8000-000000000001',
-      sequence: 266,
+      sequence: 268,
       kind: 'snapshot-created',
       actor: '10000001-0000-4000-8000-00000000c001',
       payload: {
         snapshot_id: '10000040-0000-4000-8000-000000000001',
         label: 'Segment 1 close',
-        log_position: 265,
+        log_position: 267,
       },
       created_at: '2026-03-01T18:04:26.000Z',
     },

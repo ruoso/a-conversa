@@ -33,7 +33,7 @@ import { WALKTHROUGH_BEATS } from './narration';
 /** Total number of events in the frozen seed log (the `data-total` parity value, `N`). */
 const TOTAL_EVENTS = walkthroughEvents.length;
 
-/** The last steppable beat index (the `finale` anchor, position 266). */
+/** The last steppable beat index (the `finale` anchor, on the last event). */
 const LAST_BEAT_INDEX = WALKTHROUGH_BEATS.length - 1;
 
 /**

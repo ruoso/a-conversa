@@ -26,7 +26,7 @@
 // `@a-conversa/shared-types`). We remap the *outer* envelope keys so the
 // exported array is an honest `readonly Event[]` — the exact prop shape
 // `GraphView` consumes, with no cast required at the call site
-// (refinement constraint 3). This is a cheap key-rename over 266 events,
+// (refinement constraint 3). This is a cheap key-rename over the log's
 // NOT runtime schema parsing: per refinement constraint 5, `validateEvent`
 // runs in the test, not on page load. The payload is forwarded untouched
 // (its internal keys are already the snake_case the per-kind payload
@@ -62,7 +62,7 @@ interface RawWalkthroughEvent {
 const rawEvents = walkthroughEventsJson as readonly RawWalkthroughEvent[];
 
 /**
- * The curated "Should zoos exist?" walkthrough log — all 266 events, in
+ * The curated "Should zoos exist?" walkthrough log — every event, in
  * canonical order — as a `readonly Event[]`. The outer envelope is
  * normalized from the fixture's snake_case row keys to the camelCase
  * `EventEnvelope` shape; the cast is sound because the shipped copy is

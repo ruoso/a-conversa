@@ -35,8 +35,21 @@ import AxeBuilder from '@axe-core/playwright';
 
 import { CATALOGS } from '@a-conversa/i18n-catalogs';
 
+import { WALKTHROUGH_BEATS } from '../../apps/root/src/walkthrough/narration';
 import { lookup } from './fixtures/locales';
 import { expect, test } from './fixtures/no-scrollbars';
+
+// The narration beat table, resolved from anchor EVENT IDS against the
+// live walkthrough stream (apps/root/src/walkthrough/narration.ts). This
+// spec imports it rather than pinning positions, so fixture edits never
+// require re-syncing literals here. Helpers for the spots that address a
+// specific beat:
+const beatPosition = (slug: string): number => {
+  const beat = WALKTHROUGH_BEATS.find((b) => b.slug === slug);
+  if (beat === undefined) throw new Error(`no walkthrough beat with slug "${slug}"`);
+  return beat.position;
+};
+const FINALE = WALKTHROUGH_BEATS[WALKTHROUGH_BEATS.length - 1]!;
 
 // The declared WCAG rule-tag set the axe scan asserts against (ADR 0040):
 // Level A + AA for WCAG 2.0 and 2.1. Best-practice / experimental tags are
@@ -160,20 +173,32 @@ test.describe('landing walkthrough demo', () => {
       const status = page.getByTestId('walkthrough-step-status');
       await expect(status).toBeVisible({ timeout: 15_000 });
 
-      // The compact variant opens on the first beat anchor (position 6).
-      await expect(status).toHaveAttribute('data-position', '6', { timeout: 5_000 });
+      // The compact variant opens on the first beat anchor.
+      await expect(status).toHaveAttribute(
+        'data-position',
+        String(WALKTHROUGH_BEATS[0]!.position),
+        { timeout: 5_000 },
+      );
 
-      // Pointer activation jumps a whole beat (6 → 27), not +1.
+      // Pointer activation jumps a whole beat (to the second anchor), not +1.
       await page.getByTestId('walkthrough-next').click();
-      await expect(status).toHaveAttribute('data-position', '27', { timeout: 5_000 });
+      await expect(status).toHaveAttribute(
+        'data-position',
+        String(WALKTHROUGH_BEATS[1]!.position),
+        { timeout: 5_000 },
+      );
 
       // Keyboard operability: focus the native button and activate with the
-      // keyboard (Enter), which advances to the next beat anchor (27 → 42).
+      // keyboard (Enter), which advances to the third beat anchor.
       const next = page.getByTestId('walkthrough-next');
       await next.focus();
       await expect(next).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(status).toHaveAttribute('data-position', '42', { timeout: 5_000 });
+      await expect(status).toHaveAttribute(
+        'data-position',
+        String(WALKTHROUGH_BEATS[2]!.position),
+        { timeout: 5_000 },
+      );
     } finally {
       await context.close();
     }
@@ -218,14 +243,14 @@ test.describe('landing walkthrough demo', () => {
     try {
       await page.goto('/');
 
-      // On load the caption shows the first beat (pos 6 = `opening` anchor).
+      // On load the caption shows the first beat (the `opening` anchor).
       const caption = page.getByTestId('walkthrough-caption');
       await expect(caption).toBeVisible({ timeout: 15_000 });
       await expect(caption).toHaveAttribute('data-beat', 'opening', { timeout: 5_000 });
 
-      // Scrubbing to a later anchor (pos 100 = `classification`) advances
-      // the active beat — the caption follows the stepper's position.
-      await page.getByTestId('walkthrough-scrubber').fill('100');
+      // Scrubbing to a later anchor (`classification`) advances the
+      // active beat — the caption follows the stepper's position.
+      await page.getByTestId('walkthrough-scrubber').fill(String(beatPosition('classification')));
       await expect(caption).toHaveAttribute('data-beat', 'classification', { timeout: 5_000 });
     } finally {
       await context.close();
@@ -517,21 +542,11 @@ test.describe('landing walkthrough demo', () => {
   // literal (ADR 0024 / Decision D2).
   // ===========================================================================
 
-  // The nine ordered narration beats (slug + 1-based anchor position) — the
-  // walk's anchors, mirroring `apps/root/src/walkthrough/narration.ts`'s
-  // `WALKTHROUGH_BEATS`. The finale anchors at position 266, the
-  // `walkthroughEvents.length` total (also the scrubber's `max`).
-  const BEAT_WALK = [
-    { slug: 'opening', position: 6 },
-    { slug: 'decompose', position: 27 },
-    { slug: 'consensus', position: 42 },
-    { slug: 'counter', position: 56 },
-    { slug: 'contradiction', position: 86 },
-    { slug: 'classification', position: 100 },
-    { slug: 'axiom', position: 147 },
-    { slug: 'interpretive_split', position: 196 },
-    { slug: 'finale', position: 266 },
-  ] as const;
+  // The nine ordered narration beats — imported from
+  // `apps/root/src/walkthrough/narration.ts`, where each beat's position is
+  // resolved from its anchor EVENT ID against the live walkthrough stream.
+  // The finale anchors on the last event (also the scrubber's `max`).
+  const BEAT_WALK = WALKTHROUGH_BEATS;
 
   // The expected visible caption title for a beat slug, resolved from the
   // en-US catalog (the `chromium-landing` project's locale). Catalog-backed,
@@ -543,7 +558,7 @@ test.describe('landing walkthrough demo', () => {
   // anonymous `/`, scrub the full demo across all nine beat anchors in order;
   // at each anchor assert the step-status position lands on the anchor, the
   // caption's active beat is the expected slug, and the caption's visible title
-  // matches the en-US narration catalog — ending on `finale` / position 266.
+  // matches the en-US narration catalog — ending on the `finale` anchor.
   test('anonymous / walks the desktop demo through every beat to the finale caption', async ({
     browser,
   }) => {
@@ -576,7 +591,7 @@ test.describe('landing walkthrough demo', () => {
       }
 
       // The walk ended on the final graph state with its matching caption.
-      await expect(status).toHaveAttribute('data-position', '266');
+      await expect(status).toHaveAttribute('data-position', String(FINALE.position));
       await expect(caption).toHaveAttribute('data-beat', 'finale');
     } finally {
       await context.close();
@@ -585,8 +600,8 @@ test.describe('landing walkthrough demo', () => {
 
   // Acceptance criterion 2: mobile compact through-to-finale beat walk. At the
   // phone viewport, repeatedly activate `walkthrough-next` on the compact
-  // variant; assert the step-status advances anchor-to-anchor (6 → 27 → … →
-  // 266) and the caption tracks each beat's slug + localized title through to
+  // variant; assert the step-status advances anchor-to-anchor through every
+  // beat and the caption tracks each beat's slug + localized title through to
   // the terminal `finale`.
   test('anonymous / walks the mobile compact demo through every beat to the finale caption', async ({
     browser,
@@ -614,8 +629,8 @@ test.describe('landing walkthrough demo', () => {
         await expect(captionTitle).toHaveText(captionTitleFor(beat.slug), { timeout: 5_000 });
       };
 
-      // The compact variant opens on the first beat anchor (position 6).
-      await assertBeat(BEAT_WALK[0]);
+      // The compact variant opens on the first beat anchor.
+      await assertBeat(BEAT_WALK[0]!);
 
       // Next-segment jumps a whole beat at a time, through to the finale.
       for (let i = 1; i < BEAT_WALK.length; i += 1) {
@@ -623,8 +638,8 @@ test.describe('landing walkthrough demo', () => {
         await assertBeat(BEAT_WALK[i]!);
       }
 
-      // The terminal beat: finale at position 266 with its matching caption.
-      await expect(status).toHaveAttribute('data-position', '266');
+      // The terminal beat: finale on the last event with its matching caption.
+      await expect(status).toHaveAttribute('data-position', String(FINALE.position));
       await expect(caption).toHaveAttribute('data-beat', 'finale');
     } finally {
       await context.close();
