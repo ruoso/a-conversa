@@ -71,20 +71,20 @@ callback keeps the loader agnostic; callers wire the concrete helper
 
 ## Fixture status
 
-Today the workspace ships **one** fixture: `empty`. The remaining
-fixtures planned by the refinement
+Today the workspace ships **two** fixtures:
+
+- `empty` — a bare session with participants and no debate content.
+- `walkthrough` — the fixture that encodes the entire
+  `docs/example-walkthrough.md` debate. Its `events.json` is a
+  **symlink** to the canonical copy at
+  `apps/root/src/walkthrough/walkthrough-events.json` (the landing
+  demo's production asset) — edit that file, never a copy here.
+
+The remaining fixtures planned by the refinement
 (`tasks/refinements/data-and-methodology/seed_data_for_tests.md`) —
-
-- `walkthrough` — canonical fixture that encodes the entire
-  `docs/example-walkthrough.md` debate.
-- `mid-flow`, `cycle`, `contradiction`, `multi-warrant`,
-  `cross-session` — diagnostic / scenario fixtures.
-
-— all wait on the per-event-kind payload schemas owned by the
-`data_and_methodology.event_types.*` tasks. Faithfully encoding the
-walkthrough today would mean inventing payload shapes that the rest of
-the codebase will then need to retrofit; the pragmatic choice is to
-defer those fixtures until the schemas are settled.
+`mid-flow`, `cycle`, `contradiction`, `multi-warrant`,
+`cross-session` — are diagnostic / scenario fixtures, still
+unscheduled.
 
 ## Tables touched by `loadFixture`
 

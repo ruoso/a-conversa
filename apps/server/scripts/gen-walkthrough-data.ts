@@ -23,8 +23,10 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// The canonical fixture lives in the test-fixtures package source. The
-// path is relative to this script (apps/server/scripts → repo root →
+// The fixture lives in the test-fixtures package source (its
+// `events.json` is a symlink to the canonical copy at
+// `apps/root/src/walkthrough/walkthrough-events.json`). The path is
+// relative to this script (apps/server/scripts → repo root →
 // packages/...); the drift-guard test resolves the same source.
 const FIXTURE_DIR = join(
   here,

@@ -12,11 +12,11 @@
 // test-only `@a-conversa/test-fixtures` package and its DB-oriented
 // loader (refinement Decision 2 / constraint 2).
 //
-// The on-disk asset (`./walkthrough-events.json`) is a *verbatim* copy
-// of the canonical fixture
-// (`packages/test-fixtures/src/fixtures/walkthrough/events.json`); the
-// drift guard in `index.test.ts` asserts byte-for-byte structural
-// equality so the two can never silently diverge.
+// The on-disk asset (`./walkthrough-events.json`) is the CANONICAL copy
+// of the walkthrough log. The test-fixtures package's
+// `fixtures/walkthrough/events.json` is a symlink to this file, so the
+// directory-scan loader and every DB-seeding test read the same bytes —
+// there is no second copy to drift against.
 //
 // **Envelope normalization, not validation.** The canonical fixture is
 // stored in the persistence/DB-row shape — `session_id` / `created_at`
