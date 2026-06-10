@@ -173,7 +173,11 @@ describe('WalkthroughDemo', () => {
     });
   });
 
-  it('does not auto-advance under prefers-reduced-motion, but manual stepping works', async () => {
+  it('stays paused by default and keeps play OPERABLE under prefers-reduced-motion', async () => {
+    // Playback is an explicit user gesture (with pause adjacent), not
+    // auto-triggered motion — the OS preference must not dead-end the
+    // demo's headline affordance. Default-paused covers the preference's
+    // intent: nothing moves until the visitor asks.
     mockReducedMotion(true);
     renderWithProviders(<WalkthroughDemo initialPosition={DEFAULT_INITIAL_POSITION} />);
 
@@ -184,13 +188,13 @@ describe('WalkthroughDemo', () => {
       expect(status.getAttribute('data-step')).toBe(String(initialStep));
     });
 
-    // Auto-advance is gated off entirely: the play control is disabled and
-    // nothing increments on its own.
-    expect(playToggle.hasAttribute('disabled')).toBe(true);
+    // Default-paused: nothing increments on its own…
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(status.getAttribute('data-step')).toBe(String(initialStep));
+    // …and the play control is ENABLED.
+    expect(playToggle.hasAttribute('disabled')).toBe(false);
 
-    // Manual stepping still works — one press, one VISIBLE step.
+    // Manual stepping works — one press, one VISIBLE step.
     fireEvent.click(screen.getByTestId('walkthrough-next'));
     await waitFor(() => {
       expect(status.getAttribute('data-step')).toBe(String(initialStep + 1));

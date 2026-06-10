@@ -574,11 +574,12 @@ test.describe('landing walkthrough demo', () => {
   });
 
   // Criterion 7: reduced motion respected end-to-end. Under
-  // `prefers-reduced-motion: reduce` an anonymous desktop visit renders the
-  // full demo with auto-advance off — the play toggle is `disabled` — confirming
-  // the page honours the preference in a real browser, not just in jsdom (the
-  // behaviour unit-tested in `WalkthroughDemo`).
-  test('under prefers-reduced-motion the desktop demo loads with auto-advance disabled', async ({
+  // `prefers-reduced-motion: reduce` an anonymous desktop visit loads
+  // default-paused (nothing advances on its own) but the play toggle stays
+  // ENABLED — playback is an explicit user gesture with pause adjacent
+  // (WCAG 2.2.2), not auto-triggered motion, so the OS preference must not
+  // dead-end the demo's headline affordance.
+  test('under prefers-reduced-motion the demo loads paused with play still operable', async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -593,7 +594,20 @@ test.describe('landing walkthrough demo', () => {
       await expect(page.getByTestId('route-landing')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('walkthrough-demo')).toBeVisible({ timeout: 15_000 });
 
-      await expect(page.getByTestId('walkthrough-play-toggle')).toBeDisabled();
+      // Default-paused: the step does not advance on its own…
+      const status = page.getByTestId('walkthrough-step-status');
+      const before = await status.getAttribute('data-step');
+      await page.waitForTimeout(1_200);
+      await expect(status).toHaveAttribute('data-step', String(before));
+
+      // …and play is enabled and works.
+      const toggle = page.getByTestId('walkthrough-play-toggle');
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
+      await expect
+        .poll(async () => Number(await status.getAttribute('data-step')), { timeout: 8_000 })
+        .toBeGreaterThan(Number(before));
+      await toggle.click();
     } finally {
       await context.close();
     }

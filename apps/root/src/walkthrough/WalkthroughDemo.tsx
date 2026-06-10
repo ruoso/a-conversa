@@ -60,7 +60,11 @@ export const DEFAULT_INITIAL_POSITION = WALKTHROUGH_BEATS[0]!.position;
 /**
  * Auto-advance dwell per arrived step kind (Decision §4, retuned for the
  * visible-step model): graph changes read fast; a dialogue turn needs
- * reading time. Default-paused, reduced-motion-gated as before.
+ * reading time. Default-paused. Playback stays AVAILABLE under
+ * `prefers-reduced-motion` — it is an explicit user gesture with a pause
+ * control right next to it (WCAG 2.2.2), not auto-triggered motion; the
+ * earlier blanket disable made the demo's headline affordance dead for
+ * anyone with the OS preference set.
  */
 const GRAPH_STEP_DWELL_MS = 900;
 const SPEECH_STEP_DWELL_MS = 3200;
@@ -75,31 +79,6 @@ function clampStepIndex(value: number): number {
   if (value < 0) return 0;
   if (value > STEP_TOTAL) return STEP_TOTAL;
   return Math.trunc(value);
-}
-
-/**
- * Tracks `prefers-reduced-motion: reduce`. Auto-advance is gated off when
- * this is set (constraint 6) — the demo's own motion baseline; the
- * whole-page audit is `landing_responsive_a11y`.
- */
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState<boolean>(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return false;
-    }
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  });
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return undefined;
-    }
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (): void => setReduced(query.matches);
-    onChange();
-    query.addEventListener?.('change', onChange);
-    return () => query.removeEventListener?.('change', onChange);
-  }, []);
-  return reduced;
 }
 
 export interface WalkthroughDemoProps {
@@ -127,7 +106,6 @@ export function WalkthroughDemo({
   initialPosition,
 }: WalkthroughDemoProps): ReactElement {
   const { t } = useTranslation();
-  const prefersReducedMotion = usePrefersReducedMotion();
   // The demo's unit of advancement is the VISIBLE STEP (steps.ts): the
   // scrubber, prev/next, and play all walk step indices, transparently
   // skipping the events that render nothing. `initialPosition` stays a
@@ -177,18 +155,18 @@ export function WalkthroughDemo({
     onPositionChange?.(position, walkthroughEvents[position - 1]);
   }, [position, onPositionChange]);
 
-  // Auto-advance (Decision §4): default-paused; gated off entirely under
-  // reduced motion (constraint 6). A self-rescheduling timeout whose
+  // Auto-advance (Decision §4): default-paused; starts only on the
+  // visitor's explicit play gesture. A self-rescheduling timeout whose
   // dwell depends on the step just ARRIVED at — a dialogue turn holds
   // long enough to read; a pure graph change moves on briskly. Advancing
   // re-runs the effect (stepIndex in deps), scheduling the next hop.
   useEffect(() => {
-    if (!playing || prefersReducedMotion || stepIndex >= STEP_TOTAL) return undefined;
+    if (!playing || stepIndex >= STEP_TOTAL) return undefined;
     const handle = setTimeout(() => {
       setStepIndex((current) => (current >= STEP_TOTAL ? current : current + 1));
     }, dwellForStepIndex(stepIndex));
     return () => clearTimeout(handle);
-  }, [playing, prefersReducedMotion, stepIndex]);
+  }, [playing, stepIndex]);
 
   // Stop auto-advance once the end is reached.
   useEffect(() => {
@@ -246,7 +224,6 @@ export function WalkthroughDemo({
           type="button"
           data-testid="walkthrough-play-toggle"
           onClick={togglePlay}
-          disabled={prefersReducedMotion}
           aria-pressed={playing}
           className="inline-flex items-center rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >

@@ -98,3 +98,12 @@ should be enabled and go through the events at a reasonable speed."
 `WalkthroughDemo` controls + per-kind autoplay dwell, compact status
 parity, narration beat-on-step assertion, derived test/e2e rework, the
 play/pause e2e scenario.
+
+**Amendment (2026-06-10, post-land):** constraint 4 is superseded — the
+reduced-motion blanket disable of the play toggle dead-ended the demo's
+headline affordance for any visitor with the OS preference set (the
+original user report). Playback is an explicit user gesture with pause
+adjacent (WCAG 2.2.2), not auto-triggered motion: the demo now loads
+default-paused under `prefers-reduced-motion` (nothing moves until
+asked) but play stays enabled and operable. Unit + e2e pins updated to
+the new contract.
