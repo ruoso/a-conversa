@@ -76,27 +76,31 @@ function makeEdgeCreated(sequence: number): Event {
   } as unknown as Event;
 }
 
-function makeParticipantJoined(sequence: number): Event {
+// A log checkpoint the projector genuinely ignores. (`participant-joined`
+// is no longer a graph no-op: per the per-facet step pill, `projectGraph`
+// derives the debater roster and facet statuses from it, so a join
+// re-stamps every statement node's data.)
+function makeSnapshotCreated(sequence: number): Event {
   return {
     id: `00000000-0000-4000-8000-${(0x400 + sequence).toString(16).padStart(12, '0')}`,
     sessionId: SESSION_ID,
     sequence,
-    kind: 'participant-joined',
+    kind: 'snapshot-created',
     actor: ACTOR,
-    payload: { user_id: ACTOR, role: 'debater-A', screen_name: 'alice' },
+    payload: { snapshot_id: ACTOR, label: 'checkpoint', log_position: sequence - 1 },
     createdAt: '2026-05-27T00:00:00.000Z',
   } as unknown as Event;
 }
 
 // seq 1 add A, 2 add B, 3 classify-proposal A (graph no-op), 4 commit (A kind
-// flips → changed), 5 add edge A→B, 6 participant-joined (graph no-op).
+// flips → changed), 5 add edge A→B, 6 snapshot-created (graph no-op).
 const EVENTS: Event[] = [
   makeNodeCreated(1, NODE_A),
   makeNodeCreated(2, NODE_B),
   makeClassifyProposal(3),
   makeCommit(4),
   makeEdgeCreated(5),
-  makeParticipantJoined(6),
+  makeSnapshotCreated(6),
 ];
 
 beforeEach(async () => {
@@ -138,7 +142,7 @@ describe('ChangeHighlights — tracking the position', () => {
   });
 
   it('shows the empty readout for a step the projector treats as a no-op', () => {
-    // seq 6 (participant-joined) projects no graph change.
+    // seq 6 (snapshot-created) projects no graph change.
     render(<ChangeHighlights events={EVENTS} position={6} />);
     expect(screen.queryByTestId('test-mode-changes-empty')).not.toBeNull();
     expect(screen.queryByTestId('test-mode-changes-nodes-added')).toBeNull();
