@@ -16,7 +16,7 @@
       "play": "Play",
       "pause": "Pause",
       "scrubberLabel": "Walkthrough position",
-      "stepStatus": "Step {position} of {total}",
+      "stepStatus": "Step {step} of {total}",
       "compactRegionLabel": "Debate walkthrough (compact)",
       "previousSegment": "Previous section",
       "nextSegment": "Next section",

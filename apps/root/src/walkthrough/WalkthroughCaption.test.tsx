@@ -15,14 +15,17 @@ import {
 
 import { WalkthroughDemoNarrated } from './WalkthroughDemoNarrated';
 import { WALKTHROUGH_BEATS } from './narration';
+import { stepIndexForPosition } from './steps';
 import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
 
 // Resolve anchor positions from the live beat table — no position
-// literals, so fixture edits never redden this suite.
-const beatPosition = (slug: string): number => {
+// literals, so fixture edits never redden this suite. The scrubber's
+// unit is the STEP INDEX (steps.ts), so anchor positions are mapped
+// through `stepIndexForPosition` before filling the control.
+const beatStepIndex = (slug: string): number => {
   const beat = WALKTHROUGH_BEATS.find((b) => b.slug === slug);
   if (beat === undefined) throw new Error(`no walkthrough beat with slug "${slug}"`);
-  return beat.position;
+  return stepIndexForPosition(beat.position);
 };
 
 // Cytoscape needs the same noop canvas / ResizeObserver / rAF stubs the
@@ -65,9 +68,9 @@ describe('WalkthroughDemoNarrated — caption tracks position', () => {
       expect(caption.getAttribute('data-beat')).toBe('opening');
     });
 
-    // Scrub to the `classification` anchor.
+    // Scrub to the `classification` anchor's step.
     fireEvent.change(screen.getByTestId('walkthrough-scrubber'), {
-      target: { value: String(beatPosition('classification')) },
+      target: { value: String(beatStepIndex('classification')) },
     });
     await waitFor(() => {
       expect(caption.getAttribute('data-beat')).toBe('classification');
@@ -83,9 +86,9 @@ describe('WalkthroughDemoNarrated — caption tracks position', () => {
       expect(caption.getAttribute('data-beat')).toBe('opening');
     });
 
-    // Scrub below the first anchor: no active beat.
+    // Scrub one step below the first anchor's step: no active beat.
     fireEvent.change(screen.getByTestId('walkthrough-scrubber'), {
-      target: { value: String(WALKTHROUGH_BEATS[0]!.position - 3) },
+      target: { value: String(beatStepIndex('opening') - 1) },
     });
     await waitFor(() => {
       expect(caption.getAttribute('data-beat')).toBe('');

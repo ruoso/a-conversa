@@ -37,13 +37,17 @@ import { CATALOGS } from '@a-conversa/i18n-catalogs';
 
 import { WALKTHROUGH_BEATS } from '../../apps/root/src/walkthrough/narration';
 import { WALKTHROUGH_DIALOGUE } from '../../apps/root/src/walkthrough/dialogue';
+import { stepIndexForPosition } from '../../apps/root/src/walkthrough/steps';
 import { lookup } from './fixtures/locales';
 import { expect, test } from './fixtures/no-scrollbars';
 
 // The narration beat table, resolved from anchor EVENT IDS against the
 // live walkthrough stream (apps/root/src/walkthrough/narration.ts). This
 // spec imports it rather than pinning positions, so fixture edits never
-// require re-syncing literals here. Helpers for the spots that address a
+// require re-syncing literals here. The scrubber's unit is the VISIBLE
+// STEP INDEX (steps.ts) while `data-position` reports the raw event
+// position, so anchor positions are mapped through `stepIndexForPosition`
+// before driving the control. Helpers for the spots that address a
 // specific beat:
 const beatPosition = (slug: string): number => {
   const beat = WALKTHROUGH_BEATS.find((b) => b.slug === slug);
@@ -91,24 +95,59 @@ test.describe('landing walkthrough demo', () => {
       const status = page.getByTestId('walkthrough-step-status');
       await expect(status).toBeVisible({ timeout: 15_000 });
 
-      const before = Number(await status.getAttribute('data-position'));
+      const before = Number(await status.getAttribute('data-step'));
       expect(Number.isFinite(before)).toBe(true);
 
-      // Pointer activation increments the position.
+      // Pointer activation advances one VISIBLE step.
       await page.getByTestId('walkthrough-next').click();
-      await expect(status).toHaveAttribute('data-position', String(before + 1), {
+      await expect(status).toHaveAttribute('data-step', String(before + 1), {
         timeout: 5_000,
       });
 
       // Keyboard operability: focus the native button and activate with
-      // the keyboard (Enter), which must advance the position again.
+      // the keyboard (Enter), which must advance the step again.
       const next = page.getByTestId('walkthrough-next');
       await next.focus();
       await expect(next).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(status).toHaveAttribute('data-position', String(before + 2), {
+      await expect(status).toHaveAttribute('data-step', String(before + 2), {
         timeout: 5_000,
       });
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Thin autoplay assertion for `walkthrough_visible_steps`: pressing play
+  // auto-advances the visible step at the per-kind dwell (graph 900ms /
+  // speech 3200ms). Assert only a couple of hops — never a full
+  // playthrough — then pause.
+  test('play auto-advances the visible step and pause stops it', async ({ browser }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      const status = page.getByTestId('walkthrough-step-status');
+      await expect(status).toBeVisible({ timeout: 15_000 });
+      const before = Number(await status.getAttribute('data-step'));
+
+      const toggle = page.getByTestId('walkthrough-play-toggle');
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+      // Within two speech dwells at least one hop must land.
+      await expect
+        .poll(async () => Number(await status.getAttribute('data-step')), { timeout: 8_000 })
+        .toBeGreaterThan(before);
+
+      // Pause: the step stops advancing.
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+      const paused = Number(await status.getAttribute('data-step'));
+      await page.waitForTimeout(1_200);
+      await expect(status).toHaveAttribute('data-step', String(paused));
     } finally {
       await context.close();
     }
@@ -249,9 +288,11 @@ test.describe('landing walkthrough demo', () => {
       await expect(caption).toBeVisible({ timeout: 15_000 });
       await expect(caption).toHaveAttribute('data-beat', 'opening', { timeout: 5_000 });
 
-      // Scrubbing to a later anchor (`classification`) advances the
-      // active beat — the caption follows the stepper's position.
-      await page.getByTestId('walkthrough-scrubber').fill(String(beatPosition('classification')));
+      // Scrubbing to a later anchor's step (`classification`) advances
+      // the active beat — the caption follows the stepper's position.
+      await page
+        .getByTestId('walkthrough-scrubber')
+        .fill(String(stepIndexForPosition(beatPosition('classification'))));
       await expect(caption).toHaveAttribute('data-beat', 'classification', { timeout: 5_000 });
     } finally {
       await context.close();
@@ -281,8 +322,10 @@ test.describe('landing walkthrough demo', () => {
       await expect(messages).toHaveCount(initialCount, { timeout: 10_000 });
       await expect(messages.first()).toHaveAttribute('data-speaker', 'maria');
 
-      // Scrubbing to the finale reveals the whole script.
-      await page.getByTestId('walkthrough-scrubber').fill(String(FINALE.position));
+      // Scrubbing to the finale's step reveals the whole script.
+      await page
+        .getByTestId('walkthrough-scrubber')
+        .fill(String(stepIndexForPosition(FINALE.position)));
       await expect(messages).toHaveCount(WALKTHROUGH_DIALOGUE.length, { timeout: 10_000 });
     } finally {
       await context.close();
@@ -610,7 +653,9 @@ test.describe('landing walkthrough demo', () => {
       for (const beat of BEAT_WALK) {
         // Drive through the public control surface — set the scrubber to the
         // beat anchor (constraint 4).
-        await scrubber.fill(String(beat.position));
+        // Drive by step index (every beat anchors on a visible step —
+        // pinned by the narration suite); assert the raw position lands.
+        await scrubber.fill(String(stepIndexForPosition(beat.position)));
 
         // (a) the step-status position lands on the anchor.
         await expect(status).toHaveAttribute('data-position', String(beat.position), {

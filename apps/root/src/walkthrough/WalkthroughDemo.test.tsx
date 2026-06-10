@@ -15,9 +15,13 @@ import {
 
 import { walkthroughEvents } from './index';
 import { DEFAULT_INITIAL_POSITION, WalkthroughDemo } from './WalkthroughDemo';
+import { WALKTHROUGH_STEPS, positionForStepIndex, stepIndexForPosition } from './steps';
 import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
 
 const TOTAL_EVENTS = walkthroughEvents.length;
+// The controls walk VISIBLE steps (steps.ts); every expectation below
+// derives from the step table — no position/step literals.
+const STEP_TOTAL = WALKTHROUGH_STEPS.length;
 
 /**
  * Mock `window.matchMedia` for the reduced-motion gate. happy-dom does not
@@ -115,7 +119,8 @@ describe('WalkthroughDemo', () => {
       expect(prev.hasAttribute('disabled')).toBe(true);
     });
     expect(status.getAttribute('data-position')).toBe('0');
-    expect(status.getAttribute('data-total')).toBe(String(TOTAL_EVENTS));
+    expect(status.getAttribute('data-step')).toBe('0');
+    expect(status.getAttribute('data-total')).toBe(String(STEP_TOTAL));
 
     cleanup();
     renderWithProviders(<WalkthroughDemo initialPosition={TOTAL_EVENTS} />);
@@ -123,8 +128,10 @@ describe('WalkthroughDemo', () => {
     await waitFor(() => {
       expect(next.hasAttribute('disabled')).toBe(true);
     });
-    expect(screen.getByTestId('walkthrough-step-status').getAttribute('data-position')).toBe(
-      String(TOTAL_EVENTS),
+    const finalStatus = screen.getByTestId('walkthrough-step-status');
+    expect(finalStatus.getAttribute('data-step')).toBe(String(STEP_TOTAL));
+    expect(finalStatus.getAttribute('data-position')).toBe(
+      String(positionForStepIndex(STEP_TOTAL)),
     );
   });
 
@@ -132,7 +139,7 @@ describe('WalkthroughDemo', () => {
     let captured: Core | null = null;
     renderWithProviders(
       <WalkthroughDemo
-        initialPosition={10}
+        initialPosition={DEFAULT_INITIAL_POSITION}
         cyRef={(cy) => {
           if (cy !== null) captured = cy;
         }}
@@ -145,17 +152,21 @@ describe('WalkthroughDemo', () => {
     const scrubber = screen.getByTestId('walkthrough-scrubber');
     const status = screen.getByTestId('walkthrough-step-status');
 
-    fireEvent.change(scrubber, { target: { value: '150' } });
+    // The scrubber's unit is the STEP INDEX; data-position reports the
+    // raw event position that step renders.
+    const forwardStep = Math.floor(STEP_TOTAL * 0.6);
+    fireEvent.change(scrubber, { target: { value: String(forwardStep) } });
     await waitFor(() => {
-      expect(status.getAttribute('data-position')).toBe('150');
+      expect(status.getAttribute('data-position')).toBe(String(positionForStepIndex(forwardStep)));
     });
     const forwardCount = cy.nodes().length;
 
     // Backward jump: the prefix is recomputed (not appended) so the node
     // count shrinks — proving constraint 2's slice semantics.
-    fireEvent.change(scrubber, { target: { value: '30' } });
+    const backwardStep = Math.floor(STEP_TOTAL * 0.1);
+    fireEvent.change(scrubber, { target: { value: String(backwardStep) } });
     await waitFor(() => {
-      expect(status.getAttribute('data-position')).toBe('30');
+      expect(status.getAttribute('data-position')).toBe(String(positionForStepIndex(backwardStep)));
     });
     await waitFor(() => {
       expect(cy.nodes().length).toBeLessThan(forwardCount);
@@ -164,24 +175,54 @@ describe('WalkthroughDemo', () => {
 
   it('does not auto-advance under prefers-reduced-motion, but manual stepping works', async () => {
     mockReducedMotion(true);
-    renderWithProviders(<WalkthroughDemo initialPosition={5} />);
+    renderWithProviders(<WalkthroughDemo initialPosition={DEFAULT_INITIAL_POSITION} />);
 
+    const initialStep = stepIndexForPosition(DEFAULT_INITIAL_POSITION);
     const status = screen.getByTestId('walkthrough-step-status');
     const playToggle = screen.getByTestId('walkthrough-play-toggle');
     await waitFor(() => {
-      expect(status.getAttribute('data-position')).toBe('5');
+      expect(status.getAttribute('data-step')).toBe(String(initialStep));
     });
 
     // Auto-advance is gated off entirely: the play control is disabled and
     // nothing increments on its own.
     expect(playToggle.hasAttribute('disabled')).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(status.getAttribute('data-position')).toBe('5');
+    expect(status.getAttribute('data-step')).toBe(String(initialStep));
 
-    // Manual stepping still works.
+    // Manual stepping still works — one press, one VISIBLE step.
     fireEvent.click(screen.getByTestId('walkthrough-next'));
     await waitFor(() => {
-      expect(status.getAttribute('data-position')).toBe('6');
+      expect(status.getAttribute('data-step')).toBe(String(initialStep + 1));
     });
+    expect(status.getAttribute('data-position')).toBe(
+      String(positionForStepIndex(initialStep + 1)),
+    );
+  });
+
+  it('play advances to the next visible step on its own', { timeout: 12_000 }, async () => {
+    // Explicit no-reduced-motion: the sibling test assigns
+    // `window.matchMedia` directly (not a spy), so restoreAllMocks
+    // does not undo it.
+    mockReducedMotion(false);
+    renderWithProviders(<WalkthroughDemo initialPosition={DEFAULT_INITIAL_POSITION} />);
+
+    const initialStep = stepIndexForPosition(DEFAULT_INITIAL_POSITION);
+    const status = screen.getByTestId('walkthrough-step-status');
+    await waitFor(() => {
+      expect(status.getAttribute('data-step')).toBe(String(initialStep));
+    });
+
+    fireEvent.click(screen.getByTestId('walkthrough-play-toggle'));
+    // The next hop lands after the arrived step's dwell (graph 900ms /
+    // speech 3200ms) — wait generously, assert only one real advance so
+    // the suite never plays the whole stream.
+    await waitFor(
+      () => {
+        expect(Number(status.getAttribute('data-step'))).toBeGreaterThan(initialStep);
+      },
+      { timeout: 8_000 },
+    );
+    fireEvent.click(screen.getByTestId('walkthrough-play-toggle'));
   });
 });

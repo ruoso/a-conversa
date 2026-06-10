@@ -16,7 +16,7 @@
       "play": "Reproducir",
       "pause": "Pausar",
       "scrubberLabel": "Posición del recorrido",
-      "stepStatus": "Paso {position} de {total}",
+      "stepStatus": "Paso {step} de {total}",
       "compactRegionLabel": "Recorrido del debate (compacto)",
       "previousSegment": "Sección anterior",
       "nextSegment": "Sección siguiente",

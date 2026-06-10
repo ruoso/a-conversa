@@ -29,9 +29,10 @@ import { GraphView, PADDING } from '@a-conversa/graph-view';
 
 import { walkthroughEvents } from './index';
 import { WALKTHROUGH_BEATS } from './narration';
+import { WALKTHROUGH_STEPS, stepIndexForPosition } from './steps';
 
-/** Total number of events in the frozen seed log (the `data-total` parity value, `N`). */
-const TOTAL_EVENTS = walkthroughEvents.length;
+/** Total number of VISIBLE steps (`data-total` parity with the full demo). */
+const STEP_TOTAL = WALKTHROUGH_STEPS.length;
 
 /** The last steppable beat index (the `finale` anchor, on the last event). */
 const LAST_BEAT_INDEX = WALKTHROUGH_BEATS.length - 1;
@@ -159,10 +160,14 @@ export function WalkthroughDemoCompact({
           aria-live="polite"
           data-testid="walkthrough-step-status"
           data-position={position}
-          data-total={TOTAL_EVENTS}
+          data-step={stepIndexForPosition(position)}
+          data-total={STEP_TOTAL}
           className="whitespace-nowrap text-sm tabular-nums text-slate-600"
         >
-          {t('landing.demo.stepStatus', { position, total: TOTAL_EVENTS })}
+          {t('landing.demo.stepStatus', {
+            step: stepIndexForPosition(position),
+            total: STEP_TOTAL,
+          })}
         </p>
       </div>
     </section>

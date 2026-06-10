@@ -35,9 +35,10 @@ import { GraphView, PADDING } from '@a-conversa/graph-view';
 
 import { walkthroughEvents } from './index';
 import { WALKTHROUGH_BEATS } from './narration';
+import { WALKTHROUGH_STEPS, positionForStepIndex, stepAt, stepIndexForPosition } from './steps';
 
-/** Total number of events in the frozen seed log (the upper scrubber bound, `N`). */
-const TOTAL_EVENTS = walkthroughEvents.length;
+/** Total number of VISIBLE steps (the upper scrubber bound — see steps.ts). */
+const STEP_TOTAL = WALKTHROUGH_STEPS.length;
 
 /**
  * Constant per-instance identity for the single persistent `GraphView`
@@ -55,13 +56,23 @@ const INSTANCE_KEY = 'landing-walkthrough';
  */
 export const DEFAULT_INITIAL_POSITION = WALKTHROUGH_BEATS[0]!.position;
 
-/** Auto-advance interval (Decision §4); default-paused, reduced-motion-gated. */
-const AUTO_ADVANCE_INTERVAL_MS = 1200;
+/**
+ * Auto-advance dwell per arrived step kind (Decision §4, retuned for the
+ * visible-step model): graph changes read fast; a dialogue turn needs
+ * reading time. Default-paused, reduced-motion-gated as before.
+ */
+const GRAPH_STEP_DWELL_MS = 900;
+const SPEECH_STEP_DWELL_MS = 3200;
 
-function clampPosition(value: number): number {
+function dwellForStepIndex(stepIndex: number): number {
+  const kind = stepAt(stepIndex)?.kind ?? 'graph';
+  return kind === 'graph' ? GRAPH_STEP_DWELL_MS : SPEECH_STEP_DWELL_MS;
+}
+
+function clampStepIndex(value: number): number {
   if (Number.isNaN(value)) return 0;
   if (value < 0) return 0;
-  if (value > TOTAL_EVENTS) return TOTAL_EVENTS;
+  if (value > STEP_TOTAL) return STEP_TOTAL;
   return Math.trunc(value);
 }
 
@@ -116,9 +127,15 @@ export function WalkthroughDemo({
 }: WalkthroughDemoProps): ReactElement {
   const { t } = useTranslation();
   const prefersReducedMotion = usePrefersReducedMotion();
-  const [position, setPosition] = useState<number>(() =>
-    clampPosition(initialPosition ?? DEFAULT_INITIAL_POSITION),
+  // The demo's unit of advancement is the VISIBLE STEP (steps.ts): the
+  // scrubber, prev/next, and play all walk step indices, transparently
+  // skipping the events that render nothing. `initialPosition` stays a
+  // raw event position (the external seam vocabulary) and is mapped into
+  // step space at mount.
+  const [stepIndex, setStepIndex] = useState<number>(() =>
+    stepIndexForPosition(initialPosition ?? DEFAULT_INITIAL_POSITION),
   );
+  const position = positionForStepIndex(stepIndex);
   const [playing, setPlaying] = useState(false);
 
   // The heart of constraint 2: render exactly the prefix `[0, pos)`. A
@@ -156,33 +173,36 @@ export function WalkthroughDemo({
   }, [position, onPositionChange]);
 
   // Auto-advance (Decision §4): default-paused; gated off entirely under
-  // reduced motion (constraint 6). Increments to the end then halts.
+  // reduced motion (constraint 6). A self-rescheduling timeout whose
+  // dwell depends on the step just ARRIVED at — a dialogue turn holds
+  // long enough to read; a pure graph change moves on briskly. Advancing
+  // re-runs the effect (stepIndex in deps), scheduling the next hop.
   useEffect(() => {
-    if (!playing || prefersReducedMotion) return undefined;
-    const handle = setInterval(() => {
-      setPosition((current) => (current >= TOTAL_EVENTS ? current : current + 1));
-    }, AUTO_ADVANCE_INTERVAL_MS);
-    return () => clearInterval(handle);
-  }, [playing, prefersReducedMotion]);
+    if (!playing || prefersReducedMotion || stepIndex >= STEP_TOTAL) return undefined;
+    const handle = setTimeout(() => {
+      setStepIndex((current) => (current >= STEP_TOTAL ? current : current + 1));
+    }, dwellForStepIndex(stepIndex));
+    return () => clearTimeout(handle);
+  }, [playing, prefersReducedMotion, stepIndex]);
 
   // Stop auto-advance once the end is reached.
   useEffect(() => {
-    if (playing && position >= TOTAL_EVENTS) {
+    if (playing && stepIndex >= STEP_TOTAL) {
       setPlaying(false);
     }
-  }, [playing, position]);
+  }, [playing, stepIndex]);
 
-  const atStart = position <= 0;
-  const atEnd = position >= TOTAL_EVENTS;
+  const atStart = stepIndex <= 0;
+  const atEnd = stepIndex >= STEP_TOTAL;
 
   const goPrevious = useCallback(() => {
-    setPosition((current) => clampPosition(current - 1));
+    setStepIndex((current) => clampStepIndex(current - 1));
   }, []);
   const goNext = useCallback(() => {
-    setPosition((current) => clampPosition(current + 1));
+    setStepIndex((current) => clampStepIndex(current + 1));
   }, []);
   const onScrub = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setPosition(clampPosition(Number(event.target.value)));
+    setStepIndex(clampStepIndex(Number(event.target.value)));
   }, []);
   const togglePlay = useCallback(() => {
     setPlaying((current) => !current);
@@ -232,9 +252,9 @@ export function WalkthroughDemo({
           type="range"
           data-testid="walkthrough-scrubber"
           min={0}
-          max={TOTAL_EVENTS}
+          max={STEP_TOTAL}
           step={1}
-          value={position}
+          value={stepIndex}
           onChange={onScrub}
           aria-label={t('landing.demo.scrubberLabel')}
           className="h-2 min-w-[12rem] flex-1 cursor-pointer"
@@ -245,10 +265,11 @@ export function WalkthroughDemo({
           aria-live="polite"
           data-testid="walkthrough-step-status"
           data-position={position}
-          data-total={TOTAL_EVENTS}
+          data-step={stepIndex}
+          data-total={STEP_TOTAL}
           className="whitespace-nowrap text-sm tabular-nums text-slate-600"
         >
-          {t('landing.demo.stepStatus', { position, total: TOTAL_EVENTS })}
+          {t('landing.demo.stepStatus', { step: stepIndex, total: STEP_TOTAL })}
         </p>
       </div>
     </section>

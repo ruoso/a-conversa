@@ -209,6 +209,7 @@ task landing_page "Public landing page" {
   task walkthrough_visible_steps "Visible-step scrubbing + autoplay pacing" {
     effort 1d
     allocate team
+    complete 100
     depends !walkthrough_dialogue_chat
     note "Refinement: tasks/refinements/landing_page/walkthrough_visible_steps.md"
   }

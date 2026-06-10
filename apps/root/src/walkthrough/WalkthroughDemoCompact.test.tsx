@@ -22,10 +22,12 @@ import {
 
 import { walkthroughEvents } from './index';
 import { WALKTHROUGH_BEATS } from './narration';
+import { WALKTHROUGH_STEPS } from './steps';
 import { WalkthroughDemoCompact } from './WalkthroughDemoCompact';
 import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
 
-const TOTAL_EVENTS = walkthroughEvents.length;
+// `data-total` reports the VISIBLE-step count (parity with the full demo).
+const STEP_TOTAL = WALKTHROUGH_STEPS.length;
 const FIRST_BEAT = WALKTHROUGH_BEATS[0]!.position;
 const SECOND_BEAT = WALKTHROUGH_BEATS[1]!.position;
 const LAST_BEAT = WALKTHROUGH_BEATS[WALKTHROUGH_BEATS.length - 1]!.position;
@@ -65,14 +67,14 @@ describe('WalkthroughDemoCompact', () => {
     // ...the step-status reports position + total...
     const status = screen.getByTestId('walkthrough-step-status');
     expect(status.getAttribute('data-position')).toBe(String(FIRST_BEAT));
-    expect(status.getAttribute('data-total')).toBe(String(TOTAL_EVENTS));
+    expect(status.getAttribute('data-total')).toBe(String(STEP_TOTAL));
 
     // ...and the two continuous-motion controls are ABSENT (constraint 3).
     expect(screen.queryByTestId('walkthrough-scrubber')).toBeNull();
     expect(screen.queryByTestId('walkthrough-play-toggle')).toBeNull();
   });
 
-  it('steps coarsely between beat anchors — next advances 6 → 27 and the graph grows', async () => {
+  it('steps coarsely between beat anchors — next advances a whole beat and the graph grows', async () => {
     let captured: Core | null = null;
     renderWithProviders(
       <WalkthroughDemoCompact
@@ -97,7 +99,7 @@ describe('WalkthroughDemoCompact', () => {
     });
     const earlyCount = cy.nodes().length;
 
-    // Next-segment jumps a whole beat (6 → 27), not +1.
+    // Next-segment jumps a whole beat, not +1.
     fireEvent.click(screen.getByTestId('walkthrough-next'));
     await waitFor(() => {
       expect(status.getAttribute('data-position')).toBe(String(SECOND_BEAT));

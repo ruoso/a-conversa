@@ -16,7 +16,7 @@
       "play": "Reproduzir",
       "pause": "Pausar",
       "scrubberLabel": "Posição do tutorial",
-      "stepStatus": "Passo {position} de {total}",
+      "stepStatus": "Passo {step} de {total}",
       "compactRegionLabel": "Tutorial do debate (compacto)",
       "previousSegment": "Seção anterior",
       "nextSegment": "Próxima seção",

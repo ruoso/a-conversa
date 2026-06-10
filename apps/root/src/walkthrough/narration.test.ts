@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { i18n as I18nInstance } from 'i18next';
 
 import { WALKTHROUGH_BEATS, activeBeatFor } from './narration';
+import { WALKTHROUGH_STEPS } from './steps';
 import { getTestI18n } from '../testing/renderWithProviders';
 
 // The script's ordered slugs (`§ The script`). Positions are NO LONGER
@@ -42,6 +43,16 @@ describe('WALKTHROUGH_BEATS — anchor/script integrity', () => {
     }
     for (let i = 1; i < WALKTHROUGH_BEATS.length; i += 1) {
       expect(WALKTHROUGH_BEATS[i]!.position).toBeGreaterThan(WALKTHROUGH_BEATS[i - 1]!.position);
+    }
+  });
+
+  it('every beat anchors on a VISIBLE step (the controls can land on it)', () => {
+    // The demo's scrubber/prev/next walk visible steps (steps.ts). A
+    // beat anchored on a skipped event would be unreachable — fixture
+    // edits that strand an anchor fail here loudly.
+    const stepPositions = new Set(WALKTHROUGH_STEPS.map((step) => step.position));
+    for (const beat of WALKTHROUGH_BEATS) {
+      expect(stepPositions.has(beat.position)).toBe(true);
     }
   });
 });
