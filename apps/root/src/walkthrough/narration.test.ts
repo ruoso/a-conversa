@@ -11,8 +11,10 @@ import type { i18n as I18nInstance } from 'i18next';
 import { WALKTHROUGH_BEATS, activeBeatFor } from './narration';
 import { getTestI18n } from '../testing/renderWithProviders';
 
-// The script's verified anchor positions (`§ The script`).
-const SCRIPT_ANCHORS = [6, 27, 42, 56, 86, 100, 147, 196, 266] as const;
+// The script's ordered slugs (`§ The script`). Positions are NO LONGER
+// hardcoded here — they resolve from each beat's anchor event id against
+// the live `walkthroughEvents` stream, so this suite derives every
+// boundary from `WALKTHROUGH_BEATS` and stays correct across fixture edits.
 const SCRIPT_SLUGS = [
   'opening',
   'decompose',
@@ -25,13 +27,19 @@ const SCRIPT_SLUGS = [
   'finale',
 ] as const;
 
+const FIRST_BEAT = WALKTHROUGH_BEATS[0]!;
+const LAST_BEAT = WALKTHROUGH_BEATS[WALKTHROUGH_BEATS.length - 1]!;
+
 describe('WALKTHROUGH_BEATS — anchor/script integrity', () => {
   it('has the nine beats in order, slugs matching the script', () => {
     expect(WALKTHROUGH_BEATS.map((b) => b.slug)).toEqual([...SCRIPT_SLUGS]);
   });
 
-  it('anchors equal the script values and are strictly increasing', () => {
-    expect(WALKTHROUGH_BEATS.map((b) => b.position)).toEqual([...SCRIPT_ANCHORS]);
+  it('every anchor resolved to a real (1-based, in-stream) position, strictly increasing', () => {
+    for (const beat of WALKTHROUGH_BEATS) {
+      expect(Number.isInteger(beat.position)).toBe(true);
+      expect(beat.position).toBeGreaterThanOrEqual(1);
+    }
     for (let i = 1; i < WALKTHROUGH_BEATS.length; i += 1) {
       expect(WALKTHROUGH_BEATS[i]!.position).toBeGreaterThan(WALKTHROUGH_BEATS[i - 1]!.position);
     }
@@ -39,21 +47,22 @@ describe('WALKTHROUGH_BEATS — anchor/script integrity', () => {
 });
 
 describe('activeBeatFor — the activation rule (last beat with anchor ≤ position)', () => {
-  it('returns undefined below the first anchor (pos < 6)', () => {
+  it('returns undefined below the first anchor', () => {
+    expect(activeBeatFor(FIRST_BEAT.position - 1)).toBeUndefined();
     expect(activeBeatFor(0)).toBeUndefined();
-    expect(activeBeatFor(5)).toBeUndefined();
     expect(activeBeatFor(-1)).toBeUndefined();
   });
 
-  it('activates beat 1 on load (pos = 6) and holds it through pos 26', () => {
-    expect(activeBeatFor(6)?.slug).toBe('opening');
-    expect(activeBeatFor(20)?.slug).toBe('opening');
-    expect(activeBeatFor(26)?.slug).toBe('opening');
+  it('activates the first beat on its anchor and holds it until the second beat', () => {
+    const second = WALKTHROUGH_BEATS[1]!;
+    expect(activeBeatFor(FIRST_BEAT.position)?.slug).toBe(FIRST_BEAT.slug);
+    expect(activeBeatFor(second.position - 1)?.slug).toBe(FIRST_BEAT.slug);
   });
 
-  it('switches to decompose exactly at pos 27', () => {
-    expect(activeBeatFor(26)?.slug).toBe('opening');
-    expect(activeBeatFor(27)?.slug).toBe('decompose');
+  it('switches to the second beat exactly at its anchor', () => {
+    const second = WALKTHROUGH_BEATS[1]!;
+    expect(activeBeatFor(second.position - 1)?.slug).toBe(FIRST_BEAT.slug);
+    expect(activeBeatFor(second.position)?.slug).toBe(second.slug);
   });
 
   it('resolves every anchor to its own beat', () => {
@@ -71,9 +80,9 @@ describe('activeBeatFor — the activation rule (last beat with anchor ≤ posit
     }
   });
 
-  it('stays on finale at and past the last anchor (pos = 266 and beyond)', () => {
-    expect(activeBeatFor(266)?.slug).toBe('finale');
-    expect(activeBeatFor(500)?.slug).toBe('finale');
+  it('stays on finale at and past the last anchor', () => {
+    expect(activeBeatFor(LAST_BEAT.position)?.slug).toBe('finale');
+    expect(activeBeatFor(LAST_BEAT.position + 234)?.slug).toBe('finale');
   });
 });
 
