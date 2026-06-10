@@ -28,6 +28,7 @@ import type { Event } from '@a-conversa/shared-types';
 import { GraphView, PADDING } from '@a-conversa/graph-view';
 
 import { walkthroughEvents } from './index';
+import { useWalkthroughEvents } from './localized';
 import { WALKTHROUGH_BEATS } from './narration';
 import { WALKTHROUGH_STEPS, stepIndexForPosition } from './steps';
 
@@ -86,9 +87,11 @@ export function WalkthroughDemoCompact({
   const position = WALKTHROUGH_BEATS[beatIndex]!.position;
 
   // Same prefix-projection contract as the full demo (constraint 2): one
-  // persistent `GraphView` mount fed exactly `walkthroughEvents[0, pos)`.
-  // No demo-side reordering / filtering / mutation of the seed.
-  const events = useMemo(() => walkthroughEvents.slice(0, position), [position]);
+  // persistent `GraphView` mount fed exactly the `[0, pos)` prefix of the
+  // locale-overlaid stream (`localized.ts` — same ids/order/count as the
+  // canonical seed). No demo-side reordering / filtering beyond the slice.
+  const localizedEvents = useWalkthroughEvents();
+  const events = useMemo(() => localizedEvents.slice(0, position), [localizedEvents, position]);
 
   // Hold the latest external `cyRef` in a ref so `handleCy` stays
   // referentially stable (the renderer captures it once at mount).

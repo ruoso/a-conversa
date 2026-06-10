@@ -217,6 +217,7 @@ task landing_page "Public landing page" {
   task walkthrough_locale_overlay "Localized demo content (event-log overlay, pt-BR / es-419)" {
     effort 1d
     allocate team
+    complete 100
     depends !walkthrough_dialogue_chat
     note "Refinement: tasks/refinements/landing_page/walkthrough_locale_overlay.md"
   }

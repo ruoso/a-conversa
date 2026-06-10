@@ -34,6 +34,7 @@ import type { Event } from '@a-conversa/shared-types';
 import { GraphView, PADDING } from '@a-conversa/graph-view';
 
 import { walkthroughEvents } from './index';
+import { useWalkthroughEvents } from './localized';
 import { WALKTHROUGH_BEATS } from './narration';
 import { WALKTHROUGH_STEPS, positionForStepIndex, stepAt, stepIndexForPosition } from './steps';
 
@@ -141,8 +142,12 @@ export function WalkthroughDemo({
   // The heart of constraint 2: render exactly the prefix `[0, pos)`. A
   // single persistent `GraphView` mount (Decision §2) re-projects and
   // diff-syncs on each `events` change, so stepping grows the graph
-  // monotonically and scrubbing backward shrinks it.
-  const events = useMemo(() => walkthroughEvents.slice(0, position), [position]);
+  // monotonically and scrubbing backward shrinks it. The source is the
+  // locale-overlaid stream (`localized.ts`) — same ids/order/count as the
+  // canonical module, with translated wordings when the UI language is
+  // pt-BR / es-419.
+  const localizedEvents = useWalkthroughEvents();
+  const events = useMemo(() => localizedEvents.slice(0, position), [localizedEvents, position]);
 
   // Hold the latest external `cyRef` in a ref so the `handleCy` callback
   // passed to `GraphView` stays referentially stable (the renderer

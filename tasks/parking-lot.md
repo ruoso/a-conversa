@@ -287,3 +287,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Question**: the pt-BR and es-419 translations for the walkthrough chat panel — `landing.demo.chatLabel`, `landing.demo.dialogue.speaker.*`, and the 28 `landing.demo.dialogue.<slug>.text` turns (the condensed debate dialogue adapted from docs/example-walkthrough.md) — were machine-drafted; they need native-speaker review for accuracy, register, and the philosophical-methodology vocabulary (capacidades constitutivas / derrotável / marca de axioma, etc.).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot approve fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: review the `landing.demo.dialogue.*` entries in `pt-BR.json` and `es-419.json` as part of the single end-of-project locale review pass (see 2026-05-30 entry above); no separate WBS task needed.
+
+### 2026-06-10 — i18n native review — walkthrough content overlays (pt-BR, es-419)
+
+- **Source**: closer for `landing_page.walkthrough_locale_overlay` (refinement constraint 5).
+- **Question**: the per-locale demo-content overlays at `apps/root/src/walkthrough/overlays/{pt-BR,es-419}.json` — 26 translated texts each (21 node wordings, 4 annotation contents, the N15 reword) — were machine-drafted; they need native-speaker review for accuracy, register, and the philosophical vocabulary (capacidades constitutivas, déficits de bem-estar/bienestar, leitura epistêmica/lectura epistémica, etc.).
+- **Why parked**: native-speaker sign-off is inherently human work. These files sit OUTSIDE the `*.review.json` catalog trackers (they are content overlays, not catalog strings), so this note is their review record.
+- **Suggested resolution**: review both overlay files alongside the `landing.demo.dialogue.*` catalog entries (2026-06-10 entry above) in the single end-of-project locale review pass; no separate WBS task needed.
