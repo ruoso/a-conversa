@@ -14,7 +14,7 @@ import {
 } from '@a-conversa/graph-view/test-utils';
 
 import { walkthroughEvents } from './index';
-import { WalkthroughDemo } from './WalkthroughDemo';
+import { DEFAULT_INITIAL_POSITION, WalkthroughDemo } from './WalkthroughDemo';
 import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
 
 const TOTAL_EVENTS = walkthroughEvents.length;
@@ -77,7 +77,9 @@ describe('WalkthroughDemo', () => {
     let captured: Core | null = null;
     renderWithProviders(
       <WalkthroughDemo
-        initialPosition={5}
+        // The first beat anchor — guaranteed to have at least one node on
+        // the board (no position literal; fixture edits must not redden).
+        initialPosition={DEFAULT_INITIAL_POSITION}
         cyRef={(cy) => {
           if (cy !== null) captured = cy;
         }}

@@ -85,12 +85,17 @@ const EDGE_IDS: Record<string, string> = {
   E13: '10000020-0000-4000-8000-000000000013',
   E14: '10000020-0000-4000-8000-000000000014',
   E15: '10000020-0000-4000-8000-000000000015',
+  // The definitional edge (N1 defines N2) added by the representative-log
+  // extension — see walkthrough_representative_log.
+  E16: '10000020-0000-4000-8000-000000000016',
 };
 
 const ANNOTATION_IDS: Record<string, string> = {
   A1: '10000030-0000-4000-8000-000000000001',
   A2: '10000030-0000-4000-8000-000000000002',
   A3: '10000030-0000-4000-8000-000000000003',
+  // The turn-17 "shared axiom" audience note on N12.
+  A4: '10000030-0000-4000-8000-000000000004',
 };
 
 // ---------------------------------------------------------------

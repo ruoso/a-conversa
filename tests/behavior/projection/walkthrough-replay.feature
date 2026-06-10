@@ -26,10 +26,14 @@ Feature: projectFromLog — replay the example-walkthrough fixture end-to-end
     # committed edge, disputed-or-live entity, and the projection's
     # entity counts.
     When I load the walkthrough fixture and project it
-    Then the walkthrough projection's sessionState is "open"
+    # The fixture records the full broadcast session, through the
+    # session-ended event after the Segment 1 close snapshot.
+    Then the walkthrough projection's sessionState is "ended"
     And the walkthrough projection has at least 19 nodes
-    And the walkthrough projection has 17 edges
-    And the walkthrough projection has 3 annotations
+    # 17 story edges + E16 (N1 defines N2 — the definitional edge).
+    And the walkthrough projection has 18 edges
+    # A1-A3 + A4 (the turn-17 "shared axiom" audience note on N12).
+    And the walkthrough projection has 4 annotations
     And the walkthrough projection has 3 current participants
     # Committed nodes — classification facet status.
     And walkthrough node N1 classification facet is "committed"
@@ -56,7 +60,10 @@ Feature: projectFromLog — replay the example-walkthrough fixture end-to-end
     # Committed edges — substance facet status.
     And walkthrough edge E1 substance facet is "committed"
     And walkthrough edge E2 substance facet is "committed"
-    And walkthrough edge E3 substance facet is "committed"
+    # E3 committed at turn 7, then Ben withdrew his agreement when he
+    # opened the captivity leg (the cost no longer folds into N5 → N2
+    # for him) — committed + current withdrawal derives "withdrawn".
+    And walkthrough edge E3 substance facet is "withdrawn"
     And walkthrough edge E4 substance facet is "committed"
     And walkthrough edge E5 substance facet is "committed"
     And walkthrough edge E6 substance facet is "committed"
@@ -69,19 +76,24 @@ Feature: projectFromLog — replay the example-walkthrough fixture end-to-end
     And walkthrough edge E12 substance facet is "committed"
     And walkthrough edge E13 substance facet is "committed"
     And walkthrough edge E14 substance facet is "committed"
-    # E15 stays non-committed (per the walkthrough's "live disagreement"
-    # framing at turn 22) — substance facet was never proposed-and-
-    # committed.
+    # The definitional edge: N1 defines N2.
+    And walkthrough edge E16 substance facet is "committed"
+    # E15 is the located crux (turn 22's "live disagreement"): its
+    # substance round deadlocked (Ben agree / Anna dispute) and Maria
+    # recorded the facet-keyed meta-disagreement mark.
+    And walkthrough edge E15 substance facet is "meta-disagreement"
     And walkthrough edge E15 substance facet is not "committed"
     # Disputed-or-live entities — non-committed facet statuses per the
     # walkthrough's coda.
     And walkthrough node N17 substance facet is not "committed"
-    # Annotations — A1 + A3 commit; A2 stays in flight per Ben's dispute.
+    # Annotations — A1 + A3 + A4 commit; A2 stays in flight per Ben's
+    # facet-keyed dispute on its substance (ADR 0038).
     And walkthrough annotation A1 is present in the projection
     And walkthrough annotation A2 is present in the projection
     And walkthrough annotation A3 is present in the projection
-    # Pending proposals — the A2 annotate proposal sits unresolved at
-    # segment-1 close (Ben's dispute vote landed without a commit).
+    And walkthrough annotation A4 is present in the projection
+    # Pending proposals — Anna's A2 reframe meta-move sits unresolved at
+    # segment-1 close (Ben's dispute landed without a commit).
     And the walkthrough projection has at least 1 pending proposal
 
   Scenario: per-participant axiom-marks on N12 are independent

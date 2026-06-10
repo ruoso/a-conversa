@@ -129,6 +129,7 @@ When(
     const events = rows.map(rowToValidatedEvent);
     const snapshotEvent = findSnapshotCreatedEvent(events, label);
     assert.ok(snapshotEvent, `expected a walkthrough snapshot-created event labeled "${label}"`);
+    this.scratch['walkthroughProjectedAt'] = snapshotEvent.payload.log_position;
     this.scratch['walkthroughProjection'] = projectAtPosition(
       events,
       WALKTHROUGH_SESSION_ID,
@@ -145,6 +146,7 @@ When(
     const events = rows.map(rowToValidatedEvent);
     const snapshotEvent = findSnapshotCreatedEvent(events, label);
     assert.ok(snapshotEvent, `expected a walkthrough snapshot-created event labeled "${label}"`);
+    this.scratch['walkthroughProjectedAt'] = snapshotEvent.sequence;
     this.scratch['walkthroughProjection'] = projectAtPosition(
       events,
       WALKTHROUGH_SESSION_ID,
@@ -166,11 +168,16 @@ When(
 );
 
 Then(
-  'the at-position projection has lastAppliedSequence {int}',
-  function (this: AConversaWorld, sequence: number) {
+  // Derived, not pinned: the expected sequence is whatever position the
+  // When step projected at (the snapshot's recorded log_position or its
+  // own sequence) — fixture edits shift positions without reddening this.
+  'the at-position projection has lastAppliedSequence equal to the projected position',
+  function (this: AConversaWorld) {
     const projection = this.scratch['walkthroughProjection'] as Projection | undefined;
     assert.ok(projection, 'expected the walkthrough at-position projection');
-    assert.equal(projection.lastAppliedSequence, sequence);
+    const expected = this.scratch['walkthroughProjectedAt'];
+    assert.ok(typeof expected === 'number', 'expected the projected-at position in scratch');
+    assert.equal(projection.lastAppliedSequence, expected);
   },
 );
 

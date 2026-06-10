@@ -34,6 +34,7 @@ import type { Event } from '@a-conversa/shared-types';
 import { GraphView, PADDING } from '@a-conversa/graph-view';
 
 import { walkthroughEvents } from './index';
+import { WALKTHROUGH_BEATS } from './narration';
 
 /** Total number of events in the frozen seed log (the upper scrubber bound, `N`). */
 const TOTAL_EVENTS = walkthroughEvents.length;
@@ -46,12 +47,13 @@ const TOTAL_EVENTS = walkthroughEvents.length;
 const INSTANCE_KEY = 'landing-walkthrough';
 
 /**
- * Default initial position (Decision §5): mount at a small non-zero
- * prefix so the first paint already shows the debate's topic + opening
- * statements rather than a blank canvas (the seed's first `node-created`
- * lands at index 4). Narration may retune this via the position seam.
+ * Default initial position (Decision §5): mount at the first narration
+ * beat's anchor — a small non-zero prefix so the first paint already
+ * shows the opening claim rather than a blank canvas. Derived from the
+ * beat table (which resolves anchor EVENT IDS against the live stream),
+ * so fixture edits never strand this on a stale literal.
  */
-export const DEFAULT_INITIAL_POSITION = 6;
+export const DEFAULT_INITIAL_POSITION = WALKTHROUGH_BEATS[0]!.position;
 
 /** Auto-advance interval (Decision §4); default-paused, reduced-motion-gated. */
 const AUTO_ADVANCE_INTERVAL_MS = 1200;

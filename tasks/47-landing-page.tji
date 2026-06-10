@@ -185,4 +185,37 @@ task landing_page "Public landing page" {
       auth (anonymous is routed to login). Asserts the public/home split holds.
     ->8-
   }
+
+  # Representative-walkthrough upgrade (R, 2026-06-10): make the demo feel
+  # like watching the real debate — full event-kind coverage in the seed,
+  # a synchronized dialogue chat, visible-step scrubbing + autoplay pacing,
+  # and localized demo content.
+  task walkthrough_representative_log "Extend the seed to a full realistic session log" {
+    effort 1d
+    allocate team
+    complete 100
+    depends !landing_e2e
+    note "Refinement: tasks/refinements/landing_page/walkthrough_representative_log.md"
+  }
+
+  task walkthrough_dialogue_chat "Dialogue script + chat panel synchronized with the stream" {
+    effort 1d
+    allocate team
+    depends !walkthrough_representative_log
+    note "Refinement: tasks/refinements/landing_page/walkthrough_dialogue_chat.md"
+  }
+
+  task walkthrough_visible_steps "Visible-step scrubbing + autoplay pacing" {
+    effort 1d
+    allocate team
+    depends !walkthrough_dialogue_chat
+    note "Refinement: tasks/refinements/landing_page/walkthrough_visible_steps.md"
+  }
+
+  task walkthrough_locale_overlay "Localized demo content (event-log overlay, pt-BR / es-419)" {
+    effort 1d
+    allocate team
+    depends !walkthrough_dialogue_chat
+    note "Refinement: tasks/refinements/landing_page/walkthrough_locale_overlay.md"
+  }
 }

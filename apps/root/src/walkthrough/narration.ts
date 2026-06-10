@@ -38,7 +38,9 @@ interface BeatAnchor {
  * position arithmetic anywhere.
  */
 const BEAT_ANCHORS: readonly BeatAnchor[] = [
-  { slug: 'opening', anchorEventId: 'ee000000-0000-4000-8000-000000000006' },
+  // The first claim landing on the board (the `node-created` for Anna's
+  // raw opener — a VISIBLE event, so the beat lands on a renderable step).
+  { slug: 'opening', anchorEventId: 'ee000000-0000-4000-8000-000000000005' },
   { slug: 'decompose', anchorEventId: 'ee000000-0000-4000-8000-00000000001b' },
   { slug: 'consensus', anchorEventId: 'ee000000-0000-4000-8000-00000000002a' },
   { slug: 'counter', anchorEventId: 'ee000000-0000-4000-8000-000000000038' },
@@ -46,7 +48,9 @@ const BEAT_ANCHORS: readonly BeatAnchor[] = [
   { slug: 'classification', anchorEventId: 'ee000000-0000-4000-8000-000000000064' },
   { slug: 'axiom', anchorEventId: 'ee000000-0000-4000-8000-000000000093' },
   { slug: 'interpretive_split', anchorEventId: 'ee000000-0000-4000-8000-0000000000c4' },
-  { slug: 'finale', anchorEventId: 'ee000000-0000-4000-8000-00000000010a' },
+  // The session close — the very last event, so the finale beat holds
+  // through the end of the scrubber range.
+  { slug: 'finale', anchorEventId: 'ee000000-0000-4000-8000-000000110001' },
 ];
 
 /** One narration beat: a slug (→ catalog key) and its resolved 1-based position. */
