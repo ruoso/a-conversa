@@ -67,6 +67,98 @@
           "title": "Um debate que você consegue realmente ver.",
           "body": "O que está acordado, o que ainda é contestado e os axiomas por baixo — uma estrutura compartilhada, não a transcrição de duas pessoas falando sem se entender."
         }
+      },
+      "chatLabel": "Diálogo do debate",
+      "dialogue": {
+        "speaker": {
+          "maria": "Maria",
+          "anna": "Anna",
+          "ben": "Ben"
+        },
+        "intro": {
+          "text": "Boa noite, e bem-vindos ao a-conversa. A pergunta de hoje: zoológicos deveriam existir? Anna defende o sim; Ben, o não. Eu não tomo partido — eu cuido do quadro. O objetivo não é vencer; é descobrir exatamente onde vocês de fato discordam."
+        },
+        "floor": {
+          "text": "Anna, a palavra é sua — abra com a sua posição central, em uma frase se conseguir. Ben, segure a resposta."
+        },
+        "anna_opens": {
+          "text": "Zoológicos modernos credenciados deveriam existir porque, no saldo, fazem mais bem do que mal — para a conservação, para a compreensão pública da vida selvagem e para os animais sob seus cuidados."
+        },
+        "decompose_ask": {
+          "text": "Essa frase está carregando muita coisa. Quero decompô-la: um nó definicional na frente, uma alegação guarda-chuva e três pernas de apoio. E 'zoológicos modernos credenciados' é um movimento definicional — operações não credenciadas estão simplesmente fora do escopo?"
+        },
+        "anna_scope": {
+          "text": "A decomposição é fiel — são exatamente essas as três pernas. E sim, é definicional: defendo instituições credenciadas pela AZA e equivalentes, não zoológicos de beira de estrada."
+        },
+        "bridge_flag": {
+          "text": "Registrando para os dois: essas alegações são normativas — em algum momento vamos precisar da ponte entre o empírico e o 'deveria'. Ben, você aceita o escopo e o mapa?"
+        },
+        "ben_scope": {
+          "text": "Aceito como escopo — mas registrem que a linha credenciado/não credenciado faz trabalho argumentativo: a Anna pode renegar os piores casos. E depois vou querer uma perna minha, sobre o custo intrínseco do cativeiro."
+        },
+        "log_annotation": {
+          "text": "Registrando o aceite do Ben com a anotação anexada, para que não se perca."
+        },
+        "ben_withdraw": {
+          "text": "Mais uma coisa antes de construir: estou suspendendo minha concordância de que a perna do bem-estar sustenta o guarda-chuva. Se o cativeiro tem um custo que não se reduz a bem-estar, é exatamente esse apoio que está em questão."
+        },
+        "ben_captivity": {
+          "text": "Eis a perna: o confinamento de animais de grande alcance e cognitivamente complexos impõe ao indivíduo um custo moralmente significativo — independente de resultados de bem-estar — e todo benefício precisa ser pesado contra ele."
+        },
+        "operationalize": {
+          "text": "Ben, isso é composto — separando em alegação de custo e alegação de pesagem. E operacionalização sobre o custo: que evidência mudaria sua opinião? É derrotável, ou você quer uma marca de axioma?"
+        },
+        "ben_defeasible": {
+          "text": "Derrotável. Se a ciência do bem-estar e a preferência revelada convergissem em nenhum interesse não atendido em cativos bem manejados, eu abriria mão. O fundamento é o interesse-em-agência: um prisioneiro contente ainda é lesado."
+        },
+        "warrant": {
+          "text": "Capturando o derrotador com sua refutação pré-acordada, e o fundamento: o princípio das capacidades constitutivas mais a alegação empírica sobre quais são as capacidades desses animais. Ben — o princípio se sustenta sozinho para você?"
+        },
+        "ben_capabilities": {
+          "text": "Sinceramente, não — ele deriva de uma visão de capacidades: uma forma de florescimento própria de cada tipo de criatura. Aperte o suficiente e você chega ao meu piso de verdade: uma vida tem uma forma que lhe é devida."
+        },
+        "classify_normative": {
+          "text": "Capturando esse piso como um nó próprio — propondo como normativo."
+        },
+        "ben_value_pushback": {
+          "text": "Disputa na classificação. Não é uma norma que estou defendendo — é valor, alicerce. Classifiquem como o que é."
+        },
+        "reclassify_value": {
+          "text": "Justo. Retirando 'normativo'; propondo como alegação de valor."
+        },
+        "ben_axiom": {
+          "text": "E sim — proponham a marca de axioma nele para mim. É meu piso; qualquer coisa que eu oferecesse em apoio já o pressupõe. O arcabouço de capacidades acima dele continua respondendo a argumentos."
+        },
+        "anna_axiom": {
+          "text": "Não vou rejeitar o axioma do Ben — fingir que vidas não têm formas para vencer um debate seria desonesto. Marquem para mim também. Mas a redução corre no sentido contrário: bem-estar é como sabemos quais capacidades contam."
+        },
+        "shared_axiom": {
+          "text": "Duas marcas de axioma num mesmo nó — alicerce compartilhado a partir de quadros diferentes. Para a audiência: a pergunta já não é se vidas têm formas que podem ser lesadas. É como sabemos quais formas, e o que se segue disso."
+        },
+        "reword": {
+          "text": "Uma passada de operacionalização, Anna — você disse 'quase sempre'. Ajustando a redação para algo com que a plataforma consiga trabalhar: 'em quase todos os casos'."
+        },
+        "split": {
+          "text": "Ouvi duas alegações que precisam de linhas separadas: como identificamos capacidades constitutivas — epistêmica — e se elas simplesmente são bem-estar disfarçado — metafísica. Propondo uma divisão interpretativa."
+        },
+        "anna_reframe": {
+          "text": "Então deixem-me nomear o reenquadramento: se bem-estar é o acesso às capacidades constitutivas, a questão do manejo é a forma operacional desta disputa — não um desvio dela."
+        },
+        "anna_candidates": {
+          "text": "Candidatos existem — a piracema do salmão de viveiro, a estrutura da alcateia, o bonsai que chamamos de atrofiado sem invocar sofrimento. Mas cada um é contestável; posso estar projetando uma narrativa de espécie."
+        },
+        "ben_contests": {
+          "text": "Estou contestando o reenquadramento — e de forma limpa. A leitura epistêmica eu aceito de imediato, e não vou pressionar o ponto que a Anna já concedeu; isso seria marcar pontos, não pensar. Mas o enquadramento da pesagem rebaixa discretamente o axioma que nós dois marcamos: o que é devido vem primeiro."
+        },
+        "crux": {
+          "text": "Então a discordância viva é precisa, pequena e real: o que é devido vem primeiro, com a contabilidade de bem-estar depois — ou os dois entram juntos? Esse é o ponto crucial. Todo o resto foi andaime para encontrá-lo."
+        },
+        "deadlock": {
+          "text": "Registrando como discordância viva — não é um fracasso; é o ponto crucial localizado."
+        },
+        "wrap": {
+          "text": "Depois do intervalo, colocamos o ponto crucial diretamente para eles. Mesma mesa, mesma ferramenta, pergunta mais estreita. Fiquem conosco."
+        }
       }
     },
     "hero": {

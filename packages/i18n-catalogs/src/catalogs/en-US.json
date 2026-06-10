@@ -67,6 +67,98 @@
           "title": "A debate you can actually see.",
           "body": "What's agreed, what's still contested, and the axioms underneath — a shared structure, not a transcript of two people talking past each other."
         }
+      },
+      "chatLabel": "Debate dialogue",
+      "dialogue": {
+        "speaker": {
+          "maria": "Maria",
+          "anna": "Anna",
+          "ben": "Ben"
+        },
+        "intro": {
+          "text": "Good evening, and welcome to a-conversa. Tonight's question: should zoos exist? Anna defends the affirmative; Ben, the negative. I don't take sides — I run the board. The goal isn't to win; it's to find out exactly where you actually disagree."
+        },
+        "floor": {
+          "text": "Anna, the floor is yours — open with your core position, one sentence if you can. Ben, hold your response."
+        },
+        "anna_opens": {
+          "text": "Modern accredited zoos should exist because, on balance, they do more good than harm — for conservation, for public understanding of wildlife, and for the animals in their care."
+        },
+        "decompose_ask": {
+          "text": "That sentence is doing a lot of work. I'd like to decompose it: a definitional node up front, an umbrella claim, and three supporting legs. And is 'modern accredited zoos' a definitional move — are unaccredited operations simply out of scope?"
+        },
+        "anna_scope": {
+          "text": "The decomposition is faithful — those are exactly the three legs. And yes, it's definitional: I'm defending AZA-accredited institutions and their equivalents, not roadside menageries."
+        },
+        "bridge_flag": {
+          "text": "Flagging for both of you: these claims are normative — at some point we'll need the bridge from the empirical claims to the 'should'. Ben, do you accept the scope and the map?"
+        },
+        "ben_scope": {
+          "text": "I accept it as the scope — but log that the accredited/unaccredited line does argumentative work: Anna gets to disown the worst cases. And I'll want a leg of my own later, on the intrinsic cost of captivity."
+        },
+        "log_annotation": {
+          "text": "Logging Ben's acceptance with the annotation attached, so it doesn't get lost."
+        },
+        "ben_withdraw": {
+          "text": "One more thing before I build: I'm suspending my agreement that the welfare leg supports the umbrella. If captivity carries a cost that doesn't fold into welfare, that support is exactly what's in question."
+        },
+        "ben_captivity": {
+          "text": "Here's the leg: confinement of wide-ranging, cognitively complex animals imposes a morally significant cost on the individual — independent of welfare outcomes — and every benefit has to be netted against it."
+        },
+        "operationalize": {
+          "text": "Ben, that's compound — splitting it into the cost claim and the netting claim. And operationalization on the cost claim: what evidence would change your mind? Is it defeasible, or do you want an axiom-mark?"
+        },
+        "ben_defeasible": {
+          "text": "Defeasible. If welfare science and revealed preference converged on no remaining unmet interest in well-managed captives, I'd drop it. The warrant is interest-in-agency: a contented prisoner is still wronged."
+        },
+        "warrant": {
+          "text": "Capturing the defeater with its pre-committed rebut, and the warrant: the constitutive-capacities principle plus the empirical claim about what these animals' capacities are. Ben — is the principle freestanding for you?"
+        },
+        "ben_capabilities": {
+          "text": "Honestly, no — it's downstream of a capabilities view: a form of flourishing proper to a kind of creature. Push hard enough and you hit my actual floor: a life has a shape it is owed."
+        },
+        "classify_normative": {
+          "text": "Capturing that floor as its own node — proposing it as normative."
+        },
+        "ben_value_pushback": {
+          "text": "Dispute on the kind. It isn't a norm I'm arguing for — it's bedrock value. Classify it as what it is."
+        },
+        "reclassify_value": {
+          "text": "Fair. Withdrawing 'normative'; proposing it as a value claim."
+        },
+        "ben_axiom": {
+          "text": "And yes — propose the axiom-mark on it for me. That's my floor; anything I'd offer in support already presupposes it. The capabilities frame above it stays answerable to argument."
+        },
+        "anna_axiom": {
+          "text": "I won't reject Ben's axiom — pretending lives don't have shapes to win a debate would be dishonest. Mark it for me too. But the reduction runs the other way: welfare is how we know which capacities count."
+        },
+        "shared_axiom": {
+          "text": "Two axiom-marks on one node — shared bedrock from different frames. For the audience: the question is no longer whether lives have shapes that can be wronged. It's how we know which shapes, and what follows."
+        },
+        "reword": {
+          "text": "One operationalization pass, Anna — you said 'almost always'. Tightening the wording to something the platform can work with: 'in nearly all cases'."
+        },
+        "split": {
+          "text": "I heard two claims that need separate lines: how we identify constitutive capacities — epistemic — and whether they just are welfare in disguise — metaphysical. Proposing an interpretive split."
+        },
+        "anna_reframe": {
+          "text": "Then let me name the reframe: if welfare is the access to constitutive capacities, the husbandry-netting question is the operational form of this dispute — not a sidestep of it."
+        },
+        "anna_candidates": {
+          "text": "Candidates exist — the hatchery salmon's spawning run, wolf-pack structure, the bonsai we call stunted without invoking suffering. But each is contestable; I may be projecting a species-narrative."
+        },
+        "ben_contests": {
+          "text": "I'm contesting the reframe — cleanly. The epistemic reading I accept outright, and I won't press the point Anna already conceded; that would be scoring points, not thinking. But the netting frame quietly demotes the axiom we both marked: owing comes first."
+        },
+        "crux": {
+          "text": "So the live disagreement is sharp, small, and real: does owing come first, with welfare-accounting downstream — or do they enter together? That's the crux. Everything else was scaffolding to find it."
+        },
+        "deadlock": {
+          "text": "Recording it as a live disagreement — not a failure; a located crux."
+        },
+        "wrap": {
+          "text": "After the break we put the crux to them directly. Same table, same tool, narrower question. Stay with us."
+        }
       }
     },
     "hero": {

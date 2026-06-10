@@ -67,6 +67,98 @@
           "title": "Un debate que de verdad puedes ver.",
           "body": "Lo acordado, lo que sigue en disputa y los axiomas que hay debajo: una estructura compartida, no la transcripción de dos personas hablando sin entenderse."
         }
+      },
+      "chatLabel": "Diálogo del debate",
+      "dialogue": {
+        "speaker": {
+          "maria": "Maria",
+          "anna": "Anna",
+          "ben": "Ben"
+        },
+        "intro": {
+          "text": "Buenas noches y bienvenidos a a-conversa. La pregunta de hoy: ¿deberían existir los zoológicos? Anna defiende el sí; Ben, el no. Yo no tomo partido: administro el tablero. La meta no es ganar; es descubrir exactamente dónde discrepan de verdad."
+        },
+        "floor": {
+          "text": "Anna, tienes la palabra: abre con tu posición central, en una oración si puedes. Ben, guarda tu respuesta."
+        },
+        "anna_opens": {
+          "text": "Los zoológicos modernos acreditados deberían existir porque, en balance, hacen más bien que mal: para la conservación, para la comprensión pública de la vida silvestre y para los animales a su cuidado."
+        },
+        "decompose_ask": {
+          "text": "Esa oración carga demasiado. Quiero descomponerla: un nodo definicional al frente, una afirmación paraguas y tres patas de apoyo. Y ¿'zoológicos modernos acreditados' es un movimiento definicional? ¿Las operaciones no acreditadas quedan simplemente fuera del alcance?"
+        },
+        "anna_scope": {
+          "text": "La descomposición es fiel: esas son exactamente las tres patas. Y sí, es definicional: defiendo instituciones acreditadas por la AZA y equivalentes, no zoológicos de carretera."
+        },
+        "bridge_flag": {
+          "text": "Señalo para ambos: estas afirmaciones son normativas; en algún momento necesitaremos el puente de lo empírico al 'debería'. Ben, ¿aceptas el alcance y el mapa?"
+        },
+        "ben_scope": {
+          "text": "Lo acepto como alcance, pero que conste que la línea acreditado/no acreditado hace trabajo argumentativo: Anna puede desentenderse de los peores casos. Y después querré una pata propia, sobre el costo intrínseco del cautiverio."
+        },
+        "log_annotation": {
+          "text": "Registro la aceptación de Ben con la anotación adjunta, para que no se pierda."
+        },
+        "ben_withdraw": {
+          "text": "Una cosa más antes de construir: suspendo mi acuerdo en que la pata del bienestar sostiene el paraguas. Si el cautiverio tiene un costo que no se reduce a bienestar, ese apoyo es exactamente lo que está en cuestión."
+        },
+        "ben_captivity": {
+          "text": "Esta es la pata: el confinamiento de animales de amplio rango y cognitivamente complejos impone al individuo un costo moralmente significativo —independiente de los resultados de bienestar— y todo beneficio debe sopesarse contra él."
+        },
+        "operationalize": {
+          "text": "Ben, eso es compuesto: lo separo en la afirmación del costo y la del balance. Y operacionalización sobre el costo: ¿qué evidencia te haría cambiar de opinión? ¿Es derrotable, o quieres una marca de axioma?"
+        },
+        "ben_defeasible": {
+          "text": "Derrotable. Si la ciencia del bienestar y la preferencia revelada convergieran en que no queda interés insatisfecho en cautivos bien manejados, lo retiraría. El fundamento es el interés en la agencia: un prisionero contento sigue siendo agraviado."
+        },
+        "warrant": {
+          "text": "Capturo el derrotador con su refutación pre-acordada, y el fundamento: el principio de las capacidades constitutivas más la afirmación empírica sobre cuáles son las capacidades de estos animales. Ben, ¿el principio se sostiene solo para ti?"
+        },
+        "ben_capabilities": {
+          "text": "Honestamente, no: deriva de una visión de capacidades, una forma de florecimiento propia de cada tipo de criatura. Presiona lo suficiente y llegas a mi piso real: una vida tiene una forma que se le debe."
+        },
+        "classify_normative": {
+          "text": "Capturo ese piso como nodo propio; lo propongo como normativo."
+        },
+        "ben_value_pushback": {
+          "text": "Disputa en la clasificación. No es una norma que esté defendiendo: es valor, cimiento. Clasifíquenlo como lo que es."
+        },
+        "reclassify_value": {
+          "text": "Justo. Retiro 'normativo'; lo propongo como afirmación de valor."
+        },
+        "ben_axiom": {
+          "text": "Y sí: propongan la marca de axioma para mí. Es mi piso; cualquier cosa que ofreciera en su apoyo ya lo presupone. El marco de capacidades encima de él sigue respondiendo a argumentos."
+        },
+        "anna_axiom": {
+          "text": "No voy a rechazar el axioma de Ben: fingir que las vidas no tienen formas para ganar un debate sería deshonesto. Márquenlo para mí también. Pero la reducción corre al revés: el bienestar es cómo sabemos qué capacidades cuentan."
+        },
+        "shared_axiom": {
+          "text": "Dos marcas de axioma en un mismo nodo: cimiento compartido desde marcos distintos. Para la audiencia: la pregunta ya no es si las vidas tienen formas que puedan agraviarse, sino cómo sabemos cuáles, y qué se sigue."
+        },
+        "reword": {
+          "text": "Una pasada de operacionalización, Anna: dijiste 'casi siempre'. Ajusto la redacción a algo con lo que la plataforma pueda trabajar: 'en casi todos los casos'."
+        },
+        "split": {
+          "text": "Escuché dos afirmaciones que necesitan líneas separadas: cómo identificamos capacidades constitutivas —epistémica— y si simplemente son bienestar disfrazado —metafísica—. Propongo una división interpretativa."
+        },
+        "anna_reframe": {
+          "text": "Entonces nombro el reencuadre: si el bienestar es el acceso a las capacidades constitutivas, la cuestión del manejo es la forma operacional de esta disputa, no una evasión."
+        },
+        "anna_candidates": {
+          "text": "Hay candidatos: la migración del salmón de criadero, la estructura de la manada de lobos, el bonsái que llamamos atrofiado sin invocar sufrimiento. Pero cada uno es objetable; puedo estar proyectando una narrativa de especie."
+        },
+        "ben_contests": {
+          "text": "Contesto el reencuadre, y quiero ser limpio: la lectura epistémica la acepto de inmediato, y no voy a presionar el punto que Anna ya concedió; eso sería anotar puntos, no pensar. Pero el encuadre del balance degrada discretamente el axioma que ambos marcamos: lo debido viene primero."
+        },
+        "crux": {
+          "text": "Así que el desacuerdo vivo es nítido, pequeño y real: ¿lo debido viene primero, con la contabilidad del bienestar después, o entran juntos? Ese es el quid. Todo lo demás fue andamiaje para encontrarlo."
+        },
+        "deadlock": {
+          "text": "Lo registro como desacuerdo vivo: no es un fracaso; es el quid localizado."
+        },
+        "wrap": {
+          "text": "Después de la pausa, les planteamos el quid directamente. Misma mesa, misma herramienta, pregunta más estrecha. Quédense con nosotros."
+        }
       }
     },
     "hero": {

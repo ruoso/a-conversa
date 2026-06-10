@@ -31,6 +31,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { WalkthroughDemo, DEFAULT_INITIAL_POSITION } from './WalkthroughDemo';
 import { WalkthroughDemoCompact } from './WalkthroughDemoCompact';
 import { WalkthroughCaption } from './WalkthroughCaption';
+import { ChatPanel } from './ChatPanel';
 import { activeBeatFor } from './narration';
 
 /**
@@ -98,7 +99,18 @@ export function WalkthroughDemoNarrated(): ReactElement {
       ) : (
         <WalkthroughDemo onPositionChange={handlePositionChange} />
       )}
-      <WalkthroughCaption beat={beat} />
+      {/* The narration column: the beat caption on top, the dialogue chat
+          filling the remainder. Both hang off the same position seam, so
+          the column behaves identically for either demo variant (on a
+          phone it simply stacks below the compact demo). The chat is
+          height-capped on small screens so it never pushes the page; at
+          `lg` it stretches to the graph column's height. */}
+      <div className="flex min-h-0 flex-col gap-6">
+        <WalkthroughCaption beat={beat} />
+        <div className="max-h-80 min-h-0 lg:max-h-none lg:flex-1">
+          <ChatPanel position={position} />
+        </div>
+      </div>
     </div>
   );
 }

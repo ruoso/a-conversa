@@ -20,7 +20,7 @@
 // TaskJuggler: landing_page.walkthrough_demo_narration
 // ADR:        0024 (react-i18next + ICU — caption copy is catalog-resolved).
 
-import { walkthroughEvents } from './index.js';
+import { resolveAnchorPosition } from './anchors.js';
 
 /** Design data: a beat's slug + the stable id of the event it anchors to. */
 interface BeatAnchor {
@@ -65,18 +65,11 @@ export interface WalkthroughBeat {
   readonly position: number;
 }
 
-/** Resolve one anchor to its 1-based position; throws if the anchor event
- *  is missing (a typo'd / removed anchor fails loudly at module load,
+/** Resolve one anchor to its 1-based position via the shared
+ *  `resolveAnchorPosition` (throws loudly on a missing anchor event,
  *  which the narration suite surfaces). */
 function resolveAnchor(anchor: BeatAnchor): WalkthroughBeat {
-  const index = walkthroughEvents.findIndex((event) => event.id === anchor.anchorEventId);
-  if (index < 0) {
-    throw new Error(
-      `walkthrough beat "${anchor.slug}" anchors to event ${anchor.anchorEventId}, ` +
-        `which is not present in walkthroughEvents`,
-    );
-  }
-  return { slug: anchor.slug, position: index + 1 };
+  return { slug: anchor.slug, position: resolveAnchorPosition(anchor.anchorEventId, anchor.slug) };
 }
 
 /**

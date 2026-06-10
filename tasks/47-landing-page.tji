@@ -201,6 +201,7 @@ task landing_page "Public landing page" {
   task walkthrough_dialogue_chat "Dialogue script + chat panel synchronized with the stream" {
     effort 1d
     allocate team
+    complete 100
     depends !walkthrough_representative_log
     note "Refinement: tasks/refinements/landing_page/walkthrough_dialogue_chat.md"
   }

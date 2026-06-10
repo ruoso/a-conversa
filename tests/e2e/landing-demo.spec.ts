@@ -36,6 +36,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { CATALOGS } from '@a-conversa/i18n-catalogs';
 
 import { WALKTHROUGH_BEATS } from '../../apps/root/src/walkthrough/narration';
+import { WALKTHROUGH_DIALOGUE } from '../../apps/root/src/walkthrough/dialogue';
 import { lookup } from './fixtures/locales';
 import { expect, test } from './fixtures/no-scrollbars';
 
@@ -252,6 +253,37 @@ test.describe('landing walkthrough demo', () => {
       // active beat — the caption follows the stepper's position.
       await page.getByTestId('walkthrough-scrubber').fill(String(beatPosition('classification')));
       await expect(caption).toHaveAttribute('data-beat', 'classification', { timeout: 5_000 });
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Thin chat-panel assertion for `walkthrough_dialogue_chat`. The dialogue
+  // script (apps/root/src/walkthrough/dialogue.ts) anchors each turn to an
+  // event id; this pins that the chat renders on the anonymous `/`, shows
+  // the turns visible at the initial position, and grows as the stepper
+  // advances across later anchors — counts derived from the imported
+  // script, never pinned.
+  test('the dialogue chat is visible on load and grows with the position', async ({ browser }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/');
+
+      const chat = page.getByTestId('walkthrough-chat');
+      await expect(chat).toBeVisible({ timeout: 15_000 });
+
+      // At the opening anchor the intro turns are already on screen.
+      const initialCount = WALKTHROUGH_DIALOGUE.filter(
+        (turn) => turn.position <= WALKTHROUGH_BEATS[0]!.position,
+      ).length;
+      const messages = page.getByTestId('walkthrough-chat-message');
+      await expect(messages).toHaveCount(initialCount, { timeout: 10_000 });
+      await expect(messages.first()).toHaveAttribute('data-speaker', 'maria');
+
+      // Scrubbing to the finale reveals the whole script.
+      await page.getByTestId('walkthrough-scrubber').fill(String(FINALE.position));
+      await expect(messages).toHaveCount(WALKTHROUGH_DIALOGUE.length, { timeout: 10_000 });
     } finally {
       await context.close();
     }
