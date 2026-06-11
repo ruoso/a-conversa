@@ -47,6 +47,7 @@
 
 import { resolveSessionTokenSecret, SessionSecretRejectedError } from './auth/index.js';
 import { applyMigrationsOnStartup, withFastifyLogger } from './migrate-startup.js';
+import { markMigrationGateCompleted, markMigrationGateSkipped } from './readiness.js';
 import { createServer } from './server.js';
 
 /**
@@ -134,16 +135,24 @@ async function main(): Promise<void> {
     app.log.warn(
       'SKIP_STARTUP_MIGRATIONS=true — skipping migration gate; ensure schema is current out-of-band',
     );
+    // The explicit skip is the operator's assertion that the schema
+    // is current — /readyz treats it as migrations-ready (see
+    // readiness.ts for the rationale).
+    markMigrationGateSkipped('explicit-skip');
   } else if (!databaseUrl) {
     app.log.warn(
       'DATABASE_URL is not set — skipping migration gate; the server will fail on any DB-touching request',
     );
+    // Unlike the explicit skip, this server cannot serve DB-touching
+    // requests at all — /readyz reports it as NOT ready.
+    markMigrationGateSkipped('no-database-url');
   } else {
     try {
-      await applyMigrationsOnStartup({
+      const applied = await applyMigrationsOnStartup({
         databaseUrl,
         log: withFastifyLogger(app.log),
       });
+      markMigrationGateCompleted(applied.length);
     } catch (error) {
       app.log.error({ err: error }, 'startup migration gate failed; aborting');
       // `app` has not yet bound a port — close it anyway so any

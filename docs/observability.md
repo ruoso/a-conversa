@@ -148,11 +148,47 @@ The three `NODE_ENV` modes (all pinned in `logger.test.ts`):
   the rendering differs, which is why local output looks nothing
   like the prod JSON this document describes.
 
+## Health and readiness
+
+_Owned by `deployment.observability.health_and_readiness_endpoints`
+([refinement](../tasks/refinements/deployment/health_and_readiness_endpoints.md))._
+
+The server exposes two probe endpoints, both root-level JSON routes
+exempt from rate limiting:
+
+| Probe      | Question it answers                  | Consumers                                                 |
+| ---------- | ------------------------------------ | --------------------------------------------------------- |
+| `/healthz` | "Is the process alive?"              | compose dev healthcheck; quick manual smoke               |
+| `/readyz`  | "Can this instance do real work?"    | Railway deploy-health gate; external uptime monitor       |
+
+**`/healthz`** ([`routes/healthz.ts`](../apps/server/src/routes/healthz.ts))
+is liveness-only: 200 + `{ status: 'ok', version }` whenever the
+process serves HTTP. It deliberately touches nothing else — liveness
+controls *restarts*, and a transient database blip must not restart
+the app container.
+
+**`/readyz`** ([`routes/readyz.ts`](../apps/server/src/routes/readyz.ts))
+runs two checks per ADR 0033 and returns
+`{ status, version, checks: { db, migrations } }`:
+
+- **db** — `SELECT 1` against Postgres with a 2-second timeout.
+- **migrations** — the startup migration gate's recorded outcome.
+  The gate runs before the port binds (it aborts the boot on
+  failure), so this reports `ok` once the gate completed — or when
+  the operator explicitly skipped it via `SKIP_STARTUP_MIGRATIONS=true`,
+  which is an out-of-band assertion that the schema is current. A
+  server started without `DATABASE_URL` reports `failed`.
+
+Both checks green → 200 `status: 'ready'`; either failing → 503
+`status: 'unavailable'` with the failing check named in `checks`.
+Railway treats a deploy as healthy only once `/readyz` returns 200,
+which makes migration failures visible to the deploy machinery
+(ADR 0033: "`/readyz` becomes the deploy gate").
+
 <!--
 Sections added by sibling deployment.observability tasks as they land:
 
 ## Error tracking   — deployment.observability.error_tracking
 ## Metrics          — deployment.observability.basic_metrics
-## Health and readiness — deployment.observability.health_and_readiness_endpoints
 ## Uptime monitoring — deployment.observability.uptime_monitoring
 -->

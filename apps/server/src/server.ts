@@ -52,6 +52,11 @@
 //     `healthzPlugin`); the compose `app` service healthcheck targets
 //     this route. Owned by `backend.api_skeleton.health_endpoint`.
 //     **Lives at the root** (not under `/api/*`) — ops convention.
+//   - `GET /readyz` — readiness probe (registered via the
+//     `readyzPlugin`): DB ping + startup-migration-gate state, 503
+//     when either fails. Railway's deploy-health gate per ADR 0033.
+//     Owned by `deployment.observability.health_and_readiness_endpoints`.
+//     Same root-level ops convention as `/healthz`.
 //   - `GET /api/auth/*`, `GET|POST /api/sessions/*`, `GET /api/ws`,
 //     `GET /api/docs[/json]` — every other HTTP / WS surface lives
 //     under `/api/*`. The literal `/api` prefix lives directly inside
@@ -82,6 +87,7 @@ import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
+import { readyzPlugin } from './routes/readyz.js';
 import { staticFrontendsPlugin } from './routes/static-frontends.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
 import { replayRoutesPlugin } from './replay/routes.js';
@@ -501,8 +507,11 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
     // resolved key (default `request.ip`), not the URL. Skipping
     // `/healthz` keeps compose / k8s liveness probes free; a probe
     // storm at the same per-IP bucket would otherwise read as a
-    // service outage to the orchestrator.
-    allowList: (request) => request.url === '/healthz',
+    // service outage to the orchestrator. `/readyz` gets the same
+    // exemption — Railway's deploy-health probe and the external
+    // uptime monitor hit it continuously (ADR 0033), and a throttled
+    // readiness probe reads as an outage too.
+    allowList: (request) => request.url === '/healthz' || request.url === '/readyz',
     errorResponseBuilder: (_request, context) => {
       throw new ApiError(
         429,
@@ -534,6 +543,13 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // semantics (liveness-only, not readiness), refinement link, sibling
   // ownership — stays in one file. See routes/healthz.ts.
   await app.register(healthzPlugin);
+
+  // `/readyz` — readiness sibling to `/healthz`: DB ping + startup
+  // migration-gate state (ADR 0033's deploy gate). No `pool` option
+  // here — the handler lazily reaches for `getDefaultPool()` per
+  // probe; tests inject their own pool by registering the plugin
+  // directly. See routes/readyz.ts.
+  await app.register(readyzPlugin);
 
   // Auth middleware — decorates the instance with `app.authenticate`
   // and the request with `authUser`. Registered BEFORE the auth-routes
