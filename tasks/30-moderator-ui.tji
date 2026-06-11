@@ -368,6 +368,29 @@ task moderator_ui "Moderator UI" {
         Registered by closer 2026-06-02 (commit landing annotation_facet_status_logic).
       ->8-
     }
+    task mod_decompose_split_parent_visibility "Hide decomposed / interpretive-split parents on commit (both canvases) per the supersession rule" {
+      effort 2d
+      allocate team
+      depends data_and_methodology.methodology_engine.decomposition_logic, data_and_methodology.methodology_engine.interpretive_split_logic
+      note -8<-
+        Source: parking-lot triage 2026-06-10 (entry "Decompose/interpretive-split parent visibility on
+        moderator canvas", 2026-06-03) — docs/methodology.md L156 ("the raw utterance is removed from
+        the current visible graph") and docs/data-model.md L282-284 (supersession rule) are explicit:
+        a committed decompose / interpretive-split supersedes the parent node. The server flips
+        parent.visible = false internally but emits no entity-removed event on the wire, so both canvas
+        projectors keep the parent rendered. Option A (hide the parent, per the documented methodology)
+        was chosen at the 2026-06-10 triage over amending the docs.
+
+        Scope: propagate parent supersession to the frontends on decompose / interpretive-split commit —
+        either entity-removed wire emission in the commit handler or the supersession rule implemented in
+        the client projectors (refinement decides the seam); update the moderator and participant canvas
+        projectors to drop the parent (check the audience/shared projector too); rework
+        methodology-full-flow.spec.ts's later phases that deliberately right-click the split/decomposed
+        N1 (they must target the components/readings instead); restore the parent-disappears assertion
+        originally specced as AC-5 of full-session-walkthrough.spec.ts; Playwright cover on both
+        surfaces.
+      ->8-
+    }
   }
 
   task mod_capture_flow "F1 — Capture a new statement" {

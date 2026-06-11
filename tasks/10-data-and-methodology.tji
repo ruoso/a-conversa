@@ -410,6 +410,28 @@ task data_and_methodology "Data and methodology" {
       depends !decomposition_logic
       note "Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md"
     }
+    task interpretive_split_edge_inheritance "Interpretive-split reading nodes inherit the parent's committed edges" {
+      effort 1.5d
+      allocate team
+      depends !interpretive_split_logic
+      note -8<-
+        Source: parking-lot triage 2026-06-10 (entry "Interpretive-split edge inheritance", 2026-06-03) —
+        docs/example-walkthrough.md turn 17 is explicit: when N14's split commits, reading nodes N16/N17
+        each take an inherited rebut edge to N11 (E11a/E11b), with edge substance pre-committed carrying
+        from N14's pre-commitment. Production propose.ts mints the reading nodes but emits zero
+        edge-created events for inherited edges; full-session-walkthrough.spec.ts's "inherited rebut
+        edge" assertion (AC-5) passes only incidentally via AC-3b's unrelated edge. The methodology owner
+        confirmed inheritance is the intended behavior at the 2026-06-10 triage.
+
+        Scope: on interpretive-split commit, emit edge-created events mirroring each of the parent's
+        committed edges onto each reading node, carrying the parent edge's pre-committed substance per
+        the walkthrough; extend applyCommittedProposal's interpretive-split arm in
+        apps/server/src/projection/replay.ts; verify both canvas projectors render the inherited edges;
+        tighten full-session-walkthrough.spec.ts AC-5 to assert the true inherited edges. Close the open
+        question in tasks/refinements/data-and-methodology/interpretive_split_logic.md (note-level
+        pointer; do not rewrite its historical sections).
+      ->8-
+    }
     task axiom_mark_logic "Axiom-mark operation — per-participant" {
       effort 1d
       allocate team
