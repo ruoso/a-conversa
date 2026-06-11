@@ -37,15 +37,9 @@ only state that survives between turns is what you put in `context_summary`.
 
 Drive `a-conversa` forward by closing **every in-scope milestone in
 `tasks/99-milestones.tji`**. Out of scope: `m_deployment_ready` (M9),
-`m_first_show_recorded` (M10, depends on M9).
+`m_first_show_recorded` (M10, depends on M9). M9-prep is in scope.
 
 
-
-
-Do **not** touch any task under `deployment.*` in `tasks/70-deployment.tji`.
-Skip any READY leaf whose id begins with `deployment.` even when
-`make unblocked` lists it (it can appear under in-scope milestones via
-transitive dependency edges).
 
 ## Session start
 
@@ -119,8 +113,6 @@ with a non-empty READY list is the source for this pick.
 the listed leaves are not `complete 100` and have every predecessor
 `complete 100`. You add three filters on top of that:
 
-- **Scope filter** — skip any READY leaf whose id starts with `deployment.`
-  (the M9 / out-of-scope rule).
 - **Audit filter** — NEVER pick an audit / re-audit / revisit / reconsider
   task: any leaf whose id contains `audit`, `revisit`, `reconsider`,
   `re_audit`, or a `_v<N>` audit-iteration suffix, or whose deliverable is
@@ -269,8 +261,7 @@ the human user can intervene rather than burning another budget.
 ## Stop conditions
 
 - **Mission complete** — `make unblocked MILESTONE=<id>` for every in-scope
-  milestone shows no eligible leaf (either ALL GATING WORK COMPLETE, or
-  every READY leaf is filtered by the `deployment.*` scope rule). Emit
+  milestone shows no eligible leaf. Emit
   `{"stop": "mission complete"}` with a closing summary in
   `context_summary`. (The end-of-mission `DESIGN.md` update from the legacy
   ORCHESTRATOR.md should be dispatched as one final sub-agent before you
@@ -282,7 +273,7 @@ the human user can intervene rather than burning another budget.
   `{"stop": "corrupted: <detail>"}`.
 - **Human intervention needed** — a milestone still has incomplete gating
   work, but every remaining READY leaf is filtered out by the scope or
-  audit filter (i.e. the only dispatchable work left is `deployment.*` or
+  audit filter or
   audit/decision tasks). Do NOT register or dispatch anything to "make
   progress" — manufacturing a successor task is how the loop starts. Emit
   `{"stop": "human-intervention-needed: only audit/decision tasks remain — <task-id list>"}`
