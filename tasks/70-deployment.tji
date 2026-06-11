@@ -139,6 +139,8 @@ task deployment "Deployment" {
     task structured_logging "Structured-logging conventions" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/structured_logging.md"
     }
     task error_tracking "Error tracking integration (Sentry or equivalent)" {
       effort 1d
