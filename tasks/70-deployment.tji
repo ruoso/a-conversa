@@ -111,25 +111,30 @@ task deployment "Deployment" {
   }
 
   task prod_migrations "Database migrations in production" {
-    depends !prod_compose, data_and_methodology.schema.migrations_tooling
+    # The safety linter and the rollback strategy are repo-only agent
+    # work (the linter is tooling per ADR 0034; the rollback rehearsal
+    # runs against the local compose stack). Only the deploy-runner
+    # integration needs the live environment.
+    depends data_and_methodology.schema.migrations_tooling
     task migration_runner_in_prod "Migration runner integration with deploy" {
       effort 1d
       allocate team
+      depends !!prod_compose
     }
     task migration_safety_checks "Pre-deploy migration safety checks" {
       effort 1d
       allocate team
-      depends !migration_runner_in_prod
     }
     task rollback_strategy "Document and test rollback strategy" {
       effort 1d
       allocate team
-      depends !migration_runner_in_prod
     }
   }
 
   task observability "Observability" {
-    depends !prod_compose
+    # Code-side leaves are repo-only agent work (m_predeploy_agent_work);
+    # only uptime_monitoring needs the live environment, so the
+    # prod_compose gate lives there, not on the rollup.
     task structured_logging "Structured-logging conventions" {
       effort 1d
       allocate team
@@ -151,7 +156,7 @@ task deployment "Deployment" {
     task uptime_monitoring "External uptime monitoring config" {
       effort 0.5d
       allocate team
-      depends !health_and_readiness_endpoints
+      depends !health_and_readiness_endpoints, !!prod_compose
     }
   }
 
@@ -174,7 +179,10 @@ task deployment "Deployment" {
   }
 
   task release_process "Release process" {
-    depends !prod_container, !prod_compose, !observability
+    # CHANGELOG seed, workflow tag-gate, and the two runbooks are all
+    # authorable from ADR 0034 + the deployment refinements without the
+    # live environment — repo-only agent work (m_predeploy_agent_work).
+    # The process is first *exercised* at M9, which gates on all of it.
     task release_versioning "Versioning scheme (semver, tags, changelog)" {
       effort 0.5d
       allocate team
@@ -210,10 +218,14 @@ task deployment "Deployment" {
   }
 
   task deployment_tests "Deployment / production tests" {
-    depends !prod_compose, !prod_secrets, !prod_migrations
+    # load_test runs against the local compose stack (repo-only agent
+    # work); migration_dry_run is likewise local per ADR 0031. The
+    # smoke test completes only against live production, so the
+    # prod gates live on that leaf rather than the rollup.
     task smoke_test_after_deploy "Post-deploy smoke test (health, login, simple session)" {
       effort 1d
       allocate team
+      depends !!prod_compose, !!prod_secrets, !!prod_migrations
     }
     task migration_dry_run "Migration dry-run on staging" {
       effort 1d

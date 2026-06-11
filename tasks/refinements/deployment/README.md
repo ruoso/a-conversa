@@ -70,7 +70,11 @@ have a home and a completion marker:
 The remaining `deployment` rollups (`prod_migrations`, `observability`,
 `backup_and_export`, `release_process`, `deployment_docs`,
 `deployment_tests`) are mostly code/document tasks and get their own
-refinements when scheduled. Their **human touchpoints**, for planning:
+refinements when scheduled. The repo-only leaves among them (no
+secrets, no privileged access) are tracked as milestone
+`m_predeploy_agent_work` (M9-prep) in
+[`tasks/99-milestones.tji`](../../99-milestones.tji), so agents can
+clear them in parallel with the operator chain above. Their **human touchpoints**, for planning:
 
 - `observability.error_tracking` — operator creates the Sentry account/project and sets `SENTRY_DSN` (absence is non-fatal per ADR 0033, so the app service can go live without it).
 - `observability.uptime_monitoring` — operator configures the external probe (Sentry uptime or BetterStack) and alert routing.
