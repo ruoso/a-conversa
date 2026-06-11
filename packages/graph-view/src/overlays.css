@@ -350,59 +350,6 @@
   }
 }
 
-/* `aud_decomposition_animation` — one-shot slate-tinted halo on a parent
- * node's `data.decomposed` first flipping to `true` (a decompose /
- * interpretive-split commit structurally retiring the parent).
- * Refinement: tasks/refinements/audience/aud_decomposition_animation.md
- *   Decision §6 — `var(--aud-anim-halo-ms)` (450 ms); halo-tier parity.
- *   `forwards` fill keeps the `to` state (`opacity: 0`).
- *   Decision §7 — `prefers-reduced-motion: reduce` suppression in CSS.
- *
- * The halo geometry mirrors `[data-node-appear-anim]`; the palette is
- * sampled from `STATE_COLORS.agreed` (slate-700 `#334155`) in
- * `packages/graph-view/src/stylesheet.ts`, so the halo reads as "settled
- * into retirement". The post-animation steady state is
- * `node[?decomposed] { opacity: 0.15 }` in the Cytoscape stylesheet. */
-[data-decomposition-anim] {
-  /* `--halo-zoom` (set inline by the overlay = live cy.zoom()) scales the
-     halo box with the node it sits on, so it no longer balloons when the
-     viewport zooms out. Defaults to 1 when the overlay did not set it.
-     The keyframe `scale(...)` multipliers stay relative to this box, so
-     they compose with the zoom. */
-  width: calc(96px * var(--halo-zoom, 1));
-  height: calc(96px * var(--halo-zoom, 1));
-  pointer-events: none;
-  background-image: radial-gradient(
-    circle,
-    rgba(51, 65, 85, 0.45) 0%,
-    rgba(51, 65, 85, 0.15) 50%,
-    rgba(51, 65, 85, 0) 75%
-  );
-  opacity: 0;
-  border-radius: 50%;
-}
-
-@keyframes aud-decomposition {
-  from {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(0.8);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.6);
-  }
-}
-
-.aud-decomposition {
-  animation: aud-decomposition var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .aud-decomposition {
-    animation: none;
-  }
-}
-
 /* `per_facet_step_pill` — per-node HTML content (the step pill + wording)
  * rendered inside the node box via `cytoscape-node-html-label` (ADR 0004
  * 2026-06-06 amendment). `tpl` markup is built by `statementNodeHtml.ts`.

@@ -371,6 +371,7 @@ task moderator_ui "Moderator UI" {
     task mod_decompose_split_parent_visibility "Hide decomposed / interpretive-split parents on commit (both canvases) per the supersession rule" {
       effort 2d
       allocate team
+      complete 100
       depends data_and_methodology.methodology_engine.decomposition_logic, data_and_methodology.methodology_engine.interpretive_split_logic
       note -8<-
         Source: parking-lot triage 2026-06-10 (entry "Decompose/interpretive-split parent visibility on

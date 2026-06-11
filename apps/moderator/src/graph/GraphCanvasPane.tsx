@@ -120,6 +120,7 @@ import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
   buildFacetStatusIndexFromBroadcast,
   computeFacetStatuses,
+  computeSupersededNodeIds,
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   EMPTY_FACET_STATUSES,
   projectDiagnosticHighlights,
@@ -718,12 +719,31 @@ export function projectNodes(
     }
   }
 
+  // Superseded-node set — every node id superseded by a COMMITTED
+  // `decompose` / `interpretive-split` (the parent) or
+  // `edit-wording.restructure` (the old node), derived client-side from
+  // the proposal envelope + the proposal-keyed commit event via the
+  // shared shell walk (ADR 0047 — no wire emission exists for
+  // supersession by design; visibility is purely a function of the
+  // event log per `docs/data-model.md`). The skip is CANVAS-LEVEL
+  // filtering, not store deletion: the node's events stay in the log,
+  // so non-canvas consumers (change history, pending-proposal rows,
+  // provenance) keep full access to its data. Refinement:
+  // `mod_decompose_split_parent_visibility`.
+  const supersededNodeIds = computeSupersededNodeIds(events);
+
   for (const event of events) {
     if (event.kind === 'node-created') {
       // Skip nodes retracted by a later `entity-removed` (a withdrawn
       // proposal's propose-time node). The node never reaches the
       // ReactFlow array, so it leaves the canvas.
       if (removedNodeIds.has(event.payload.node_id)) {
+        continue;
+      }
+      // Skip nodes superseded by a committed structural resolution —
+      // the documented visible-graph rule removes the parent and shows
+      // its components / readings / replacement instead.
+      if (supersededNodeIds.has(event.payload.node_id)) {
         continue;
       }
       const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
@@ -1325,7 +1345,19 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     if (hostEdges.length === 0) {
       return statementEdges;
     }
-    return [...statementEdges, ...hostEdges];
+    // Host pseudo-edges tethered to a superseded node drop by the same
+    // missing-endpoint rule the statement edges follow inside
+    // `selectEdgesForSession` — the superseded host never reaches the
+    // ReactFlow node array (`projectNodes` skips it), so its tether
+    // would dangle. Refinement: `mod_decompose_split_parent_visibility`.
+    const supersededNodeIds = computeSupersededNodeIds(events);
+    const renderableHostEdges =
+      supersededNodeIds.size === 0
+        ? hostEdges
+        : hostEdges.filter(
+            (edge) => !supersededNodeIds.has(edge.source) && !supersededNodeIds.has(edge.target),
+          );
+    return [...statementEdges, ...renderableHostEdges];
   }, [sessionId, events, diagnosticHighlights]);
 
   // Position cache for the incremental layout pass (refinement

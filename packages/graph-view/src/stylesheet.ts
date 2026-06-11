@@ -29,15 +29,14 @@
 //   no new ADR; mechanical refactor, the pattern is documented by the
 //   predecessor refinements.)
 //
-// Refinement: tasks/refinements/audience/aud_decomposition_animation.md
-//   (Decision §3 — the `node[?decomposed]` selector entry appended after
-//   the per-rollupStatus entries is the post-animation at-rest paint:
-//   `opacity: 0.15` reads as "structurally retired" while preserving
-//   the parent's position in the layout (spatial-memory anchor). The
-//   `[?decomposed]` (data-truthy) selector activates exactly when
-//   `projectGraph` stamps `data.decomposed: true` at commit of a
-//   `decompose` / `interpretive-split` proposal, and composes with the
-//   per-rollupStatus selectors via Cytoscape's per-selector merging.)
+// Refinement: tasks/refinements/moderator-ui/mod_decompose_split_parent_visibility.md
+//   (Decision §6 — the `node[?decomposed]` selector entry from
+//   `aud_decomposition_animation` is removed along with the rest of
+//   the never-stamped fade seam: the documented supersession rule says
+//   the parent is REMOVED from the visible graph, and `projectGraph`
+//   omits it outright via the shared `computeSupersededNodeIds` shell
+//   walk (ADR 0047), so no at-rest "structurally retired" paint can
+//   ever match.)
 //
 // History: this module collects the per-state selector decisions
 // landed across `aud_proposed_styling`, `aud_agreed_styling`,
@@ -334,27 +333,11 @@ export const STYLESHEET: StylesheetJson = [
       'target-arrow-color': STATE_COLORS.metaDisagreement,
     },
   },
-  // `aud_decomposition_animation` Decision §3 — post-animation at-rest
-  // paint for parent nodes whose `data.decomposed` was stamped at
-  // commit of a `decompose` / `interpretive-split` proposal by
-  // `projectGraph`. The 0.15 opacity reads as "structurally retired"
-  // while preserving the parent's position in the layout so the
-  // broadcast viewer's spatial memory of where the parent was is
-  // intact. Composes with the per-rollupStatus selectors via
-  // cytoscape's per-selector merging.
-  // Refinement: tasks/refinements/audience/aud_decomposition_animation.md
-  {
-    selector: 'node[?decomposed]',
-    style: {
-      opacity: 0.15,
-    },
-  },
   // `aud_render_annotation_endpoint_edges` Decision §5 — annotation
   // graph-node baseline. The `nodeKind` attribute key is fresh (no
-  // cross-layer interference with the per-rollupStatus / `[?decomposed]`
-  // selectors above — annotation nodes stamp the sentinel
-  // `rollupStatus: 'none'` and `decomposed: undefined` so those
-  // selectors don't match). Round-tag shape signals "commentary"
+  // cross-layer interference with the per-rollupStatus selectors
+  // above — annotation nodes stamp the sentinel `rollupStatus: 'none'`
+  // so those selectors don't match). Round-tag shape signals "commentary"
   // visually; the 140×48 footprint is proportional to (and smaller
   // than) the statement node 200×80 so promoted annotations read as
   // subordinate. Baseline palette is amber-100 fill + amber-900

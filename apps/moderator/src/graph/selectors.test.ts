@@ -2646,3 +2646,112 @@ describe('selectEdgesForSession — annotation-endpoint edges (lifted guard)', (
     expect(hostEdge?.data?.annotations).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------
+// mod_decompose_split_parent_visibility — superseded-endpoint edge
+// filtering. AC-2: after a seeded decompose commit the edge selector
+// omits the parent's incident edges; both render for the pre-commit
+// prefix; ADR 0046 inherited edges (reading-node endpoints) survive.
+// The supersession rule itself is pinned in `packages/shell`'s
+// supersession suite. ADR 0047.
+// ---------------------------------------------------------------------
+
+function makeInterpretiveSplitProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  parentNodeId: string;
+  readingIds: [string, string];
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'interpretive-split',
+        parent_node_id: opts.parentNodeId,
+        readings: [
+          { wording: 'first reading', classification: 'fact', node_id: opts.readingIds[0] },
+          { wording: 'second reading', classification: 'fact', node_id: opts.readingIds[1] },
+        ],
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('selectEdgesForSession — superseded-endpoint filtering (mod_decompose_split_parent_visibility)', () => {
+  const PARENT = '00000000-0000-4000-8000-0000000000d0';
+  const NEIGHBOR = '00000000-0000-4000-8000-0000000000d1';
+  const BYSTANDER = '00000000-0000-4000-8000-0000000000d2';
+  const READING_1 = '00000000-0000-4000-8000-0000000000d3';
+  const READING_2 = '00000000-0000-4000-8000-0000000000d4';
+  const SPLIT_PROPOSAL = '00000000-0000-4000-8000-0000000000d5';
+
+  // Mirrors the real log shape for an ADR 0046 interpretive split: the
+  // parent has an incident edge; the split's readings land at
+  // propose-time; the commit fans out the inherited edges (ordinary
+  // `edge-created` events with reading endpoints) before the
+  // proposal-keyed commit envelope.
+  const seededSplit: Event[] = [
+    makeNodeCreated(1, PARENT),
+    makeNodeCreated(2, NEIGHBOR),
+    makeNodeCreated(3, BYSTANDER),
+    makeEdgeCreated({
+      sequence: 4,
+      edgeId: 'edge-into-parent',
+      role: 'supports',
+      source: NEIGHBOR,
+      target: PARENT,
+    }),
+    makeEdgeCreated({
+      sequence: 5,
+      edgeId: 'edge-bystander',
+      role: 'supports',
+      source: NEIGHBOR,
+      target: BYSTANDER,
+    }),
+    makeInterpretiveSplitProposalEvent({
+      sequence: 6,
+      envelopeId: SPLIT_PROPOSAL,
+      parentNodeId: PARENT,
+      readingIds: [READING_1, READING_2],
+    }),
+    makeNodeCreated(7, READING_1),
+    makeNodeCreated(8, READING_2),
+    // ADR 0046 inherited edges — reading-node endpoints, sequenced
+    // before the proposal-keyed commit.
+    makeEdgeCreated({
+      sequence: 9,
+      edgeId: 'edge-inherited-1',
+      role: 'supports',
+      source: NEIGHBOR,
+      target: READING_1,
+    }),
+    makeEdgeCreated({
+      sequence: 10,
+      edgeId: 'edge-inherited-2',
+      role: 'supports',
+      source: NEIGHBOR,
+      target: READING_2,
+    }),
+    makeCommit({ sequence: 11, proposalEnvelopeId: SPLIT_PROPOSAL }),
+  ];
+
+  it('omits the parent-incident edge after the split commit; bystander and inherited edges stay', () => {
+    const edges = selectEdgesForSession(makeState(seededSplit), SESSION);
+    const ids = edges.map((edge) => edge.id);
+    expect(ids).not.toContain('edge-into-parent');
+    expect(ids).toContain('edge-bystander');
+    expect(ids).toContain('edge-inherited-1');
+    expect(ids).toContain('edge-inherited-2');
+  });
+
+  it('renders the parent-incident edge for the pre-commit prefix', () => {
+    const preCommit = seededSplit.slice(0, -1);
+    const edges = selectEdgesForSession(makeState(preCommit), SESSION);
+    expect(edges.map((edge) => edge.id)).toContain('edge-into-parent');
+  });
+});

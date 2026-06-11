@@ -2328,3 +2328,111 @@ describe('projectGraph — entity-removed (withdraw) cleanup', () => {
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A]);
   });
 });
+
+// ---------------------------------------------------------------------
+// mod_decompose_split_parent_visibility — superseded-parent filtering.
+// AC-3: after a seeded decompose commit, `projectGraph` omits the
+// parent and its incident edges; both render for the pre-commit
+// prefix; ADR 0046 inherited edges (reading-node endpoints) survive.
+// The emitted `nodes` array IS the DOM status mirror's source data
+// (`GraphView.tsx` renders one `participant-node-status` row per
+// projected node), so omitting the parent here pins "no mirror row
+// for a superseded node". The rule itself (all three superseding
+// kinds, withdraw clearing, prefix stability) is pinned once in
+// `packages/shell`'s supersession suite. ADR 0047.
+// ---------------------------------------------------------------------
+
+function makeDecomposeProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  parentNodeId: string;
+  componentIds: [string, string];
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'decompose',
+        parent_node_id: opts.parentNodeId,
+        components: [
+          { wording: 'first component', classification: 'fact', node_id: opts.componentIds[0] },
+          { wording: 'second component', classification: 'fact', node_id: opts.componentIds[1] },
+        ],
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+describe('projectGraph — superseded-parent filtering (mod_decompose_split_parent_visibility)', () => {
+  const COMPONENT_1 = '00000000-0000-4000-8000-0000000000c1';
+  const COMPONENT_2 = '00000000-0000-4000-8000-0000000000c2';
+
+  function project(events: Event[]): {
+    nodes: { data: { id: string } }[];
+    edges: { data: { id: string } }[];
+  } {
+    return projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+  }
+
+  // Mirrors the real log shape (ADR 0027 propose-time component
+  // creation + ADR 0046 commit-time inherited-edge fan-out before the
+  // proposal-keyed commit envelope).
+  const seededDecompose: Event[] = [
+    makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'the parent claim' }),
+    makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'a neighbor' }),
+    makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_B, target: NODE_A }),
+    makeDecomposeProposalEvent({
+      sequence: 4,
+      envelopeId: PROPOSAL_A,
+      parentNodeId: NODE_A,
+      componentIds: [COMPONENT_1, COMPONENT_2],
+    }),
+    makeNodeCreated({ sequence: 5, nodeId: COMPONENT_1, wording: 'first component' }),
+    makeNodeCreated({ sequence: 6, nodeId: COMPONENT_2, wording: 'second component' }),
+    // ADR 0046-style inherited edge — reading/component endpoint, so it
+    // must survive the parent-edge filtering.
+    makeEdgeCreated({
+      sequence: 7,
+      edgeId: 'edge-inherited',
+      source: NODE_B,
+      target: COMPONENT_1,
+    }),
+    makeCommit({ sequence: 8, proposalEnvelopeId: PROPOSAL_A }),
+  ];
+
+  it('omits the parent (and its mirror-row source datum) after the decompose commit', () => {
+    const { nodes } = project(seededDecompose);
+    const ids = nodes.map((node) => node.data.id);
+    expect(ids).not.toContain(NODE_A);
+    expect(ids).toContain(COMPONENT_1);
+    expect(ids).toContain(COMPONENT_2);
+  });
+
+  it('omits the parent-incident edge after the commit; the inherited edge stays', () => {
+    const { edges } = project(seededDecompose);
+    const ids = edges.map((edge) => edge.data.id);
+    expect(ids).not.toContain(EDGE_A);
+    expect(ids).toContain('edge-inherited');
+  });
+
+  it('renders the parent and its incident edge for the pre-commit prefix', () => {
+    const preCommit = seededDecompose.slice(0, -1);
+    const { nodes, edges } = project(preCommit);
+    expect(nodes.map((node) => node.data.id)).toContain(NODE_A);
+    expect(edges.map((edge) => edge.data.id)).toContain(EDGE_A);
+  });
+});

@@ -13,8 +13,11 @@
 //
 // Refinement chain: aud_axiom_mark_animation / aud_node_appear_animation
 //   / aud_proposed_to_agreed_animation / aud_withdrawal_animation /
-//   aud_diagnostic_fire_animation / aud_decomposition_animation /
-//   aud_animation_pacing — Decision §6 (CSS smoke-pin posture).
+//   aud_diagnostic_fire_animation / aud_animation_pacing — Decision §6
+//   (CSS smoke-pin posture). The aud_decomposition_animation pins were
+//   removed with the fade seam by
+//   mod_decompose_split_parent_visibility (ADR 0047 — the superseded
+//   parent is dropped from the projected graph outright).
 // ADRs: 0022 (no throwaway verifications), 0039 (graph-view boundary).
 
 import { readFile } from 'node:fs/promises';
@@ -38,7 +41,6 @@ describe('graph-view overlays.css — keyframes + reduced-motion overrides', () 
     'aud-withdrawal',
     'aud-diagnostic-fire-blocking',
     'aud-diagnostic-fire-advisory',
-    'aud-decomposition',
   ] as const;
 
   for (const family of families) {
@@ -71,10 +73,6 @@ describe('graph-view overlays.css — keyframes + reduced-motion overrides', () 
     expect(await read()).toMatch(
       /\.aud-diagnostic-fire-blocking[\s\S]*?\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*none/,
     );
-  });
-
-  it('no-ops .aud-decomposition under prefers-reduced-motion', async () => {
-    expect(await read()).toMatch(/\.aud-decomposition\s*\{\s*animation\s*:\s*none/);
   });
 });
 
@@ -140,7 +138,6 @@ describe('graph-view overlays.css — per-node halo zoom sizing', () => {
     'data-node-appear-anim',
     'data-withdrawal-anim',
     'data-diagnostic-fire-anim',
-    'data-decomposition-anim',
   ] as const;
 
   for (const selector of haloSelectors) {

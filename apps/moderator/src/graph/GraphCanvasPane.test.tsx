@@ -3621,3 +3621,74 @@ describe('GraphCanvasPane — snapshot marker strip mount (mod_snapshot_visual_m
     expect(card.getAttribute('data-log-position')).toBe('4');
   });
 });
+
+// ---------------------------------------------------------------------
+// mod_decompose_split_parent_visibility — superseded-parent filtering.
+// AC-2: after a seeded decompose commit, `projectNodes` omits the
+// parent; both parent and edges render for the pre-commit prefix. The
+// rule itself (all three superseding kinds, withdraw clearing, prefix
+// stability) is pinned once in `packages/shell`'s supersession suite;
+// these tests pin THIS surface's adoption of it. ADR 0047.
+// ---------------------------------------------------------------------
+
+function makeDecomposeProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  parentNodeId: string;
+  componentIds: [string, string];
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'decompose',
+        parent_node_id: opts.parentNodeId,
+        components: [
+          { wording: 'first component', classification: 'fact', node_id: opts.componentIds[0] },
+          { wording: 'second component', classification: 'fact', node_id: opts.componentIds[1] },
+        ],
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectNodes — superseded-parent filtering (mod_decompose_split_parent_visibility)', () => {
+  const COMPONENT_1 = '00000000-0000-4000-8000-0000000000c1';
+  const COMPONENT_2 = '00000000-0000-4000-8000-0000000000c2';
+
+  // The server emits one `node-created` per component at propose-time
+  // (ADR 0027), so the fixture mirrors the real log shape: parent,
+  // proposal envelope, component creations, then the proposal-keyed
+  // commit.
+  const seededDecompose: Event[] = [
+    makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'the parent claim' }),
+    makeDecomposeProposalEvent({
+      sequence: 2,
+      envelopeId: PROPOSAL_A,
+      parentNodeId: NODE_A,
+      componentIds: [COMPONENT_1, COMPONENT_2],
+    }),
+    makeNodeCreated({ sequence: 3, nodeId: COMPONENT_1, wording: 'first component' }),
+    makeNodeCreated({ sequence: 4, nodeId: COMPONENT_2, wording: 'second component' }),
+    makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_A }),
+  ];
+
+  it('omits the parent after the decompose commit; the components stay', () => {
+    const nodes = projectNodes(seededDecompose);
+    expect(nodes.find((node) => node.id === NODE_A)).toBeUndefined();
+    expect(nodes.find((node) => node.id === COMPONENT_1)).toBeDefined();
+    expect(nodes.find((node) => node.id === COMPONENT_2)).toBeDefined();
+  });
+
+  it('renders the parent for the pre-commit prefix (pending supersedes nothing)', () => {
+    const preCommit = seededDecompose.slice(0, -1);
+    const nodes = projectNodes(preCommit);
+    expect(nodes.find((node) => node.id === NODE_A)).toBeDefined();
+    expect(nodes.find((node) => node.id === COMPONENT_1)).toBeDefined();
+  });
+});

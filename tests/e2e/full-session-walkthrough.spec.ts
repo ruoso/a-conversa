@@ -949,7 +949,7 @@ test.describe
     });
   });
 
-  test('AC-5b: maria interpretively splits N14 into N16 (epistemic) + N17 (metaphysical); the two component reading nodes render (canvas parent-removal deferred — see frontend_decompose_split_parent_visibility)', async () => {
+  test('AC-5b: maria interpretively splits N14 into N16 (epistemic) + N17 (metaphysical); the two component reading nodes render and the superseded parent N14 leaves the canvas', async () => {
     await mariaPage.getByTestId('graph-tidy-up-button').click();
     await mariaPage.getByTestId(`statement-node-wording-${n14Id}`).click({ button: 'right' });
     await expect(mariaPage.getByTestId('graph-context-menu')).toBeVisible();
@@ -994,37 +994,20 @@ test.describe
     await splitCommit.click();
     await expect(splitRow).toHaveCount(0, { timeout: LIVE_TIMEOUT });
 
-    // AC-5's load-bearing moderator-canvas assertion: the interpretive
-    // split's structural output renders — the two component reading nodes
-    // (N16/N17) appear on the canvas.
-    //
-    // DEFERRAL — AC-5's "the parent is removed from the visible graph"
-    // clause. The parent-removal IS a real platform fact, but at the
-    // SERVER-PROJECTION layer, not the moderator canvas: an
-    // interpretive-split (and decompose) commit flips
-    // `parent.visible = false` in the server projection
-    // (apps/server/src/projection/replay.ts:1265-1280), which governs
-    // snapshot / at-position queries. That flip is never wired outward as
-    // an `entity-removed` event (the mechanism exists — withdraws emit
-    // one — and is deliberately unused here), and BOTH frontend
-    // projections remove canvas nodes ONLY on `entity-removed`
-    // (`projectNodes` in apps/moderator/src/graph/GraphCanvasPane.tsx;
-    // `projectGraph` in apps/participant/src/graph/projectGraph.ts). So a
-    // decomposed/split parent persists on BOTH live canvases by uniform,
-    // shipped design. `methodology-full-flow.spec.ts` codifies exactly
-    // that contract: it commits a decompose AND an interpretive-split on
-    // N1, then keeps right-clicking N1's still-rendered canvas node in
-    // four later phases (8.1/9.1/11.1/11.2). A `toHaveCount(0)` here would
-    // assert a server-layer fact against the moderator DOM and contradict
-    // that pinned contract; wiring frontend parent-hide to satisfy it
-    // would regress that passing suite — a cross-cutting product change
-    // (wire visibility/`entity-removed` on commit + rework both canvases +
-    // methodology-full-flow + the deferred interpretive-split
-    // edge-inheritance open question in interpretive_split_logic.md).
-    // Tracked as tech-debt `frontend_decompose_split_parent_visibility`;
-    // the canvas parent-removal assertion is deferred to that work rather
-    // than pinned here against behavior the platform does not yet exhibit.
+    // AC-5's load-bearing moderator-canvas assertions: the interpretive
+    // split's structural output renders — the two component reading
+    // nodes (N16/N17) appear — AND the superseded parent N14 leaves the
+    // visible graph (`docs/methodology.md` L154–158). The parent-removal
+    // clause was deferred here until `mod_decompose_split_parent_visibility`
+    // landed the client-side supersession derivation (ADR 0047): the
+    // canvases now derive the superseded set from the proposal envelope
+    // + the proposal-keyed commit event via the shared
+    // `computeSupersededNodeIds` shell walk — no `entity-removed` is
+    // emitted for supersession by design.
     await mariaPage.getByTestId('graph-tidy-up-button').click();
+    await expect(mariaPage.getByTestId(`statement-node-${n14Id}`)).toHaveCount(0, {
+      timeout: LIVE_TIMEOUT,
+    });
     await expect(
       mariaPage.locator('[data-testid^="statement-node-wording-"]', { hasText: N16_EPISTEMIC }),
     ).toBeVisible({ timeout: LIVE_TIMEOUT });

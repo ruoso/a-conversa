@@ -1208,30 +1208,6 @@ describe('<GraphView>', () => {
   });
 
   // ---------------------------------------------------------------
-  // aud_decomposition_animation — `node[?decomposed]` selector entry.
-  // Structural-only assertions on the STYLESHEET array. The projection-
-  // time stamping of `data.decomposed: true` at decompose / interpretive-
-  // split commit is pinned in `projectGraph.test.ts`; the per-render
-  // class gate is pinned in `DecompositionFadeOverlay.test.tsx`.
-  // ---------------------------------------------------------------
-
-  it('(dec-ss-a) STYLESHEET carries a node[?decomposed] entry with opacity 0.15', () => {
-    const style = findStylesheetEntry('node[?decomposed]');
-    expect(style.opacity).toBe(0.15);
-  });
-
-  it('(dec-ss-b) the node[?decomposed] entry sits AFTER the per-rollupStatus entries', () => {
-    const selectors = (
-      STYLESHEET as unknown as ReadonlyArray<{ selector: string; style: Record<string, unknown> }>
-    ).map((e) => e.selector);
-    const decomposedIdx = selectors.indexOf('node[?decomposed]');
-    const metaDisagreementNodeIdx = selectors.indexOf("node[rollupStatus = 'meta-disagreement']");
-    const metaDisagreementEdgeIdx = selectors.indexOf("edge[rollupStatus = 'meta-disagreement']");
-    expect(decomposedIdx).toBeGreaterThan(metaDisagreementNodeIdx);
-    expect(decomposedIdx).toBeGreaterThan(metaDisagreementEdgeIdx);
-  });
-
-  // ---------------------------------------------------------------
   // aud_per_facet_visualization — structural assertions on the new
   // wrapper + overlay-as-sibling mount. The overlay's own mount
   // lifecycle, subscription set, and per-element placement are pinned

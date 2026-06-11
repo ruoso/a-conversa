@@ -125,29 +125,39 @@
 //   Phase 5.9 / 5.10 — edge.substance vote + commit: ben + maria
 //     vote agree on the substance facet row in the participant
 //     detail panel; alice commits the `set-edge-substance` proposal.
-//   Phase 6 / 8 — structural mode proposals: decompose and
-//     interpretive-split via the right-click context menu, both
-//     against the committed N1.
+//   Phase 6 / 8 — structural mode proposals: decompose against the
+//     committed N1, then interpretive-split against C2 (one of the
+//     decompose's component nodes — N1 is superseded once Phase 6.2
+//     commits, per `mod_decompose_split_parent_visibility` /
+//     ADR 0047, so every later phase targets nodes still visible at
+//     that point in the sequence).
 //   Phase 6.2 / 7.2 / 8.2 / 9.2 — structural sub-kind agree + commit:
 //     ben + maria click agree on the synthetic `proposal` facet row
 //     for each structural pending proposal; alice commits each.
 //     Axiom-mark excludes the declared participant from the agree
 //     walk per `docs/methodology.md` § "Axioms / terminal values".
 //     These continue to use the proposal-arm wire shape per ADR
-//     0030 §9 / `pf_structural_handlers_unchanged`.
-//   Phase 7.1 — participant axiom-mark: ben taps N1 on his canvas
-//     and clicks the "Mark as my axiom" button under his detail
-//     panel's action slot.
-//   Phase 9.1 — annotate: alice right-clicks N1 → annotate submenu
+//     0030 §9 / `pf_structural_handlers_unchanged`. The decompose /
+//     interpretive-split commits additionally pin the supersession
+//     rule end-to-end: the parent leaves alice's canvas + ben's
+//     status mirror, the live selection pointing at it clears to the
+//     empty-state body, and the replacement nodes stay.
+//   Phase 7.1 — participant axiom-mark: ben taps component C1 on his
+//     canvas and clicks the "Mark as my axiom" button under his
+//     detail panel's action slot.
+//   Phase 9.1 — annotate: alice right-clicks C1 → annotate submenu
 //     → submit annotation content.
 //   Phase 10.1 — meta-disagreement: alice clicks the per-row
 //     `mark-meta-disagreement-button` on a pending proposal.
-//   Phase 11.1 / 11.2 — edit-wording: alice right-clicks N1 → edit-
-//     wording submenu → submit with reword (preserves node id) and
-//     then restructure (mints a new node id, supersedes the
-//     original). Edit-wording is a facet-valued sub-kind whose vote /
-//     commit envelopes use the facet-arm wire shape; the spec pins
-//     that the propose envelope's round-trip completes.
+//   Phase 11.1 / 11.2 — edit-wording: alice right-clicks C1 → edit-
+//     wording submenu → submit with reword (preserves node id), then
+//     right-clicks R1 → submit with restructure (mints a new node
+//     id; would supersede R1 if committed — it stays pending). Two
+//     distinct targets because the edit-wording sub-kinds are
+//     mutually exclusive per node while pending. Edit-wording is a
+//     facet-valued sub-kind whose vote / commit envelopes use the
+//     facet-arm wire shape; the spec pins that the propose
+//     envelope's round-trip completes cleanly.
 //   Phase 12.1 — withdraw-proposal (proposer rescinds): alice clicks
 //     the per-row proposer-only `withdraw-proposal-button` on one of
 //     her own pending proposals — distinct from the participant's
@@ -195,6 +205,22 @@ const N1_WORDING = 'Reintroducing wolves to Yellowstone restored the elk-aspen b
 //    supports edge once N1 is committed. ────────────────────────────
 const N2_WORDING = 'Aspen recovery indicates a healthier riparian ecosystem.';
 
+// ── Phase 6.1's decompose components. Once the decompose COMMITS in
+//    Phase 6.2, N1 is superseded and leaves both canvases (the
+//    documented visible-graph rule, landed by
+//    `mod_decompose_split_parent_visibility` / ADR 0047) — so every
+//    later phase targets these still-visible components (and Phase
+//    8.2's readings) instead of N1. ──────────────────────────────────
+const C1_WORDING = 'Wolf reintroduction reduced elk browsing pressure.';
+const C2_WORDING = 'Reduced elk browsing pressure restored aspen recruitment.';
+
+// ── Phase 8.1's interpretive-split readings (the split now targets C2
+//    — N1 is superseded and the server's visibility validator would
+//    reject it). After Phase 8.2 commits the split, C2 is superseded
+//    in turn and the readings carry on. ────────────────────────────
+const R1_WORDING = 'Restoration is supported by observed elk + aspen biomass shifts (epistemic).';
+const R2_WORDING = 'Restoration follows ontologically from trophic-cascade theory (metaphysical).';
+
 // ── Module-scoped shared state — survives across the serial test()
 //    blocks. Initialised in beforeAll. ─────────────────────────────
 let aliceContext: BrowserContext;
@@ -212,6 +238,12 @@ let sessionId: string;
 // callback whose body the rule's scope analysis doesn't follow.
 let _n1Id: string | null = null;
 let _n2Id: string | null = null;
+// Phase 6.1's component nodes (rendered at propose-time per ADR 0027)
+// and Phase 8.1's first reading — the post-supersession targets for
+// Phases 7.x / 8.x / 9.x / 11.x.
+let _c1Id: string | null = null;
+let _c2Id: string | null = null;
+let _r1Id: string | null = null;
 // The supports-edge id minted server-side during Phase 5.4's
 // connecting-capture; recovered from alice's `graph-edge-label-<id>`
 // after the propose lands. Phase 5.5 uses it to drive the participant
@@ -1239,13 +1271,9 @@ test.describe
     // Two components — the classic fact/fact decomposition from the
     // methodology doc's worked example (Wolves → reduced browsing →
     // restored aspen recruitment).
-    await alicePage
-      .getByTestId('decompose-component-text-0')
-      .fill('Wolf reintroduction reduced elk browsing pressure.');
+    await alicePage.getByTestId('decompose-component-text-0').fill(C1_WORDING);
     await alicePage.getByTestId('decompose-component-classification-0-button-fact').click();
-    await alicePage
-      .getByTestId('decompose-component-text-1')
-      .fill('Reduced elk browsing pressure restored aspen recruitment.');
+    await alicePage.getByTestId('decompose-component-text-1').fill(C2_WORDING);
     await alicePage.getByTestId('decompose-component-classification-1-button-fact').click();
 
     await alicePage.getByTestId('propose-decomposition-action-button').click();
@@ -1255,6 +1283,14 @@ test.describe
     await expect(alicePage.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle', {
       timeout: 15_000,
     });
+
+    // The components render at propose-time (ADR 0027 — the server
+    // emits one `node-created` + `entity-included` per component).
+    // Recover their ids now: once the decompose commits in Phase 6.2,
+    // N1 is superseded and every later phase retargets to these.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    _c1Id = await readNodeIdByWording(alicePage, C1_WORDING);
+    _c2Id = await readNodeIdByWording(alicePage, C2_WORDING);
   });
 
   test('Phase 6.2: ben + maria vote agree on the decomposition proposal facet; alice commits', async () => {
@@ -1292,16 +1328,15 @@ test.describe
 
     // Auto-select: alice's `decompose` proposal targets the parent
     // node (N1), so every participant's detail panel auto-surfaces
-    // N1's structural proposal rows. Click agree on each surface.
+    // N1's structural proposal rows. Click agree on each surface (the
+    // decompose is the only structural proposal pending against N1 at
+    // this point — the interpretive-split and annotate phases come
+    // later and target the post-supersession component nodes).
     for (const page of [benPage, mariaPage]) {
       // The proposal-facet vote row for the decompose proposal.
       const row = page.locator(
         '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
       );
-      // There may be multiple pending structural proposals against
-      // N1 (decompose + interpretive-split + annotate) — vote agree
-      // on every one of them since later commit phases need all
-      // four to reach unanimous-agree separately. Iterate every row.
       const count = await row.count();
       for (let i = 0; i < count; i += 1) {
         const r = row.nth(i);
@@ -1313,9 +1348,11 @@ test.describe
       }
     }
 
-    // Alice's commit-button on the decompose row should now be
-    // enabled (deriveAllAgree saw unanimous-agree on the structural
-    // proposal's perParticipantVotes map). Click it.
+    // Alice's commit-button on the decompose row is now enabled
+    // (deriveAllAgree saw unanimous-agree on the structural proposal's
+    // perParticipantVotes map). The breakdown assertion above already
+    // proved the row is mounted, so the commit is unconditional — the
+    // supersession assertions below depend on it landing.
     const decomposeRow = alicePage
       .locator('[data-testid="pending-proposal-row"]')
       .filter({
@@ -1324,30 +1361,79 @@ test.describe
         }),
       })
       .first();
-    if (await decomposeRow.isVisible().catch(() => false)) {
-      const commitButton = decomposeRow.locator('[data-testid="commit-button"]');
-      await expect(commitButton).toBeEnabled({ timeout: 15_000 });
-      await commitButton.click();
-      await expect(decomposeRow).toHaveCount(0, { timeout: 15_000 });
-    }
+    const commitButton = decomposeRow.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(decomposeRow).toHaveCount(0, { timeout: 15_000 });
+
+    // ── Supersession (mod_decompose_split_parent_visibility / ADR
+    //    0047): the committed decompose supersedes N1 — the canvases
+    //    derive the superseded set client-side from the proposal
+    //    envelope + the proposal-keyed commit event and drop the
+    //    parent plus its incident edges. The components stay. ──────
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    await expect(alicePage.getByTestId(`statement-node-wording-${n1}`)).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId(`statement-node-wording-${_c1Id!}`)).toBeVisible({
+      timeout: 15_000,
+    });
+    // Participant side — the sr-only status mirror is the per-entity
+    // DOM seam for the canvas-rendered Cytoscape surface: no mirror
+    // row for the superseded parent. (The mirror is normally
+    // off-limits for "what a human sees" assertions — see the
+    // no-mirror comment at the top of this file — but node ABSENCE
+    // has no visible-DOM proxy on a `<canvas>` element; this is the
+    // refinement-scoped exception.)
+    await expect(
+      benPage.locator(`[data-testid="participant-node-status"][data-node-id="${n1}"]`),
+    ).toHaveCount(0, { timeout: 15_000 });
+    // Ben's detail panel was auto-selected on N1 when the decompose
+    // was proposed; the supersession pulls the node out from under the
+    // live selection. The stale-entity branch auto-clears it — the
+    // panel settles on the empty-state body rather than crashing
+    // (Decision §10 of `part_entity_detail_panel`).
+    await expect(benPage.getByTestId('participant-detail-panel')).toHaveAttribute(
+      'data-state',
+      'empty',
+      { timeout: 15_000 },
+    );
   });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 7 — axiom-mark (per-participant bedrock)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 7.1: ben clicks "Mark as my axiom" on the auto-selected N1 panel to propose his own bedrock', async () => {
-    const n1 = _n1Id!;
-    // Auto-select kept N1 surfaced on ben's panel since Phase 6.1's
-    // `decompose` proposal (proposal-arm commits and votes in the
-    // intervening phases don't move the selection). The axiom-mark
-    // button only mounts for node selections (not edges).
+  test('Phase 7.1: ben taps component C1 and clicks "Mark as my axiom" to propose his own bedrock', async () => {
+    const c1 = _c1Id!;
+    // N1 is superseded since Phase 6.2's decompose commit (the panel
+    // auto-cleared — pinned there), so the axiom-mark retargets to the
+    // still-visible component C1. Ben selects it via the cy test seam
+    // (Phase 1.6 re-mounted his operate route with
+    // `?aconversaTestMode=1`): the participant canvas is a single
+    // `<canvas>` element with no per-node DOM, and the synthetic `tap`
+    // drives the same selection chain a real click would. The axiom-
+    // mark button only mounts for node selections (not edges).
+    await benPage.evaluate((nodeId: string) => {
+      const cy = (
+        window as unknown as {
+          __aConversaCyInstance?: {
+            getElementById: (id: string) => { emit: (event: string) => unknown };
+          };
+        }
+      ).__aConversaCyInstance;
+      if (!cy) {
+        throw new Error('__aConversaCyInstance is not exposed on window');
+      }
+      cy.getElementById(nodeId).emit('tap');
+    }, c1);
     await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
-      N1_WORDING,
+      C1_WORDING,
       { timeout: 15_000 },
     );
     const axiomBtn = benPage.locator(
-      `[data-testid="participant-axiom-mark-button"][data-node-id="${n1}"]`,
+      `[data-testid="participant-axiom-mark-button"][data-node-id="${c1}"]`,
     );
     await expect(axiomBtn).toBeVisible({ timeout: 15_000 });
     await axiomBtn.click();
@@ -1364,7 +1450,11 @@ test.describe
     // Per methodology.md: the declared participant (ben) doesn't vote
     // on their own axiom-mark — only other participants do. So only
     // maria votes here. Ben's `axiom-mark` proposal in Phase 7.1
-    // auto-selected N1 on maria's panel.
+    // auto-selected C1 on maria's panel.
+    await expect(mariaPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      C1_WORDING,
+      { timeout: 15_000 },
+    );
     const rows = mariaPage.locator(
       '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
     );
@@ -1378,8 +1468,10 @@ test.describe
       }
     }
 
-    // Alice's commit-button on the axiom-mark row should be enabled
-    // (the declared participant ben is excluded; maria voted agree).
+    // Alice's commit-button on the axiom-mark row is enabled (the
+    // declared participant ben is excluded; maria voted agree). The
+    // axiom-mark targets the visible C1, so the row is unconditionally
+    // present — no tolerant skip.
     const axiomRow = alicePage
       .locator('[data-testid="pending-proposal-row"]')
       .filter({
@@ -1388,33 +1480,39 @@ test.describe
         }),
       })
       .first();
-    if (await axiomRow.isVisible().catch(() => false)) {
-      const commitButton = axiomRow.locator('[data-testid="commit-button"]');
-      await expect(commitButton).toBeEnabled({ timeout: 15_000 });
-      await commitButton.click();
-      await expect(axiomRow).toHaveCount(0, { timeout: 15_000 });
-      // `part_axiom_mark_proposal` augmentation: the participant-side
-      // DOM mirror surfaces `data-is-axiom="true"` on ben's N1 once
-      // the axiom-mark proposal commits. This is the "graph reflects
-      // mark" leg of the focused spec at
-      // `tests/e2e/participant-axiom-mark.spec.ts`, pinned here at
-      // marginal cost rather than duplicating the multi-participant
-      // agree+commit chain in the new spec (Decision §2 of
-      // `tasks/refinements/participant-ui/part_axiom_mark_proposal.md`).
-      await expect(
-        benPage.locator(`[data-testid="participant-node-status"][data-node-id="${_n1Id!}"]`),
-      ).toHaveAttribute('data-is-axiom', 'true', { timeout: 15_000 });
-    }
+    await expect(axiomRow).toBeVisible({ timeout: 15_000 });
+    const commitButton = axiomRow.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(axiomRow).toHaveCount(0, { timeout: 15_000 });
+    // `part_axiom_mark_proposal` augmentation: the participant-side
+    // DOM mirror surfaces `data-is-axiom="true"` on ben's C1 once
+    // the axiom-mark proposal commits. This is the "graph reflects
+    // mark" leg of the focused spec at
+    // `tests/e2e/participant-axiom-mark.spec.ts`, pinned here at
+    // marginal cost rather than duplicating the multi-participant
+    // agree+commit chain in the new spec (Decision §2 of
+    // `tasks/refinements/participant-ui/part_axiom_mark_proposal.md`).
+    await expect(
+      benPage.locator(`[data-testid="participant-node-status"][data-node-id="${_c1Id!}"]`),
+    ).toHaveAttribute('data-is-axiom', 'true', { timeout: 15_000 });
   });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 8 — interpretive-split (mod-proposed seam)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 8.1: alice proposes a 2-row interpretive split on N1', async () => {
-    const n1 = _n1Id!;
+  test('Phase 8.1: alice proposes a 2-row interpretive split on component C2', async () => {
+    // N1 is superseded since Phase 6.2's decompose commit — the
+    // server's visibility validator would reject a split against it
+    // (and the canvas no longer renders a card to right-click). The
+    // split retargets to the still-visible component C2; the old
+    // tolerant-acceptance arm ("the server rejected — most likely
+    // because N1 has other pending proposals") tightens to the
+    // clean-success surface because nothing is pending against C2.
+    const c2 = _c2Id!;
     await alicePage.getByTestId('graph-tidy-up-button').click();
-    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await alicePage.getByTestId(`statement-node-wording-${c2}`).click({ button: 'right' });
     await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
     await alicePage.getByTestId('graph-context-menu-item-propose-interpretive-split').click();
     await expect(alicePage.getByTestId('interpretive-split-readings-grid')).toBeVisible({
@@ -1428,39 +1526,58 @@ test.describe
     // Two readings along an interpretive seam — analogous to the
     // methodology doc's worked example (epistemic vs metaphysical
     // capability-frustration).
-    await alicePage
-      .getByTestId('interpretive-split-reading-text-0')
-      .fill('Restoration is supported by observed elk + aspen biomass shifts (epistemic).');
+    await alicePage.getByTestId('interpretive-split-reading-text-0').fill(R1_WORDING);
     await alicePage.getByTestId('interpretive-split-reading-classification-0-button-fact').click();
-    await alicePage
-      .getByTestId('interpretive-split-reading-text-1')
-      .fill('Restoration follows ontologically from trophic-cascade theory (metaphysical).');
+    await alicePage.getByTestId('interpretive-split-reading-text-1').fill(R2_WORDING);
     await alicePage.getByTestId('interpretive-split-reading-classification-1-button-fact').click();
 
     const proposeButton = alicePage.getByTestId('propose-interpretive-split-action-button');
     await expect(proposeButton).toBeEnabled({ timeout: 15_000 });
     await proposeButton.click();
 
-    // The propose envelope reaches the server. Two outcomes are
-    // acceptable signals of round-trip success:
-    //   (a) the mode-banner returns to idle (propose landed cleanly),
-    //   (b) the wire-error region surfaces a typed engine rejection
-    //       (the server rejected — most likely because N1 has other
-    //       pending proposals against it from Phase 6.1's decompose).
-    // Either way the envelope reached the server and the dispatcher
-    // completed; that's the regression class this phase pins.
-    const proposeFinished = alicePage.locator(
-      '[data-testid="propose-interpretive-split-action-wire-error"], [data-testid="mode-banner"][data-mode="idle"]',
+    // Clean success: the mode banner returns to idle and no wire-error
+    // surfaces.
+    await expect(alicePage.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle', {
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId('propose-interpretive-split-action-wire-error')).toHaveCount(
+      0,
     );
-    await expect(proposeFinished.first()).toBeVisible({ timeout: 15_000 });
+
+    // The readings render at propose-time (ADR 0027). Recover R1's id
+    // now — Phase 11.2's restructure targets it (a node with no other
+    // pending structural proposal, sidestepping the
+    // reword/restructure mutual exclusion on C1).
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    _r1Id = await readNodeIdByWording(alicePage, R1_WORDING);
   });
 
-  test('Phase 8.2: ben + maria vote agree on the interpretive-split proposal; alice commits', async () => {
+  test('Phase 8.2: ben + maria vote agree on the interpretive-split proposal; alice commits — C2 is superseded by its readings', async () => {
     // Same structural-sub-kind agree+commit chain as Phase 6.2, but
-    // for interpretive-split. Phase 6.2 already voted on all open
-    // structural facets on N1, so the interpretive-split row may or
-    // may not still be pending. The commit is tolerant — we attempt
-    // the click only if the row is still there.
+    // for interpretive-split. The split targets C2, so its proposal
+    // auto-selected C2 on every participant's panel; ben + maria vote
+    // agree on the proposal row. (The old tolerance — "Phase 6.2
+    // already voted on all open structural facets on N1" — no longer
+    // applies: the split is a fresh proposal against a fresh target.)
+    for (const page of [benPage, mariaPage]) {
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        C2_WORDING,
+        { timeout: 15_000 },
+      );
+      const rows = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
+      );
+      const count = await rows.count();
+      for (let i = 0; i < count; i += 1) {
+        const r = rows.nth(i);
+        const agree = r.getByTestId('participant-vote-button-agree');
+        if (await agree.isVisible()) {
+          await agree.click();
+          await expect(r).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+        }
+      }
+    }
+
     const interpRow = alicePage
       .locator('[data-testid="pending-proposal-row"]')
       .filter({
@@ -1469,24 +1586,35 @@ test.describe
         }),
       })
       .first();
-    if (await interpRow.isVisible().catch(() => false)) {
-      const commitButton = interpRow.locator('[data-testid="commit-button"]');
-      const enabled = await commitButton.isEnabled().catch(() => false);
-      if (enabled) {
-        await commitButton.click();
-        await expect(interpRow).toHaveCount(0, { timeout: 15_000 });
-      }
-    }
+    await expect(interpRow).toBeVisible({ timeout: 15_000 });
+    const commitButton = interpRow.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(interpRow).toHaveCount(0, { timeout: 15_000 });
+
+    // Supersession again (ADR 0047), this time for the interpretive-
+    // split kind: the committed split supersedes C2; its readings
+    // carry the line of argument forward.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    await expect(alicePage.getByTestId(`statement-node-wording-${_c2Id!}`)).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId(`statement-node-wording-${_r1Id!}`)).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 9 — annotate (attach an annotation to a node)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 9.1: alice proposes an annotation on N1 via the right-click context menu → annotate submenu', async () => {
-    const n1 = _n1Id!;
+  test('Phase 9.1: alice proposes an annotation on component C1 via the right-click context menu → annotate submenu', async () => {
+    // Retargeted from the superseded N1 to the still-visible C1
+    // (annotate is additive — the committed axiom-mark on C1 doesn't
+    // conflict).
+    const c1 = _c1Id!;
     await alicePage.getByTestId('graph-tidy-up-button').click();
-    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await alicePage.getByTestId(`statement-node-wording-${c1}`).click({ button: 'right' });
     await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
     await alicePage.getByTestId('graph-context-menu-item-annotate').click();
     await expect(alicePage.getByTestId('annotate-submenu')).toBeVisible({ timeout: 15_000 });
@@ -1594,50 +1722,63 @@ test.describe
   // Phase 11 — edit-wording (reword and restructure)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 11.1: alice proposes a reword edit on N1', async () => {
-    const n1 = _n1Id!;
+  test('Phase 11.1: alice proposes a reword edit on component C1', async () => {
+    // Retargeted from the superseded N1 to the still-visible C1. The
+    // pending annotate from Phase 9.1 is NOT in the edit-wording
+    // conflict set (annotations are additive), so the reword lands
+    // cleanly — the settle arm tightens to the submenu-unmount
+    // success surface.
+    const c1 = _c1Id!;
     await alicePage.getByTestId('graph-tidy-up-button').click();
-    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await alicePage.getByTestId(`statement-node-wording-${c1}`).click({ button: 'right' });
     await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
     await alicePage.getByTestId('graph-context-menu-item-propose-edit-wording').click();
     await expect(alicePage.getByTestId('edit-wording-submenu')).toBeVisible({ timeout: 15_000 });
 
     await alicePage
       .getByTestId('edit-wording-submenu-input')
-      .fill('Wolves restored the Yellowstone elk-aspen balance after their 1995 reintroduction.');
+      .fill('Wolf reintroduction measurably reduced elk browsing pressure.');
     await alicePage.getByTestId('edit-wording-submenu-edit-kind-reword').click();
     await alicePage.getByTestId('edit-wording-submenu-submit').click();
 
-    // Round-trip completed when either the submenu unmounts (propose
-    // landed) OR the inline error region appears (engine rejected).
-    // The `:visible` filter on the OR'd locator picks up whichever
-    // path resolved within the timeout.
-    const settled = alicePage.locator(
-      '[data-testid="edit-wording-submenu-error"]:visible, body:not(:has([data-testid="edit-wording-submenu"]))',
-    );
-    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
+    // Clean success: the submenu unmounts (propose landed) and no
+    // inline error region surfaces.
+    await expect(alicePage.getByTestId('edit-wording-submenu')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId('edit-wording-submenu-error')).toHaveCount(0);
   });
 
-  test('Phase 11.2: alice proposes a restructure edit (mints a new node id, supersedes N1)', async () => {
-    const n1 = _n1Id!;
+  test('Phase 11.2: alice proposes a restructure edit on reading R1 (mints a new node id, would supersede R1 on commit)', async () => {
+    // Retargeted from the superseded N1. NOT C1: Phase 11.1's pending
+    // reword owns C1's wording facet and the edit-wording /
+    // decompose / interpretive-split / amend-node sub-kinds are
+    // mutually exclusive per target node, so a second edit-wording
+    // against C1 would be rejected. R1 (Phase 8.2's first reading)
+    // carries no pending structural proposal — the restructure lands
+    // cleanly and stays pending (nobody commits it, so R1 remains
+    // visible).
+    const r1 = _r1Id!;
     await alicePage.getByTestId('graph-tidy-up-button').click();
     // Re-open the context menu — the previous reword attempt may have
     // left the menu closed.
-    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await alicePage.getByTestId(`statement-node-wording-${r1}`).click({ button: 'right' });
     await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
     await alicePage.getByTestId('graph-context-menu-item-propose-edit-wording').click();
     await expect(alicePage.getByTestId('edit-wording-submenu')).toBeVisible({ timeout: 15_000 });
 
     await alicePage
       .getByTestId('edit-wording-submenu-input')
-      .fill('The 1995 wolf reintroduction triggered a trophic cascade in Yellowstone.');
+      .fill('Observed elk and aspen biomass shifts evidence the restoration (epistemic).');
     await alicePage.getByTestId('edit-wording-submenu-edit-kind-restructure').click();
     await alicePage.getByTestId('edit-wording-submenu-submit').click();
 
-    const settled = alicePage.locator(
-      '[data-testid="edit-wording-submenu-error"]:visible, body:not(:has([data-testid="edit-wording-submenu"]))',
-    );
-    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
+    // Clean success: the submenu unmounts and no inline error region
+    // surfaces.
+    await expect(alicePage.getByTestId('edit-wording-submenu')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId('edit-wording-submenu-error')).toHaveCount(0);
   });
 
   // ──────────────────────────────────────────────────────────────

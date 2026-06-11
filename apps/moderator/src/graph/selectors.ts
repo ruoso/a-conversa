@@ -54,6 +54,7 @@ import {
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   EMPTY_FACET_STATUSES,
   computeFacetStatuses,
+  computeSupersededNodeIds,
   groupAnnotationsByEdge,
   projectAnnotations,
   type Annotation,
@@ -709,6 +710,15 @@ export function selectEdgesForSession(
       removedEdgeIds.add(event.payload.entity_id);
     }
   }
+  // Superseded-node set — nodes hidden by a committed `decompose` /
+  // `interpretive-split` / `edit-wording.restructure`, derived
+  // client-side via the shared shell walk (ADR 0047). An edge incident
+  // to a superseded node drops by the missing-endpoint rule
+  // (`docs/data-model.md`): `projectNodes` never emits the superseded
+  // node, so the edge would dangle. ADR 0046 inherited edges are
+  // unaffected — their endpoints are the reading nodes, not the
+  // parent. Refinement: `mod_decompose_split_parent_visibility`.
+  const supersededNodeIds = computeSupersededNodeIds(session.events);
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
@@ -735,6 +745,11 @@ export function selectEdgesForSession(
       // Defensive: the wire schema's XOR refines guarantee one of each
       // pair is present. Skip otherwise rather than emitting an edge
       // with `undefined` endpoints.
+      continue;
+    }
+    // Skip edges incident to a superseded node (missing-endpoint rule —
+    // the node projector never emits the superseded endpoint).
+    if (supersededNodeIds.has(sourceId) || supersededNodeIds.has(targetId)) {
       continue;
     }
     // Endpoint-kind discriminator. Derived from "which polymorphic

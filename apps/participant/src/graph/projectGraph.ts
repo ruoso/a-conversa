@@ -108,6 +108,7 @@ import {
 import { type AxiomMark, nodeHasAxiomMark } from './axiomMarks';
 import {
   cardRollupStatus,
+  computeSupersededNodeIds,
   EMPTY_FACET_STATUSES,
   type DiagnosticHighlight,
   type DiagnosticHighlightIndex,
@@ -544,12 +545,31 @@ export function projectGraph(
     }
   }
 
+  // Superseded-node set — every node id superseded by a COMMITTED
+  // `decompose` / `interpretive-split` (the parent) or
+  // `edit-wording.restructure` (the old node), derived client-side
+  // from the proposal envelope + the proposal-keyed commit event via
+  // the shared shell walk (ADR 0047 — no wire emission exists for
+  // supersession by design; visibility is purely a function of the
+  // event log per `docs/data-model.md`). Canvas-level filtering, not
+  // store deletion: the node's events stay in the log for non-canvas
+  // consumers. Edges incident to a superseded node drop by the
+  // missing-endpoint rule below; ADR 0046 inherited edges keep
+  // rendering (their endpoints are the reading nodes). The DOM status
+  // mirror follows automatically — it renders from this projection's
+  // return value. Refinement: `mod_decompose_split_parent_visibility`.
+  const supersededNodeIds = computeSupersededNodeIds(events);
+
   for (const event of events) {
     if (event.kind === 'node-created') {
       // Skip nodes retracted by a later `entity-removed` (a withdrawn
       // proposal's propose-time node). The node never reaches the
       // Cytoscape array, so it leaves the canvas.
       if (removedNodeIds.has(event.payload.node_id)) continue;
+      // Skip nodes superseded by a committed structural resolution —
+      // the documented visible-graph rule removes the parent and shows
+      // its components / readings / replacement instead.
+      if (supersededNodeIds.has(event.payload.node_id)) continue;
       const slot = resolveFacetSlot(facetStatusIndex.nodes, event.payload.node_id);
       const dimensions = computeNodeDimensions(event.payload.wording);
       const element: ParticipantNodeElement = {
@@ -610,6 +630,9 @@ export function projectGraph(
       const sourceId = event.payload.source_node_id ?? event.payload.source_annotation_id ?? null;
       const targetId = event.payload.target_node_id ?? event.payload.target_annotation_id ?? null;
       if (sourceId === null || targetId === null) continue;
+      // Skip edges incident to a superseded node (missing-endpoint rule
+      // — the superseded endpoint never reaches the Cytoscape array).
+      if (supersededNodeIds.has(sourceId) || supersededNodeIds.has(targetId)) continue;
       // Track annotation-endpoint references so the materialization pass
       // emits a graph-node per referenced annotation id.
       if (event.payload.source_annotation_id !== undefined) {

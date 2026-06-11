@@ -211,4 +211,7 @@ export {
   type WireSelfContradictsHint,
 } from './diagnostics/index.js';
 
+// ─── supersession ────────────────────────────────────────────────────────
+export { computeSupersededNodeIds } from './supersession/index.js';
+
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

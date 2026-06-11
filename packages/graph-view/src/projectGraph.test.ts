@@ -1624,7 +1624,6 @@ describe('projectGraph (audience baseline)', () => {
     expect(annotationNode?.data.rollupStatus).toBe('none');
     expect(annotationNode?.data.axiomMarks).toEqual([]);
     expect(annotationNode?.data.annotations).toEqual([]);
-    expect(annotationNode?.data.decomposed).toBeUndefined();
   });
 
   it('(aep-9) host pseudo-edge is omitted (and node carries hostMissing) when the host cannot be resolved', () => {

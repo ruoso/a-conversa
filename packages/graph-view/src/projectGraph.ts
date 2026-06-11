@@ -101,23 +101,22 @@
 //   which the existing `<AudienceAnnotationOverlay>` reads via
 //   `node.data('annotations')`.)
 //
-// Refinement: tasks/refinements/audience/aud_decomposition_animation.md
-//   (Decision §1 — the audience surface paints a one-shot slate-tinted
-//   halo on parents whose `data.decomposed` first flips to `true` mid-
-//   broadcast (a `commit` of a `decompose` or `interpretive-split`
-//   proposal landing structurally retires the parent). The halo lives
-//   in `<AudienceDecompositionFadeOverlay>`; the projector's job is to
-//   stamp the store-derived flag the overlay reads.
-//   Decision §2 — adopt the existing `pendingClassifications` shape:
-//   cache `decompose` / `interpretive-split` proposals by event id at
-//   the proposal arm, and on the matching `commit` (target=`'proposal'`)
-//   stamp `data.decomposed: true` on the proposal's `parent_node_id`.
-//   The `AudienceNodeData.decomposed` field is optional (only stamped
-//   when the projector observes the commit; absent on non-decomposed
-//   parents — semantically equivalent to `false` for Cytoscape's
-//   `[?decomposed]` selector). The flag is monotonic (the projector
-//   never unsets), so the post-animation steady state lives in the
-//   stylesheet as `node[?decomposed] { opacity: 0.15 }`.)
+// Refinement: tasks/refinements/moderator-ui/mod_decompose_split_parent_visibility.md
+//   (Decision §2 + ADR 0047 — the supersession walk this projector
+//   pioneered (committed `decompose` / `interpretive-split` supersede
+//   the parent; committed `edit-wording.restructure` supersedes the
+//   old node; the superseded node and its incident edges are omitted
+//   from the emitted graph) is extracted into the shared
+//   `computeSupersededNodeIds` helper in `@a-conversa/shell`, consumed
+//   here AND by the moderator / participant projectors so all three
+//   canvases implement the rule once. No behaviour change on this
+//   surface. The dead `decomposed` fade seam from
+//   `aud_decomposition_animation` (the never-stamped
+//   `AudienceNodeData.decomposed` field, the `node[?decomposed]`
+//   stylesheet arm, and `<AudienceDecompositionFadeOverlay>`) is
+//   removed — the docs say the parent is REMOVED, and the projector
+//   removes; a commit-moment transition animation is a fresh decision
+//   against the then-current renderer if ever wanted.)
 //
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly audience broadcast
@@ -148,6 +147,7 @@ import { computeNodeDimensions } from './nodeDimensions.js';
 import {
   cardRollupStatus,
   computeFacetStatuses,
+  computeSupersededNodeIds,
   deriveSlotOccupants,
   EMPTY_FACET_STATUSES,
   projectVotesByFacet,
@@ -216,9 +216,9 @@ export interface AudienceNodeData {
    * carries the discriminator so the stylesheet and overlay code branch
    * via `nodeKind` rather than via a discriminated-union split.
    * Statement-only fields (`kind`, `facetStatuses`, `rollupStatus`,
-   * `axiomMarks`, `annotations`, `decomposed`) carry sentinel defaults
-   * on annotation nodes so the existing per-status / decomposed /
-   * axiom-mark selectors don't paint on them.
+   * `axiomMarks`, `annotations`) carry sentinel defaults on annotation
+   * nodes so the existing per-status / axiom-mark selectors don't
+   * paint on them.
    */
   readonly nodeKind: 'statement' | 'annotation';
   /**
@@ -259,16 +259,6 @@ export interface AudienceNodeData {
    * `aud_annotation_rendering_edges`.
    */
   readonly annotations: readonly Annotation[];
-  /**
-   * `true` once a `decompose` or `interpretive-split` proposal whose
-   * `parent_node_id` is this node has been committed (per
-   * `aud_decomposition_animation` Decision §2). Absent on every other
-   * node; semantically equivalent to `false` for Cytoscape's
-   * `[?decomposed]` attribute-truthy selector. Monotonic: once stamped
-   * the projector never unsets, mirroring the methodology contract
-   * (committed decompositions are structurally permanent).
-   */
-  readonly decomposed?: boolean;
   /**
    * Per-node Cytoscape box width (px), measured from `wording` by
    * `computeNodeDimensions`. The baseline `node` selector's
@@ -448,17 +438,6 @@ export function projectGraph(events: readonly Event[]): {
   // `'disputed'`), set by `set-node-substance` proposals. Parallel to
   // `currentClassificationByNode`; read in the post-walk stamp.
   const currentSubstanceByNode = new Map<string, 'agreed' | 'disputed'>();
-  // Map from `proposal` envelope id → parent node id, for `decompose`
-  // and `interpretive-split` proposals. The matching `commit`
-  // (target=`'proposal'`) resolves the parent via this map and stamps
-  // `data.decomposed: true` on the parent node element. Symmetric with
-  // `pendingClassifications` above, scoped to the two multi-component
-  // sub-kinds. Refinement: aud_decomposition_animation Decision §2.
-  const pendingDecompositions = new Map<string, string>();
-  // Restructure edits mint a `new_node_id` (created via its own
-  // `node-created`) and supersede the old node. Track (proposal id →
-  // superseded old node id) so the commit can drop the old node.
-  const pendingRestructures = new Map<string, string>();
   // Reword edits keep the node id and swap its text at COMMIT time (the
   // node keeps showing the old wording while the candidate gathers
   // votes; the pill carries the in-flight candidate). Tracked under both
@@ -469,11 +448,14 @@ export function projectGraph(events: readonly Event[]): {
   const pendingRewords = new Map<string, { nodeId: string; wording: string }>();
   const currentWordingByNode = new Map<string, string>();
   // Node ids superseded by a COMMITTED decompose / interpretive-split (the
-  // parent) or restructure (the old node). These are omitted from the
-  // emitted graph entirely at the end of the walk — a superseded node is no
-  // longer part of the live argument, and leaving it (even with distinct
-  // formatting) only clutters the read-only surfaces.
-  const supersededNodeIds = new Set<string>();
+  // parent) or restructure (the old node), per the shared shell walk
+  // (ADR 0047 — one implementation of the visible-graph supersession
+  // rule across the moderator / participant / audience surfaces). These
+  // are omitted from the emitted graph entirely at the end of the walk —
+  // a superseded node is no longer part of the live argument, and leaving
+  // it (even with distinct formatting) only clutters the read-only
+  // surfaces.
+  const supersededNodeIds = computeSupersededNodeIds(events);
 
   // Swap a statement node's displayed wording (a committed reword) and
   // re-measure its box — the width/height/textMaxWidth `data(...)`
@@ -604,14 +586,6 @@ export function projectGraph(events: readonly Event[]): {
         currentClassificationByNode.set(inner.node_id, inner.classification);
       } else if (inner.kind === 'set-node-substance') {
         currentSubstanceByNode.set(inner.node_id, inner.value);
-      } else if (inner.kind === 'decompose') {
-        pendingDecompositions.set(event.id, inner.parent_node_id);
-      } else if (inner.kind === 'interpretive-split') {
-        pendingDecompositions.set(event.id, inner.parent_node_id);
-      } else if (inner.kind === 'edit-wording' && inner.edit_kind === 'restructure') {
-        // Restructure's `node_id` is the OLD node being superseded; the
-        // `new_node_id` replacement arrives via its own `node-created`.
-        pendingRestructures.set(event.id, inner.node_id);
       } else if (inner.kind === 'edit-wording' && inner.edit_kind === 'reword') {
         // Reword keeps the node id; the new text lands at commit.
         pendingRewords.set(event.id, { nodeId: inner.node_id, wording: inner.new_wording });
@@ -668,16 +642,10 @@ export function projectGraph(events: readonly Event[]): {
         continue;
       }
       // A committed decompose / interpretive-split supersedes the parent
-      // node; a committed restructure supersedes the old node. Record the
-      // superseded id — the node (and any edge touching it) is dropped from
-      // the emitted graph at the end of the walk, rather than lingering as
-      // faded clutter on the read-only surfaces.
-      const supersededId =
-        pendingDecompositions.get(event.payload.proposal_id) ??
-        pendingRestructures.get(event.payload.proposal_id);
-      if (supersededId !== undefined) {
-        supersededNodeIds.add(supersededId);
-      }
+      // node; a committed restructure supersedes the old node. That
+      // correlation lives in the up-front `computeSupersededNodeIds`
+      // walk (shared shell helper, ADR 0047); nothing left to do at
+      // this arm.
       continue;
     }
   }
