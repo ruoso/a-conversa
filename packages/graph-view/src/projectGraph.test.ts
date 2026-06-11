@@ -1378,6 +1378,137 @@ describe('projectGraph (audience baseline)', () => {
     expect(nodes.find((n) => n.data.id === NODE_A)?.data.wording).toBe('Captured wording');
   });
 
+  // ---------------------------------------------------------------
+  // per_facet_step_pill — footer-band sizing (Decision §12). A node
+  // whose html-label footer will render (axiom marks and/or node-
+  // targeted annotations) reserves extra box height so the footer
+  // stays inside the painted frame; an undecorated node keeps the
+  // header-over-body height. The band is reserved once — it does not
+  // stack per decoration kind.
+  // ---------------------------------------------------------------
+
+  const FOOTER_WORDING = 'Footer-band wording held constant across cases';
+
+  function projectedHeight(events: Event[]): number {
+    const { nodes } = projectGraph(events);
+    const height = nodes.find((n) => n.data.id === NODE_A)?.data.height;
+    expect(typeof height).toBe('number');
+    return height ?? 0;
+  }
+
+  it('(fb1) an axiom-marked node is taller than an undecorated node with identical wording', () => {
+    const plain = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+    ]);
+    const marked = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+    ]);
+    expect(marked).toBeGreaterThan(plain);
+  });
+
+  it('(fb2) a node-annotated node reserves the same footer band as an axiom-marked one', () => {
+    const plain = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+    ]);
+    const marked = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+    ]);
+    const annotated = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ]);
+    // The band exists whenever the footer renders — its size does not
+    // depend on WHICH decoration kind fills the footer.
+    expect(annotated).toBeGreaterThan(plain);
+    expect(annotated - plain).toBe(marked - plain);
+  });
+
+  it('(fb3) a node carrying BOTH an axiom mark and an annotation reserves a single footer band (no stacking)', () => {
+    const marked = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+    ]);
+    const both = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ]);
+    expect(both).toBe(marked);
+  });
+
+  it('(fb4) a committed reword preserves the footer band on a decorated node', () => {
+    const reworded = 'A replacement wording committed after the decoration landed';
+    const plainReworded = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeRewordProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        newWording: reworded,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ]);
+    const decoratedReworded = projectedHeight([
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: FOOTER_WORDING }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+      makeRewordProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        newWording: reworded,
+      }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_A }),
+    ]);
+    // The reword path re-measures the box from the new text; the
+    // footer band must survive the re-measure (the decoration is
+    // still rendered below the new wording).
+    expect(decoratedReworded).toBeGreaterThan(plainReworded);
+  });
+
   it('(j) is invariant under the POSITION of a participant-joined interleaved between node-created and its classify commit', () => {
     // The participant roster is causal (it feeds `data.debaters`), so both
     // logs carry the SAME participant-joined; the test pins that WHERE it

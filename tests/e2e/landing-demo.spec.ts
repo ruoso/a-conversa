@@ -643,6 +643,12 @@ test.describe('landing walkthrough demo', () => {
   const captionTitleFor = (slug: string): string =>
     lookup(CATALOGS['en-US'], `landing.demo.caption.${slug}.title`);
 
+  // The localized facet label the step pill's title carries at the
+  // `classification` beat (`per_facet_step_pill` — the shared
+  // `@a-conversa/graph-view` renderer serves the landing walkthrough too,
+  // so the per-node HTML pill is DOM-assertable on the public surface).
+  const classificationFacetLabel = lookup(CATALOGS['en-US'], 'methodology.facet.classification');
+
   // Acceptance criterion 1: desktop through-to-finale beat walk. From an
   // anonymous `/`, scrub the full demo across all nine beat anchors in order;
   // at each anchor assert the step-status position lands on the anchor, the
@@ -679,6 +685,20 @@ test.describe('landing walkthrough demo', () => {
         await expect(caption).toHaveAttribute('data-beat', beat.slug, { timeout: 5_000 });
         // (c) the caption's visible title matches the en-US catalog copy.
         await expect(captionTitle).toHaveText(captionTitleFor(beat.slug), { timeout: 5_000 });
+
+        // (d) `per_facet_step_pill` — at the classification beat (anchored
+        // to a node's facet-keyed classification commit) the canvas's
+        // per-node HTML shows a step pill whose title carries the
+        // localized classification facet label, proving the shared
+        // renderer carries the pill on the public landing surface.
+        if (beat.slug === 'classification') {
+          await expect(
+            page
+              .getByTestId('audience-graph-root')
+              .locator('.gv-pill__title', { hasText: classificationFacetLabel })
+              .first(),
+          ).toBeVisible({ timeout: 5_000 });
+        }
       }
 
       // The walk ended on the final graph state with its matching caption.

@@ -54,6 +54,7 @@ task post_implementation_audits "Post-implementation audits" {
   task per_facet_step_pill "Render per-node content as HTML (cytoscape-node-html-label): compose the step pill + wording + annotations in one component inside the node box, retire the per-node DOM overlays, and redesign the pill into a per-facet 'next step' indicator (audience + landing, via @a-conversa/graph-view)" {
     effort 5d
     allocate team
+    complete 100
     depends audience.aud_graph_rendering.aud_per_facet_visualization
     note -8<-
       Refinement: tasks/refinements/post_implementation_audits/per_facet_step_pill.md

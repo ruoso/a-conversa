@@ -178,6 +178,29 @@ const DEBATER_ROLES = ['debater-A', 'debater-B'] as const;
  */
 const STEP_PILL_BAND_PX = 64;
 
+/**
+ * Extra height (px) reserved on a statement node's box for the axiom-mark
+ * / node-annotation footer row, BELOW the wording (`per_facet_step_pill`
+ * Decision §12). Reserved only when footer content exists — an
+ * undecorated node keeps the header-over-body height. Sized to one footer
+ * row: the 4 px `.gv-node__footer` top margin plus the 18 px `.gv-axiom`
+ * badge (the tallest footer chip), with headroom for the row's padding.
+ */
+const FOOTER_BAND_PX = 28;
+
+/**
+ * The footer band a node's decorations require: `FOOTER_BAND_PX` when the
+ * html-label footer will render, `0` otherwise. Mirrors `renderFooter`'s
+ * both-empty check in `statementNodeHtml.ts` — the band exists exactly
+ * when the footer element does.
+ */
+function footerBandPx(
+  axiomMarks: readonly AxiomMark[],
+  annotations: readonly Annotation[],
+): number {
+  return axiomMarks.length > 0 || annotations.length > 0 ? FOOTER_BAND_PX : 0;
+}
+
 /** A debater in the step-pill checkbox roster. */
 export interface StepDebater {
   readonly role: (typeof DEBATER_ROLES)[number];
@@ -472,7 +495,10 @@ export function projectGraph(events: readonly Event[]): {
         ...existing.data,
         wording,
         width: dimensions.width,
-        height: dimensions.height + STEP_PILL_BAND_PX,
+        height:
+          dimensions.height +
+          STEP_PILL_BAND_PX +
+          footerBandPx(existing.data.axiomMarks, existing.data.annotations),
         textMaxWidth: dimensions.textMaxWidth,
       },
     };
@@ -504,7 +530,7 @@ export function projectGraph(events: readonly Event[]): {
           axiomMarks,
           annotations,
           width: dimensions.width,
-          height: dimensions.height + STEP_PILL_BAND_PX,
+          height: dimensions.height + STEP_PILL_BAND_PX + footerBandPx(axiomMarks, annotations),
           textMaxWidth: dimensions.textMaxWidth,
         },
       };

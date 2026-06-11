@@ -445,6 +445,33 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Audience step-pill e2e
+    // (post_implementation_audits.per_facet_step_pill, refinement
+    // `tasks/refinements/post_implementation_audits/per_facet_step_pill.md`).
+    // Pins the per-node HTML step pill on the live audience route — the
+    // `cytoscape-node-html-label` migration (ADR 0004 2026-06-06
+    // amendment) made graph-canvas content DOM-assertable for the first
+    // time. Four scenarios: the wording-step pill with empty debater
+    // boxes, the classification step with split ✓/✗ votes, the settled
+    // summary chip, and the dense-graph OBS-1080p audit (the recorded
+    // half of the ADR's performance gate). Lives in its own project so
+    // the spec's seeded facet rounds don't bleed into the live-audience
+    // `chromium-audience-skeleton` testMatch (the
+    // `chromium-audience-replay` precedent). Same browser profile as the
+    // sibling audience projects — locale en-US (the pill's labels are
+    // catalog-resolved in the spec), `ignoreHTTPSErrors` for the OIDC
+    // redirect, the bootstrap auth jar via `setup-auth`.
+    {
+      name: 'chromium-audience-step-pill',
+      testMatch: /audience-step-pill\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Test-mode skeleton e2e (replay_test.test_mode.test_mode_app,
     // refinement `tasks/refinements/replay_test/test_mode_app.md`).
     // Drives a logged-in browser to `/t/sessions/<uuid>` and asserts
