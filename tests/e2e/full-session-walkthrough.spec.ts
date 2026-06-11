@@ -74,8 +74,13 @@
 // the dispatcher. The AC-bound *structural* assertions (defeater + rebut
 // edge present, two per-participant axiom decorations, split parent
 // removed + components rendered, disputed annotation, descending
-// change-history) stay firm. AC-7's read-side assertion is strict — it
-// runs against a settled, cold-loaded state with no noise to tolerate.
+// change-history) stay firm — and so do the two rebut pre-commit facet
+// walks: AC-3b's E5 walk, whose committed-`agreed` edge substance IS
+// that AC's central claim (a guarded version once no-oped silently and
+// passed vacuously — registered debt this firmness pays), and AC-5a's
+// E11 walk, load-bearing for AC-5b's inheritance assertions. AC-7's
+// read-side assertion is strict — it runs against a settled,
+// cold-loaded state with no noise to tolerate.
 //
 // **Annotation-kind note (the walkthrough's `concern`).** The doc's
 // annotation A1 is `kind=concern`; the platform's annotation kinds are
@@ -161,20 +166,6 @@ async function readNodeIdByWording(page: Page, wording: string): Promise<string>
   const testid = await wordingLocator.getAttribute('data-testid');
   expect(testid).toMatch(/^statement-node-wording-[0-9a-f-]+$/);
   return testid!.replace(/^statement-node-wording-/, '');
-}
-
-/**
- * Recover the most-recently-created edge of a given role from the
- * moderator's ReactFlow surface. Each role is used a bounded number of
- * times across this spec, so `.last()` reliably picks the freshly
- * created edge.
- */
-async function readEdgeIdByRole(page: Page, role: string): Promise<string> {
-  const label = page.locator(`[data-testid^="graph-edge-label-"][data-edge-role="${role}"]`).last();
-  await expect(label).toBeVisible({ timeout: LIVE_TIMEOUT });
-  const testid = await label.getAttribute('data-testid');
-  expect(testid).toMatch(/^graph-edge-label-[0-9a-f-]+$/);
-  return testid!.replace(/^graph-edge-label-/, '');
 }
 
 /** Maria captures a free-floating node (wording-only, ADR 0030 §1). */
@@ -667,7 +658,10 @@ test.describe
   // `mod_warrant_elicitation_mode`'s spec), so against a freshly-committed
   // node the menu item is reachable but typically disabled — we open the
   // gesture tolerantly and pin the real structural output: the defeater
-  // node + its pre-committed rebut edge.
+  // node + its pre-committed rebut edge. AC-3b's E5 pre-commit facet walk
+  // itself is FIRM (see the policy block atop this file): the committed
+  // edge substance is the AC's central claim, so every beat of that walk
+  // is a hard expect.
 
   test("AC-3a: maria captures Ben's cost claim N6 and tolerantly runs the operationalization gesture on it", async () => {
     n6Id = await captureNode(N6_COST_CLAIM);
@@ -690,44 +684,99 @@ test.describe
   });
 
   test('AC-3b: maria captures the defeater N8 with a `rebuts` edge into N6; the edge substance is committed agreed while N8 substance stays proposed', async () => {
+    // Headroom over the 30s default, per the AC-5a precedent: the firm
+    // E5 pre-commit walk below is six-plus real round-trips against the
+    // stack, several of them LIVE_TIMEOUT-bounded waits.
+    test.setTimeout(90_000);
     // Connecting-capture with role=rebuts: mints N8 + the rebut edge E5.
     const n8Id = await proposeConnectingCapture(n6Id, 'rebuts', N8_DEFEATER);
     expect(n8Id).toBeTruthy();
-    const rebutEdgeId = await readEdgeIdByRole(mariaPage, 'rebuts');
-
-    // Pre-commit the rebut edge's substance to `agreed`. First settle the
-    // edge `shape` facet (debaters agree → maria commits via the inline
-    // shape-commit affordance), then propose + commit edge substance
-    // `agreed`. All tolerant — the accumulating session is noisy.
-    await tolerantVoteAgreeOnFacet('shape');
-    await mariaPage.getByTestId('graph-tidy-up-button').click();
-    const shapeCommit = mariaPage.getByTestId(`edge-shape-commit-affordance-button-${rebutEdgeId}`);
-    if (await shapeCommit.isVisible().catch(() => false)) {
-      await shapeCommit.click().catch(() => {});
-      await expect(shapeCommit)
-        .toHaveCount(0, { timeout: LIVE_TIMEOUT })
-        .catch(() => {});
-    }
-    // Propose edge substance = agreed (the pre-committed rebut).
-    await mariaPage.getByTestId('graph-tidy-up-button').click();
-    const subAffordance = mariaPage.getByTestId(
-      `edge-card-substance-affordance-button-${rebutEdgeId}-agreed`,
+    // Pin E5 by its endpoints (AC-5a later mints a second `rebuts` edge
+    // E11, so a bare role query's uniqueness here would be an unstated
+    // ordering invariant) and extract its server-minted id.
+    const e5Label = mariaPage.locator(
+      `[data-testid^="graph-edge-label-"][data-edge-role="rebuts"][data-edge-source="${n8Id}"][data-edge-target="${n6Id}"]`,
     );
-    if (await subAffordance.isVisible().catch(() => false)) {
-      await subAffordance.click().catch(() => {});
-      await tolerantVoteAgreeOnFacet('substance');
-      await tolerantCommitPendingRowByPrefix(rebutEdgeId.slice(0, 8));
-    }
+    await expect(e5Label).toBeVisible({ timeout: LIVE_TIMEOUT });
+    const e5Testid = await e5Label.getAttribute('data-testid');
+    expect(e5Testid).toMatch(/^graph-edge-label-[0-9a-f-]+$/);
+    const e5Id = e5Testid!.replace(/^graph-edge-label-/, '');
 
-    // AC-3's load-bearing assertion: the defeater node renders and its
-    // rebut edge is present. (We deliberately do NOT drive N8's own
+    // Pre-commit E5's substance to `agreed`: settle the edge `shape`
+    // facet (debaters agree → maria commits via the inline shape-commit
+    // affordance), then propose + commit edge substance `agreed`. This
+    // walk is FIRM — its terminal committed-substance pin IS the test
+    // title's central claim. A guarded version of this walk once no-oped
+    // silently (the substance beat targeted the generic affordance testid
+    // that never renders for rebut edges) and the test passed vacuously;
+    // and since `showSubstanceAffordance` gates on a settled shape, a
+    // silently-skipped shape beat would strand the substance assertion
+    // far from the causing failure (the AC-5a rationale).
+    //
+    // Each debater's panel is auto-focused on E5 (the connecting-capture
+    // proposal targets its inline edge per `autoSelectionFromProposal`);
+    // both vote agree on the shape facet. Shape unanimity counts only
+    // non-moderator participants, so two votes settle it.
+    for (const page of debaterPages()) {
+      await expect(page.getByTestId('participant-detail-panel')).toHaveAttribute(
+        'data-entity-id',
+        e5Id,
+        { timeout: LIVE_TIMEOUT },
+      );
+      const shapeRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="shape"]',
+      );
+      await expect(shapeRow).toBeVisible({ timeout: LIVE_TIMEOUT });
+      await shapeRow.getByTestId('participant-vote-button-agree').click();
+      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: LIVE_TIMEOUT,
+      });
+    }
+    await mariaPage.getByTestId('graph-tidy-up-button').click();
+    const shapeCommit = mariaPage.getByTestId(`edge-shape-commit-affordance-button-${e5Id}`);
+    await expect(shapeCommit).toBeVisible({ timeout: LIVE_TIMEOUT });
+    await shapeCommit.click();
+    await expect(shapeCommit).toHaveCount(0, { timeout: LIVE_TIMEOUT });
+    // Propose edge substance = agreed. E5 is a `rebuts` edge, so the
+    // affordance is the F6-flavored `<RebutEdgePreCommitAffordance>`
+    // (`rebut-edge-pre-commit-button-*`), NOT the generic
+    // `edge-card-substance-affordance-button-*` — same
+    // `set-edge-substance` wire underneath. It unmounts once the
+    // proposal lands (substance leaves `awaiting-proposal`).
+    await mariaPage.getByTestId('graph-tidy-up-button').click();
+    const subAffordance = mariaPage.getByTestId(`rebut-edge-pre-commit-button-${e5Id}-agreed`);
+    await expect(subAffordance).toBeVisible({ timeout: LIVE_TIMEOUT });
+    await subAffordance.click();
+    await expect(subAffordance).toHaveCount(0, { timeout: LIVE_TIMEOUT });
+    // The `set-edge-substance` proposal re-focuses every panel on E5;
+    // both debaters vote agree on substance, then maria commits the
+    // pending proposal row.
+    for (const page of debaterPages()) {
+      const substanceRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+      );
+      await expect(substanceRow).toBeVisible({ timeout: LIVE_TIMEOUT });
+      await substanceRow.getByTestId('participant-vote-button-agree').click();
+      await expect(substanceRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: LIVE_TIMEOUT,
+      });
+    }
+    await commitPendingRowByPrefix(e5Id.slice(0, 8));
+    // The assertion that makes the test title true: E5's substance commit
+    // completed its round trip and the edge label projects it.
+    await expect(e5Label).toHaveAttribute('data-facet-status', 'committed', {
+      timeout: LIVE_TIMEOUT,
+    });
+
+    // AC-3's structural pin: the defeater node renders and its rebut
+    // edge is present. (We deliberately do NOT drive N8's own
     // substance facet — it stays `proposed`, the conditional-reading
     // pattern where the defeater sits in the graph without firing.)
     await expect(mariaPage.getByTestId(`statement-node-wording-${n8Id}`)).toBeVisible({
       timeout: LIVE_TIMEOUT,
     });
     await expect(
-      mariaPage.locator(`[data-testid="graph-edge-label-${rebutEdgeId}"][data-edge-role="rebuts"]`),
+      mariaPage.locator(`[data-testid="graph-edge-label-${e5Id}"][data-edge-role="rebuts"]`),
     ).toBeVisible({ timeout: LIVE_TIMEOUT });
   });
 
@@ -832,7 +881,7 @@ test.describe
     // bare role query) and pre-commit its substance to `agreed`, the
     // walkthrough's F2-variant pre-commitment the readings inherit at
     // split time (ADR 0046 — only committed-substance outgoing edges
-    // qualify). Unlike AC-3b's tolerant gestures, this walk is FIRM:
+    // qualify). Like AC-3b's E5 walk, this walk is FIRM:
     // the committed-substance pin below is load-bearing for AC-5b's
     // inheritance assertions, so a silently-skipped beat here would
     // only fail later with worse signal.
@@ -871,7 +920,7 @@ test.describe
     // Propose edge substance = agreed. E11 is a `rebuts` edge, so the
     // affordance is the F6-flavored `<RebutEdgePreCommitAffordance>`
     // (`rebut-edge-pre-commit-button-*`), NOT the generic
-    // `edge-card-substance-affordance-button-*` AC-3b targets — same
+    // `edge-card-substance-affordance-button-*` — same
     // `set-edge-substance` wire underneath. It unmounts once the
     // proposal lands (substance leaves `awaiting-proposal`).
     await mariaPage.getByTestId('graph-tidy-up-button').click();

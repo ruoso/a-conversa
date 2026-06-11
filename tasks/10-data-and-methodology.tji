@@ -667,6 +667,7 @@ task data_and_methodology "Data and methodology" {
       task e2e_ac3b_rebut_precommit_vacuous "Fix AC-3b vacuous rebut edge pre-commit assertion in full-session walkthrough e2e" {
         effort 0.5d
         allocate team
+        complete 100
         depends data_and_methodology.methodology_engine.interpretive_split_edge_inheritance
         note -8<-
           Source of debt: interpretive_split_edge_inheritance (2026-06-11) — the fixer sub-agent
