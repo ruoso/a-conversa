@@ -11,6 +11,7 @@ Refinements are organized by work-stream, mirroring the `tasks/*.tji` file split
 - `audience/` — audience-broadcast surface.
 - `moderator-ui/` — moderator console.
 - `participant-ui/` — debater tablet.
+- `deployment/` — production provisioning on Railway (M9). **Operator-executed**: these tasks need privileged access (Railway billing, Google Cloud Console, DNS registrar) and handle secrets; see that directory's README for the execution order and secret-handling ground rules.
 
 The filename convention is `<task_name>.md` matching the `task <task_name>` identifier in the `.tji` file. Each `.tji` task entry has a `note "Refinement: tasks/refinements/<area>/<task_name>.md"` line linking to its refinement.
 

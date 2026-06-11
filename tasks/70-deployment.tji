@@ -32,50 +32,54 @@ task deployment "Deployment" {
       task prod_railway_project_bootstrap "Railway account, CLI, and aconversa project" {
         effort 0.5d
         allocate team
-        note "One-time bootstrap: create Railway account, install Railway CLI, create the `aconversa` project, link to the GitHub repo. Captures the manual prerequisites before any service can be defined. Per ADR 0031."
+        note "One-time bootstrap: create Railway account, install Railway CLI, create the `aconversa` project, link to the GitHub repo. Captures the manual prerequisites before any service can be defined. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_project_bootstrap.md"
       }
       task prod_railway_app_service "App service: Dockerfile build trigger + Variables wiring" {
         effort 0.5d
         allocate team
         depends !prod_railway_project_bootstrap
-        note "Add the `app` service in the Railway project: configure tag-triggered build from the repo Dockerfile, wire the Variables consumed by the app (SESSION_TOKEN_SECRET, APP_BASE_URL, OIDC_*, DATABASE_URL via Postgres add-on reference, SENTRY_DSN). Per ADR 0031."
+        note "Add the `app` service in the Railway project: configure tag-triggered build from the repo Dockerfile, wire the Variables consumed by the app (SESSION_TOKEN_SECRET, APP_BASE_URL, OIDC_*, DATABASE_URL via Postgres add-on reference, SENTRY_DSN). Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_app_service.md"
       }
       task prod_railway_authelia_service "Authelia service: upstream image + prod config rendering" {
         effort 1d
         allocate team
         depends !prod_railway_project_bootstrap
-        note "Add the `authelia` service in the Railway project from the upstream authelia/authelia:4.39 image. Render the production Authelia config (Postgres storage, SMTP notifier, rotated signing keys, Google upstream client) from Railway Variables. The upstream-provider OAuth-client creation in Google Cloud Console belongs to prod_oauth_config; this task lands the service shell + config plumbing. Per ADR 0031 and ADR 0032."
+        note "Add the `authelia` service in the Railway project from the upstream authelia/authelia:4.39 image. Render the production Authelia config (Postgres storage, SMTP notifier, rotated signing keys, Google upstream client) from Railway Variables. The upstream-provider OAuth-client creation in Google Cloud Console belongs to prod_oauth_config; this task lands the service shell + config plumbing. Per ADR 0031 and ADR 0032. Refinement: tasks/refinements/deployment/prod_railway_authelia_service.md"
       }
       task prod_railway_internal_networking "Internal service discovery + cross-service Variables" {
         effort 0.5d
         allocate team
         depends !prod_railway_app_service, !prod_railway_authelia_service
-        note "Configure Railway's per-project internal DNS so app reaches authelia and postgres without public-internet hops. Wire shared/referenced Variables so each service sees the env it needs. Per ADR 0031."
+        note "Configure Railway's per-project internal DNS so app reaches authelia and postgres without public-internet hops. Wire shared/referenced Variables so each service sees the env it needs. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_internal_networking.md"
       }
       task prod_railway_iac_committed "Railway IaC manifest committed to repo" {
         effort 0.5d
         allocate team
         depends !prod_railway_internal_networking
-        note "Commit `railway.json` (or Railway's current IaC format) capturing the project, services, build sources, custom domains, and Variable references. Makes the prod orchestration reproducible from source control. Variable *values* stay out of git (Railway Variables); the manifest references them by name. Per ADR 0031."
+        note "Commit `railway.json` (or Railway's current IaC format) capturing the project, services, build sources, custom domains, and Variable references. Makes the prod orchestration reproducible from source control. Variable *values* stay out of git (Railway Variables); the manifest references them by name. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_iac_committed.md"
       }
     }
     task prod_postgres_config "Production Postgres configuration (managed or self-hosted)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/deployment/prod_postgres_config.md"
     }
     task prod_oauth_config "Production OAuth provider configuration" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/deployment/prod_oauth_config.md"
     }
     task prod_tls_and_domain "TLS termination and domain configuration" {
       effort 1d
       allocate team
       depends !prod_compose_file
+      note "Refinement: tasks/refinements/deployment/prod_tls_and_domain.md"
     }
     task prod_reverse_proxy "Reverse proxy / ingress configuration" {
       effort 1d
       allocate team
       depends !prod_tls_and_domain
+      note "Refinement: tasks/refinements/deployment/prod_reverse_proxy.md"
     }
   }
 
@@ -84,21 +88,25 @@ task deployment "Deployment" {
     task secret_storage_choice "Choose secret-storage approach (env vars, vault, etc.)" {
       effort 0.5d
       allocate team
+      note "Refinement: tasks/refinements/deployment/secret_storage_choice.md"
     }
     task oauth_credentials_handling "Handle OAuth credentials safely" {
       effort 1d
       allocate team
       depends !secret_storage_choice
+      note "Refinement: tasks/refinements/deployment/oauth_credentials_handling.md"
     }
     task postgres_credentials_handling "Handle Postgres credentials safely" {
       effort 0.5d
       allocate team
       depends !secret_storage_choice
+      note "Refinement: tasks/refinements/deployment/postgres_credentials_handling.md"
     }
     task session_token_secret_handling "Handle session-token signing secret" {
       effort 0.5d
       allocate team
       depends !secret_storage_choice
+      note "Refinement: tasks/refinements/deployment/session_token_secret_handling.md"
     }
   }
 

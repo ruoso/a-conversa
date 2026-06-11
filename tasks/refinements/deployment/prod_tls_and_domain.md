@@ -1,0 +1,114 @@
+# TLS and domain — a-conversa.org + authelia.a-conversa.org
+
+**TaskJuggler entry**: [tasks/70-deployment.tji](../../70-deployment.tji) — task `deployment.prod_compose.prod_tls_and_domain`
+**Effort estimate**: 1d
+**Inherited dependencies**: `prod_compose_file` rollup (the `app` and `authelia` services exist and are healthy on their Railway-generated domains).
+**Executor**: human operator (Railway dashboard + DNS registrar access).
+
+## What this task is
+
+Attach the production hostnames to the two public services and get
+valid TLS on both: `a-conversa.org` (apex) → `app`,
+`authelia.a-conversa.org` → `authelia`. Railway auto-provisions
+Let's Encrypt certificates once the DNS records resolve; the work is
+the dashboard half, the registrar half, and the propagation wait.
+
+## Why it needs to be done
+
+Every URL already wired into the system assumes these names:
+`APP_BASE_URL=https://a-conversa.org`,
+`OIDC_ISSUER_URL=https://authelia.a-conversa.org`, the
+`aconversa-app-prod` redirect URI, the Google client's callback, and
+the Authelia cookie domain. Until DNS + TLS are live, the app boots
+but no auth flow can complete — this task is the gate to the
+end-to-end verification in `prod_oauth_config`.
+
+## Inputs / context
+
+From [ADR 0031](../../../docs/adr/0031-production-hosting-railway-paas.md):
+
+> **TLS + domain.** Railway auto-provisions Let's Encrypt certificates
+> for any custom domain. `a-conversa.org` points at the `app` service
+> via a CNAME registered at the domain's DNS provider. Authelia is
+> reachable at `authelia.a-conversa.org` (separate CNAME → the
+> `authelia` service).
+
+Authelia's cookie domain is `a-conversa.org` with Authelia on a
+subdomain (ADR 0032) — the shared parent domain is what lets the
+Authelia session cookie and the app cookies coexist.
+
+**Apex caveat the ADR glosses over:** a literal CNAME at the zone apex
+(`a-conversa.org`) is invalid DNS — apex records must be A/AAAA or a
+registrar-provided ALIAS/ANAME/flattened-CNAME. The execution steps
+handle this.
+
+## Execution steps (operator)
+
+1. **Railway side.** On the `app` service → Settings → Networking →
+   Custom Domain → add `a-conversa.org`. On the `authelia` service,
+   add `authelia.a-conversa.org`. Railway displays the DNS target for
+   each (a `*.up.railway.app` name or equivalent) and waits for
+   verification.
+2. **Registrar side.** At the DNS provider for `a-conversa.org`:
+   - `authelia.a-conversa.org` → **CNAME** to the target Railway shows.
+   - `a-conversa.org` (apex) → **ALIAS/ANAME/flattened CNAME** to its
+     target, if the provider supports it. If it doesn't, the
+     documented fallback is moving DNS hosting (not registration) to a
+     provider that does — e.g., Cloudflare's free tier with the record
+     set to **DNS-only mode** (gray cloud; proxy mode would put a
+     second proxy in front of Railway's edge and complicate cert
+     issuance and WebSockets for no v1 benefit).
+   - While in the zone editor, also add the **SPF/DKIM records** for
+     the SMTP sender domain (from `prod_railway_authelia_service`
+     step 3) so the email-related DNS lands in one edit session.
+3. **Wait and verify issuance.** Railway verifies the records and
+   issues certificates (minutes to an hour, DNS-propagation bound).
+   Both domains show "issued" in the dashboard.
+4. **Smoke-check both hosts:**
+   ```sh
+   curl -sSf https://a-conversa.org/healthz
+   curl -sSf https://authelia.a-conversa.org/.well-known/openid-configuration | head -c 200
+   ```
+   Both serve valid TLS (no `-k` needed) and the OIDC discovery
+   document reports issuer `https://authelia.a-conversa.org`.
+5. **Restart the `app` service** (or just observe its next deploy):
+   its boot-time OIDC discovery against the issuer must now succeed —
+   before this task it could only fail.
+
+## Constraints / requirements
+
+- Hostnames are exactly the ADR-fixed pair; no `www` at launch (add a
+  `www` → apex redirect later only if traffic shows up with it).
+- No second proxy layer in front of Railway (Cloudflare stays
+  DNS-only if used) — `prod_reverse_proxy` documents Railway's edge as
+  the sole proxy.
+- Cert issuance/renewal is Railway-managed; nothing to schedule, but
+  the eventual uptime monitor (ADR 0033) watches the HTTPS endpoint,
+  which implicitly monitors cert validity.
+
+## Acceptance criteria
+
+- Both custom domains verified and issued in the Railway dashboard.
+- The two `curl` checks in step 4 pass from outside Railway with
+  valid certificates.
+- App boot logs show OIDC discovery success against
+  `https://authelia.a-conversa.org`.
+- DNS zone contains the two service records (plus the SMTP SPF/DKIM
+  records if batched here).
+
+## Decisions
+
+- **Apex via ALIAS/flattening, registrar permitting; otherwise move
+  DNS hosting to Cloudflare free (DNS-only)** — the minimal resolution
+  of the apex-CNAME constraint without adding a proxy layer or
+  renumbering the product onto `www`.
+- **SMTP DNS batched into this task's zone-edit session** — pure
+  logistics; the records belong to the notifier story but the
+  registrar login belongs to this task.
+
+## Open questions
+
+- **Where `a-conversa.org` is registered / DNS-hosted today** — the
+  operator knows; it determines whether the Cloudflare fallback is
+  needed. Record the answer (registrar, DNS host, account) in the
+  password manager and the eventual admin runbook.
