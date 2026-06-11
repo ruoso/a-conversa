@@ -511,6 +511,15 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
           event.payload.facet,
         );
         state.committed = true;
+        // ADR 0046 substance carry: an interpretive-split commit minted
+        // this edge as a mirror of a parent edge whose substance was
+        // already committed. No proposal ever targeted this facet — the
+        // carried committed value IS its candidate, so Rule 2
+        // (`awaiting-proposal`) must not fire over Rule 6
+        // (`committed`).
+        if (event.payload.carried_from_edge_id !== undefined) {
+          state.hasCandidate = true;
+        }
         continue;
       }
       // target === 'proposal' — structural arm or legacy facet-valued

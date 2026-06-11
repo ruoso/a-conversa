@@ -136,6 +136,7 @@ let n6Id: string;
 let n11Id: string;
 let n12Id: string;
 let n14Id: string;
+let e11Id: string;
 let a2HostId: string;
 
 const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
@@ -811,7 +812,13 @@ test.describe
   // server-projection fact, not a moderator-canvas one — see the deferral
   // note at the AC-5b assertion block below.)
 
-  test('AC-5a: maria builds N11 and a disputed reduction node N14 with a `rebuts` edge into N11', async () => {
+  test('AC-5a: maria builds N11 and a disputed reduction node N14 with a pre-committed `rebuts` edge into N11', async () => {
+    // Headroom over the 30s default: `tolerantCommitWording(n14Id)` below
+    // burns ~15s waiting for a wording-commit affordance that cannot
+    // appear (the debater panels are auto-focused on E11, an edge, so the
+    // wording vote is skipped and the affordance never mounts), and the
+    // firm E11 pre-commit walk that follows is four real round-trips.
+    test.setTimeout(90_000);
     n11Id = await captureNode(N11_CAPABILITIES);
     await tolerantCommitWording(n11Id);
     // N14 via connecting-capture with role=rebuts → mints N14 + its rebut
@@ -820,6 +827,77 @@ test.describe
     expect(n14Id).toBeTruthy();
     await tolerantCommitWording(n14Id);
     await expect(mariaPage.getByTestId(`statement-node-wording-${n14Id}`)).toBeVisible();
+
+    // Pin E11 by its endpoints (the AC-3b rebut edge E5 also matches a
+    // bare role query) and pre-commit its substance to `agreed`, the
+    // walkthrough's F2-variant pre-commitment the readings inherit at
+    // split time (ADR 0046 — only committed-substance outgoing edges
+    // qualify). Unlike AC-3b's tolerant gestures, this walk is FIRM:
+    // the committed-substance pin below is load-bearing for AC-5b's
+    // inheritance assertions, so a silently-skipped beat here would
+    // only fail later with worse signal.
+    const e11Label = mariaPage.locator(
+      `[data-testid^="graph-edge-label-"][data-edge-role="rebuts"][data-edge-source="${n14Id}"][data-edge-target="${n11Id}"]`,
+    );
+    await expect(e11Label).toBeVisible({ timeout: LIVE_TIMEOUT });
+    const e11Testid = await e11Label.getAttribute('data-testid');
+    expect(e11Testid).toMatch(/^graph-edge-label-[0-9a-f-]+$/);
+    e11Id = e11Testid!.replace(/^graph-edge-label-/, '');
+
+    // Each debater's panel is auto-focused on E11 (the connecting-capture
+    // proposal targets its inline edge per `autoSelectionFromProposal`);
+    // both vote agree on the shape facet. Shape unanimity counts only
+    // non-moderator participants, so two votes settle it.
+    for (const page of debaterPages()) {
+      await expect(page.getByTestId('participant-detail-panel')).toHaveAttribute(
+        'data-entity-id',
+        e11Id,
+        { timeout: LIVE_TIMEOUT },
+      );
+      const shapeRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="shape"]',
+      );
+      await expect(shapeRow).toBeVisible({ timeout: LIVE_TIMEOUT });
+      await shapeRow.getByTestId('participant-vote-button-agree').click();
+      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: LIVE_TIMEOUT,
+      });
+    }
+    await mariaPage.getByTestId('graph-tidy-up-button').click();
+    const shapeCommit = mariaPage.getByTestId(`edge-shape-commit-affordance-button-${e11Id}`);
+    await expect(shapeCommit).toBeVisible({ timeout: LIVE_TIMEOUT });
+    await shapeCommit.click();
+    await expect(shapeCommit).toHaveCount(0, { timeout: LIVE_TIMEOUT });
+    // Propose edge substance = agreed. E11 is a `rebuts` edge, so the
+    // affordance is the F6-flavored `<RebutEdgePreCommitAffordance>`
+    // (`rebut-edge-pre-commit-button-*`), NOT the generic
+    // `edge-card-substance-affordance-button-*` AC-3b targets — same
+    // `set-edge-substance` wire underneath. It unmounts once the
+    // proposal lands (substance leaves `awaiting-proposal`).
+    await mariaPage.getByTestId('graph-tidy-up-button').click();
+    const subAffordance = mariaPage.getByTestId(`rebut-edge-pre-commit-button-${e11Id}-agreed`);
+    await expect(subAffordance).toBeVisible({ timeout: LIVE_TIMEOUT });
+    await subAffordance.click();
+    await expect(subAffordance).toHaveCount(0, { timeout: LIVE_TIMEOUT });
+    // The `set-edge-substance` proposal re-focuses every panel on E11;
+    // both debaters vote agree on substance, then maria commits the
+    // pending proposal row.
+    for (const page of debaterPages()) {
+      const substanceRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+      );
+      await expect(substanceRow).toBeVisible({ timeout: LIVE_TIMEOUT });
+      await substanceRow.getByTestId('participant-vote-button-agree').click();
+      await expect(substanceRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: LIVE_TIMEOUT,
+      });
+    }
+    await commitPendingRowByPrefix(e11Id.slice(0, 8));
+    // E11's pre-commitment is load-bearing for AC-5b's inheritance
+    // assertion — pin it here so a failure surfaces at the causing beat.
+    await expect(e11Label).toHaveAttribute('data-facet-status', 'committed', {
+      timeout: LIVE_TIMEOUT,
+    });
   });
 
   test('AC-5b: maria interpretively splits N14 into N16 (epistemic) + N17 (metaphysical); the two component reading nodes render (canvas parent-removal deferred — see frontend_decompose_split_parent_visibility)', async () => {
@@ -904,12 +982,24 @@ test.describe
     await expect(
       mariaPage.locator('[data-testid^="statement-node-wording-"]', { hasText: N17_METAPHYSICAL }),
     ).toBeVisible({ timeout: LIVE_TIMEOUT });
-    // The component nodes inherit N14's pre-committed rebut edge to N11
-    // (the walkthrough's "each with rebut edges to N11"). Assert at least
-    // one `rebuts` edge survives the split.
-    await expect(
-      mariaPage.locator('[data-testid^="graph-edge-label-"][data-edge-role="rebuts"]').first(),
-    ).toBeVisible({ timeout: LIVE_TIMEOUT });
+    // The reading nodes inherit N14's pre-committed rebut edge to N11
+    // (the walkthrough's "each with rebut edges to N11 … each with edge
+    // substance pre-committed agreed", ADR 0046): per reading, one
+    // inherited `rebuts` edge sourced at the reading, targeting N11,
+    // rendering committed substance carried from E11. Endpoint
+    // discrimination via the edge label's data-edge-source/-target
+    // attributes keeps AC-3b's unrelated rebut edge E5 out of the match.
+    const n16Id = await readNodeIdByWording(mariaPage, N16_EPISTEMIC);
+    const n17Id = await readNodeIdByWording(mariaPage, N17_METAPHYSICAL);
+    for (const readingId of [n16Id, n17Id]) {
+      const inherited = mariaPage.locator(
+        `[data-testid^="graph-edge-label-"][data-edge-role="rebuts"][data-edge-source="${readingId}"][data-edge-target="${n11Id}"]`,
+      );
+      await expect(inherited).toBeVisible({ timeout: LIVE_TIMEOUT });
+      await expect(inherited).toHaveAttribute('data-facet-status', 'committed', {
+        timeout: LIVE_TIMEOUT,
+      });
+    }
   });
 
   // ════════════════════════════════════════════════════════════════

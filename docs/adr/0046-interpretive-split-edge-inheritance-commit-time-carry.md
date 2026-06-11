@@ -1,0 +1,49 @@
+# 0046 — Interpretive-split edge inheritance: commit-time mirrored edges with carried substance commits
+
+- **Date**: 2026-06-10
+- **Status**: Accepted
+
+## Context
+
+[`docs/example-walkthrough.md`](../example-walkthrough.md) turn 17 (L165–169) specifies what happens to a split parent's committed edges: *"when split commits, N14 is removed from the visible graph; N16 and N17 take its place, each with rebut edges to N11 (E11a: N16 rebuts N11; E11b: N17 rebuts N11), each with edge substance pre-committed agreed by Ben (carries from N14's pre-commitment); N16's and N17's own substance stays proposed."* The methodology owner confirmed at the 2026-06-10 parking-lot triage that this inheritance is intended behavior, not walkthrough flourish.
+
+The implementation has no trace of it. The propose-time structural fan-out for `interpretive-split` ([`apps/server/src/methodology/handlers/propose.ts`](../../apps/server/src/methodology/handlers/propose.ts) L2113–2156) mints the reading nodes (`node-created` + `entity-included` per reading) and nothing else; the commit arm in [`apps/server/src/projection/replay.ts`](../../apps/server/src/projection/replay.ts) L1265–1280 flips `parent.visible = false` and returns. No `edge-created` is ever emitted for inherited edges, and the e2e assertion meant to pin them (`tests/e2e/full-session-walkthrough.spec.ts` AC-5, L910–912) passes only incidentally via an unrelated edge.
+
+Three prior decisions constrain the design:
+
+- **[ADR 0027](0027-entity-and-facet-layers-strict-separation.md)** — entity and facet layers are strictly separate. Entity events never carry agreement-state effects. Its Decision §2 explicitly carves out commit-time structural emission for entities that are *genuine commit-time creations* (the worked example: the new node id minted by `edit-wording.restructure`).
+- **[ADR 0030](0030-per-facet-vote-keying-and-sequential-capture.md)** — `commit` events come in two shapes: facet-keyed (`{target: 'facet', entity_kind, entity_id, facet, …}`) and proposal-keyed; structural proposals like `interpretive-split` commit proposal-keyed.
+- **The conditional reading of edge substance** ([`docs/data-model.md`](../data-model.md) L100–104) — an edge's substance can be `agreed` ("if the source held, the relation would hold") independent of the source node's own substance; the relation *fires* only when both are agreed. This is what makes the walkthrough's carry safe: each inherited rebut edge sits pre-committed but inert until its reading node is itself established.
+
+The question this ADR settles: **when** do inherited edges enter the event log, and **how** does the parent edge's committed substance carry onto them.
+
+## Decision
+
+**1. Inherited edges are minted at commit time, in the interpretive-split branch of the commit handler's structural fan-out** (`buildStructuralEventsForCommit`, [`apps/server/src/methodology/handlers/commit.ts`](../../apps/server/src/methodology/handlers/commit.ts) L366–435 — the seam the `annotate` and `meta-move` branches already use). They are genuine commit-time creations under ADR 0027 §2: they are not the proposal's *content* (the readings are; those stay propose-time per ADR 0027 §1) but a structural *consequence of supersession*, computed from the graph state at the moment the parent is replaced.
+
+**2. The inheritance predicate.** At commit of an `interpretive-split` proposal, for **each reading node × each qualifying parent edge**, the fan-out emits `edge-created` (fresh edge id; the parent edge's `role`; the reading node as source; the parent edge's target endpoint carried verbatim, node or annotation) followed by `entity-included`. A parent edge qualifies iff:
+
+- the **parent is its source** (`projection.getEdgesBySource(parent_node_id)`), and
+- the edge is currently included and visible, and
+- its **substance facet has a landed commit** (the terminal state the `set-edge-substance` commit arm produces at `replay.ts` L1177–1192).
+
+Target-side edges (edges *into* the parent) and edges with merely proposed substance never inherit.
+
+**3. The substance carry is an explicit facet-layer event.** For each inherited edge, the fan-out also emits a facet-keyed `commit` event (`{target: 'facet', entity_kind: 'edge', entity_id: <inherited edge id>, facet: 'substance', …}`) carrying a new **optional payload field `carried_from_edge_id` (uuid)** on `facetCommitPayloadSchema` ([`packages/shared-types/src/events.ts`](../../packages/shared-types/src/events.ts) L517–525). Appliers — the server projection's facet-commit path and the shared client facet-status walker — resolve the referenced edge at apply time and land the inherited edge's substance facet in the same terminal state as the source edge, copying its committed value. Vote state (`perParticipant`) is **not** copied: the original participants' pre-commitment is discoverable through the `carried_from_edge_id` provenance chain, and the inherited facet behaves like any committed facet thereafter (withdrawal supersedes it normally). The event cluster per inherited edge is therefore `edge-created`, `entity-included`, `commit{facet, carried_from_edge_id}`, all sequenced before the split's own proposal-keyed `commit` — so appliers see the parent edge still in place when they resolve the carry.
+
+**4. Scope: `interpretive-split` only.** Decompose components do **not** inherit the parent's edges. The two operations share graph treatment for the *parent* (replaced in the visible view — [`docs/methodology.md`](../methodology.md) L187, [`docs/data-model.md`](../data-model.md) L282–285) but differ on the children: readings are alternative construals of the *same* claim, so an outgoing relation committed against the parent transfers to each reading under the conditional reading; decompose components are *distinct* claims that were bundled, and a relation committed against the bundle does not distribute over its parts. Nothing in the design docs specifies decompose-side inheritance, and the walkthrough demonstrates it only for the split.
+
+### Alternatives considered and rejected
+
+- **Propose-time minting of inherited edges** (alongside the reading nodes in `buildStructuralEventsForPropose`). Rejected: the inherited set would be a snapshot taken at propose time, silently stale if another edge on the parent commits while the split is being voted; a rejected or withdrawn split would leave mirrored-edge debris to clean up; and the walkthrough times the inheritance at commit ("when split commits … each with rebut edges"). What participants accept when voting on the split is the deterministic inheritance *rule*, not a frozen edge list.
+- **Facet copy driven by the entity event** (an `inherited_from_edge_id` field on `edge-created` whose applier also sets the substance facet). Rejected: an entity-layer event with a facet-layer side effect is exactly the conflation ADR 0027 exists to prevent ("never a single event that does both").
+- **Bare facet-keyed commit, inheritance resolved by each projector** (emit a plain `commit` and let every consumer re-derive what was carried from where). Rejected for the same reason ADR 0027 rejected client-side ghost synthesis: it duplicates a methodology derivation across the server projection and every client surface, and makes "why is this edge committed?" a multi-step query instead of a single-event lookup.
+- **Inheriting target-side edges too.** Rejected on methodology grounds: an inbound edge with agreed substance whose source is also agreed *fires immediately*; mirroring it onto both readings would manufacture actively-firing relations against readings nobody evaluated — precisely the confusion the split exists to dissolve (the walkthrough's point is that the opposing argument established one reading and not the other). Outbound edges are safe because firing stays gated on the reading's own (proposed) substance. Participants who want inbound relations against a reading propose them explicitly, as with restructure (`docs/data-model.md` L304–305).
+
+## Consequences
+
+- **Schema change, no migration.** `facetCommitPayloadSchema` gains optional `carried_from_edge_id`. The `commit` kind already exists, and the SQL `CHECK` at `apps/server/migrations/0010_session_events.sql` constrains kinds only, so no forward-only migration is needed — Zod registry and type-level change only. Amendment entry on ADR 0021.
+- **Commit handler grows an `interpretive-split` branch** in `buildStructuralEventsForCommit`, computing the inheritance predicate against the projection and minting the per-(reading × edge) cluster. The existing sequence offsetting (`commit.ts` L547–561) already places the cluster before the proposal-keyed commit.
+- **Appliers extend, projectors don't.** The server projection's facet-commit path and the shared facet-status walker ([`packages/shell/src/facet-status/facet-status.ts`](../../packages/shell/src/facet-status/facet-status.ts) commit arm, L498–551) learn `carried_from_edge_id`. The canvas projectors need no split-specific edge logic — inherited edges arrive as ordinary `edge-created` events through the existing generic arm ([`packages/graph-view/src/projectGraph.ts`](../../packages/graph-view/src/projectGraph.ts) L546–595).
+- **Second instance of ADR 0027 §2's commit-time-creation carve-out** (after `edit-wording.restructure`'s new node). Amendment entry on ADR 0027 records it.
+- **Tests per [ADR 0022](0022-no-throwaway-verifications.md)** land with the implementation: Vitest on the fan-out predicate and the carry application, a Cucumber scenario across the replay boundary, and a tightened Playwright AC-5 asserting the true inherited edges. Scoped in the refinement at [`tasks/refinements/data-and-methodology/interpretive_split_edge_inheritance.md`](../../tasks/refinements/data-and-methodology/interpretive_split_edge_inheritance.md).

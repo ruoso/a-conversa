@@ -1047,6 +1047,38 @@ describe('commit payload schema — facet-keyed arm', () => {
     expect(result.success).toBe(false);
   });
 
+  it('round-trips a carried substance commit (per ADR 0046 interpretive-split edge inheritance)', () => {
+    // The interpretive-split commit fan-out emits a facet-keyed commit
+    // per inherited edge carrying the parent edge's id; appliers copy
+    // the parent's committed substance from that provenance.
+    const carried = {
+      ...valid,
+      entity_kind: 'edge' as const,
+      entity_id: EDGE_ID,
+      facet: 'substance' as const,
+      carried_from_edge_id: PROPOSAL_ID,
+    };
+    const parsed = commitPayloadSchema.parse(carried);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(commitPayloadSchema.parse(wire)).toEqual(carried);
+  });
+
+  it('rejects a non-UUID carried_from_edge_id', () => {
+    const result = commitPayloadSchema.safeParse({
+      ...valid,
+      carried_from_edge_id: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('still validates a facet-keyed payload without carried_from_edge_id (additive field)', () => {
+    const result = commitPayloadSchema.safeParse(valid);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('carried_from_edge_id');
+    }
+  });
+
   it('strips proposal_id when present on the facet arm (z.object default)', () => {
     // The discriminated union strips unknown keys; a facet-arm payload
     // smuggling a proposal_id from the proposal arm parses but the

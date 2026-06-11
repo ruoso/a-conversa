@@ -974,6 +974,68 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
   });
 });
 
+// ---------------------------------------------------------------
+// ADR 0046 — interpretive-split substance carry. The commit-time
+// fan-out mints inherited edges whose substance facet no proposal
+// ever targeted; the facet-keyed commit's `carried_from_edge_id`
+// supplies the candidate, so the walker must land `'committed'`
+// rather than letting Rule 2 (`awaiting-proposal`) fire.
+// ---------------------------------------------------------------
+
+const INHERITED_EDGE_I = '00000000-0000-4000-8000-00000000001e';
+
+function carriedFacetCommitEvent(seq: number, edgeId: string, carriedFromEdgeId: string): Event {
+  return {
+    id: envId('C', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'commit',
+    actor: ACTOR,
+    payload: {
+      target: 'facet',
+      entity_kind: 'edge',
+      entity_id: edgeId,
+      facet: 'substance',
+      committed_by: ACTOR,
+      committed_at: '2026-05-28T00:00:20.000Z',
+      carried_from_edge_id: carriedFromEdgeId,
+    },
+    createdAt: '2026-05-28T00:00:20.000Z',
+  };
+}
+
+describe('computeFacetStatuses — interpretive-split substance carry (ADR 0046)', () => {
+  it('a carried facet commit lands committed substance on an inherited edge no proposal targeted', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      // The parent edge reaches committed substance the ordinary way.
+      edgeCreatedEvent(3, EDGE_E),
+      setEdgeSubstanceProposal(4, PROPOSAL_P, EDGE_E),
+      facetCommitEvent(5, 'edge', EDGE_E, 'substance'),
+      // The inherited edge is minted at split-commit time; its only
+      // substance event is the carried commit.
+      edgeCreatedEvent(6, INHERITED_EDGE_I),
+      carriedFacetCommitEvent(7, INHERITED_EDGE_I, EDGE_E),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(INHERITED_EDGE_I)?.substance).toBe('committed');
+    // The parent edge's own substance is unaffected by the carry.
+    expect(index.edges.get(EDGE_E)?.substance).toBe('committed');
+  });
+
+  it('a non-carried facet commit on a proposal-less substance facet still derives awaiting-proposal (Rule 2 unchanged)', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      edgeCreatedEvent(3, EDGE_E),
+      facetCommitEvent(4, 'edge', EDGE_E, 'substance'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)?.substance).toBe('awaiting-proposal');
+  });
+});
+
 describe('EMPTY_FACET_STATUSES', () => {
   it('is a frozen empty record and is referentially stable', () => {
     expect(EMPTY_FACET_STATUSES).toEqual({});

@@ -413,6 +413,7 @@ task data_and_methodology "Data and methodology" {
     task interpretive_split_edge_inheritance "Interpretive-split reading nodes inherit the parent's committed edges" {
       effort 1.5d
       allocate team
+      complete 100
       depends !interpretive_split_logic
       note -8<-
         Source: parking-lot triage 2026-06-10 (entry "Interpretive-split edge inheritance", 2026-06-03) —
@@ -661,6 +662,21 @@ task data_and_methodology "Data and methodology" {
           fixture's load sites to appendEvent-mode so the no-option default can be flipped to
           append-mode, completing the raw-INSERT divergence closure started by R23.
           Refinement: tasks/refinements/data-and-methodology/r23_loader_replay_through_append_for_walkthrough.md
+        ->8-
+      }
+      task e2e_ac3b_rebut_precommit_vacuous "Fix AC-3b vacuous rebut edge pre-commit assertion in full-session walkthrough e2e" {
+        effort 0.5d
+        allocate team
+        depends data_and_methodology.methodology_engine.interpretive_split_edge_inheritance
+        note -8<-
+          Source of debt: interpretive_split_edge_inheritance (2026-06-11) — the fixer sub-agent
+          surfaced that AC-3b's tolerant substance pre-commit block targets
+          edge-card-substance-affordance-button-EDGE_ID-agreed (the generic testid), which is never
+          rendered for rebut edges (they render rebut-edge-pre-commit-button-EDGE_ID-agreed). The
+          tolerant block silently no-ops so the "edge substance is committed agreed" title assertion
+          in AC-3b is vacuously passing. Fix: repoint the tolerant pre-commit at the
+          rebut-edge-specific testid and make the assertion firm, same pattern as AC-5a.
+          File: tests/e2e/full-session-walkthrough.spec.ts, AC-3b block.
         ->8-
       }
     }

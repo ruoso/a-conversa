@@ -2380,3 +2380,248 @@ describe('projectFromLog — empty input', () => {
     expect(projection.sessionState).toBe('open');
   });
 });
+
+// ---------------------------------------------------------------
+// Interpretive-split commit cluster — inherited edges + substance
+// carry (ADR 0046).
+//
+// The write-side fan-out (commit.ts) emits, per (reading × qualifying
+// parent edge): `edge-created` + `entity-included` + a facet-keyed
+// `commit{carried_from_edge_id}`, all before the split's own
+// proposal-keyed commit. This block pins the READ side: applying the
+// full cluster lands the inherited edges visible with their substance
+// facet in the parent edge's terminal state, while the readings' own
+// substance stays proposed and the parent goes invisible.
+// Refinement:
+// tasks/refinements/data-and-methodology/interpretive_split_edge_inheritance.md
+// ---------------------------------------------------------------
+
+const SPLIT_READING_ID_1 = '00000000-0000-4000-8000-00000000ad01';
+const SPLIT_READING_ID_2 = '00000000-0000-4000-8000-00000000ad02';
+const INHERITED_EDGE_ID_1 = '00000000-0000-4000-8000-00000000ad11';
+const INHERITED_EDGE_ID_2 = '00000000-0000-4000-8000-00000000ad12';
+const UNKNOWN_EDGE_ID = '00000000-0000-4000-8000-00000000adff';
+
+describe('applyEvent — interpretive-split commit cluster (ADR 0046 carry)', () => {
+  // Seed through the committed-substance parent edge (NODE_ID_2 →
+  // NODE_ID_3 via EDGE_ID_1), the propose-time reading fan-out, and the
+  // pending split proposal. Returns the next sequence.
+  function seedSplitPending(projection: ReturnType<typeof createEmptyProjection>): number {
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'node-created', DEBATER_A_ID, T2, {
+        node_id: NODE_ID_2,
+        wording: 'Parent under split.',
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'node-created', DEBATER_B_ID, T2, {
+        node_id: NODE_ID_3,
+        wording: 'Target of the rebut.',
+        created_by: DEBATER_B_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'edge-created', DEBATER_A_ID, T3, {
+        edge_id: EDGE_ID_1,
+        role: 'rebuts',
+        source_node_id: NODE_ID_2,
+        target_node_id: NODE_ID_3,
+        created_by: DEBATER_A_ID,
+        created_at: T3,
+      }),
+    );
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T4, {
+        proposal: { kind: 'set-edge-substance', edge_id: EDGE_ID_1, value: 'agreed' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'commit', MODERATOR_ID, T5, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: EDGE_ID_1,
+        facet: 'substance' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T5,
+      }),
+    );
+    for (const [readingId, wording] of [
+      [SPLIT_READING_ID_1, 'Reading one.'],
+      [SPLIT_READING_ID_2, 'Reading two.'],
+    ] as const) {
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'node-created', DEBATER_A_ID, T6, {
+          node_id: readingId,
+          wording,
+          created_by: DEBATER_A_ID,
+          created_at: T6,
+        }),
+      );
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'entity-included', DEBATER_A_ID, T6, {
+          entity_kind: 'node',
+          entity_id: readingId,
+          included_by: DEBATER_A_ID,
+          included_at: T6,
+        }),
+      );
+    }
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T6, {
+        proposal: {
+          kind: 'interpretive-split',
+          parent_node_id: NODE_ID_2,
+          readings: [
+            { wording: 'Reading one.', classification: 'fact', node_id: SPLIT_READING_ID_1 },
+            { wording: 'Reading two.', classification: 'value', node_id: SPLIT_READING_ID_2 },
+          ],
+        },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    return seq;
+  }
+
+  // Apply the commit-time cluster for one inherited edge; returns the
+  // changes from the carried commit application.
+  function applyInheritedCluster(
+    projection: ReturnType<typeof createEmptyProjection>,
+    seq: number,
+    inheritedEdgeId: string,
+    readingId: string,
+  ): ReturnType<typeof applyEvent> {
+    applyEvent(
+      projection,
+      makeEvent(seq, 'edge-created', MODERATOR_ID, T7, {
+        edge_id: inheritedEdgeId,
+        role: 'rebuts',
+        source_node_id: readingId,
+        target_node_id: NODE_ID_3,
+        created_by: MODERATOR_ID,
+        created_at: T7,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(seq + 1, 'entity-included', MODERATOR_ID, T7, {
+        entity_kind: 'edge',
+        entity_id: inheritedEdgeId,
+        included_by: MODERATOR_ID,
+        included_at: T7,
+      }),
+    );
+    return applyEvent(
+      projection,
+      makeEvent(seq + 2, 'commit', MODERATOR_ID, T7, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: inheritedEdgeId,
+        facet: 'substance' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T7,
+        carried_from_edge_id: EDGE_ID_1,
+      }),
+    );
+  }
+
+  it('applies the full cluster: inherited edges visible + terminal substance, readings proposed, parent invisible', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedSplitPending(projection);
+    const carriedChanges1 = applyInheritedCluster(
+      projection,
+      seq,
+      INHERITED_EDGE_ID_1,
+      SPLIT_READING_ID_1,
+    );
+    seq += 3;
+    applyInheritedCluster(projection, seq, INHERITED_EDGE_ID_2, SPLIT_READING_ID_2);
+    seq += 3;
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T8, {
+        target: 'proposal',
+        proposal_id: PROPOSAL_ID_2,
+        committed_by: MODERATOR_ID,
+        committed_at: T8,
+      }),
+    );
+
+    // The carried commit surfaces through the change feed (unlike the
+    // generic facet arm, the carried value is known string-shaped).
+    expect(carriedChanges1).toContainEqual({
+      kind: 'facet-updated',
+      entityKind: 'edge',
+      entityId: INHERITED_EDGE_ID_1,
+      facet: 'substance',
+      value: 'agreed',
+      status: 'agreed',
+    });
+
+    for (const inheritedId of [INHERITED_EDGE_ID_1, INHERITED_EDGE_ID_2]) {
+      const edge = projection.getEdge(inheritedId);
+      expect(edge).toBeDefined();
+      expect(edge!.visible).toBe(true);
+      // Terminal substance state copied from the parent edge — value,
+      // candidate pinning, and commit marker; vote state NOT copied.
+      expect(edge!.substanceFacet.value).toBe('agreed');
+      expect(edge!.substanceFacet.status).toBe('agreed');
+      expect(edge!.substanceFacet.candidateValue).toBe('agreed');
+      expect(edge!.substanceFacet.committedCandidateValue).toBe('agreed');
+      expect(edge!.substanceFacet.committedAt).toBe(T7);
+      expect(edge!.substanceFacet.perParticipant.size).toBe(0);
+    }
+    // The readings' own substance stays proposed (awaiting-proposal —
+    // no candidate, no commit).
+    for (const readingId of [SPLIT_READING_ID_1, SPLIT_READING_ID_2]) {
+      const reading = projection.getNode(readingId);
+      expect(reading).toBeDefined();
+      expect(reading!.visible).toBe(true);
+      expect(reading!.substanceFacet.status).toBe('proposed');
+      expect(reading!.substanceFacet.candidateValue).toBeNull();
+      expect(reading!.substanceFacet.committedAt).toBeNull();
+    }
+    // The proposal-keyed commit flipped the parent invisible.
+    expect(projection.getNode(NODE_ID_2)!.visible).toBe(false);
+  });
+
+  it('throws ReplayError when carried_from_edge_id does not resolve', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedSplitPending(projection);
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'edge-created', MODERATOR_ID, T7, {
+        edge_id: INHERITED_EDGE_ID_1,
+        role: 'rebuts',
+        source_node_id: SPLIT_READING_ID_1,
+        target_node_id: NODE_ID_3,
+        created_by: MODERATOR_ID,
+        created_at: T7,
+      }),
+    );
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(seq, 'commit', MODERATOR_ID, T7, {
+          target: 'facet' as const,
+          entity_kind: 'edge' as const,
+          entity_id: INHERITED_EDGE_ID_1,
+          facet: 'substance' as const,
+          committed_by: MODERATOR_ID,
+          committed_at: T7,
+          carried_from_edge_id: UNKNOWN_EDGE_ID,
+        }),
+      ),
+    ).toThrow(ReplayError);
+  });
+});

@@ -521,6 +521,15 @@ export const facetCommitPayloadSchema = z.object({
   facet: facetNameSchema,
   committed_by: z.string().uuid(),
   committed_at: z.string().datetime({ offset: true }),
+  // Per ADR 0046: an interpretive-split commit mirrors the parent's
+  // committed-substance outgoing edges onto each reading node, and the
+  // substance carry rides this facet-keyed commit shape. When set,
+  // appliers resolve the referenced parent edge at apply time and land
+  // this facet in the same terminal state, copying its committed value
+  // (per-participant vote state is NOT copied — provenance lives in
+  // this field). Absent on every non-carried commit; additive, so all
+  // pre-ADR-0046 payloads stay valid.
+  carried_from_edge_id: z.string().uuid().optional(),
 });
 
 export type FacetCommitPayload = z.infer<typeof facetCommitPayloadSchema>;

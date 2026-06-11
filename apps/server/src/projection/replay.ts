@@ -832,6 +832,47 @@ function handleCommit(
         `commit(facet): target ${payload.entity_kind}:${payload.entity_id} facet ${payload.facet} not present`,
       );
     }
+    if (payload.carried_from_edge_id !== undefined) {
+      // ADR 0046 substance carry — an interpretive-split commit minted
+      // this edge as a mirror of a parent edge whose substance was
+      // already committed. Resolve the referenced edge (the commit-time
+      // fan-out sequences this event BEFORE the split's proposal-keyed
+      // commit, so the parent edge is still in place) and land this
+      // facet in the same terminal state, copying its committed value.
+      // Per-participant vote state is NOT copied — provenance lives in
+      // the event field; the facet behaves like any committed facet
+      // afterwards (withdrawal supersedes normally).
+      const sourceFacet = facetStateForTarget(projection, {
+        entityKind: 'edge',
+        entityId: payload.carried_from_edge_id,
+        facet: payload.facet,
+      });
+      if (sourceFacet === null) {
+        throw new ReplayError(
+          `commit(facet): carried_from_edge_id ${payload.carried_from_edge_id} does not resolve to an edge facet in this projection`,
+        );
+      }
+      const carriedValue = sourceFacet.committedCandidateValue ?? sourceFacet.value;
+      facet.candidateValue = carriedValue;
+      facet.committedAt = payload.committed_at;
+      facet.committedCandidateValue = carriedValue;
+      facet.value = carriedValue;
+      facet.status = 'agreed';
+      clearPendingProposalsForFacet(projection, target, 'commit', changes);
+      // Unlike the generic facet arm below, the carried value is known
+      // string-shaped (edge substance: 'agreed' | 'disputed'), so the
+      // change-feed entry rides today's string-typed
+      // `FacetUpdatedChange` without the deferred widening.
+      changes.push({
+        kind: 'facet-updated',
+        entityKind: payload.entity_kind,
+        entityId: payload.entity_id,
+        facet: payload.facet,
+        value: String(carriedValue),
+        status: 'agreed',
+      });
+      return;
+    }
     // Pin the commit marker against the facet's current candidate. The
     // derivation reads `committedCandidateValue !== candidateValue` as
     // "a later proposal has superseded the committed candidate." The

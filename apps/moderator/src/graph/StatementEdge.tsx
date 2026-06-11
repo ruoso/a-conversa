@@ -315,6 +315,8 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           <div
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
+            data-edge-source={data?.sourceId ?? ''}
+            data-edge-target={data?.targetId ?? ''}
             className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}${labelDiagnosticClassName}${labelFlashClassName}`}
             tabIndex={0}
             onMouseEnter={() => setIsHovered(true)}

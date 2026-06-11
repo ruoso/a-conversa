@@ -1800,3 +1800,129 @@ describe('projectGraph (audience baseline)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------
+// Interpretive-split edge inheritance (ADR 0046).
+//
+// Inherited edges arrive as ORDINARY `edge-created` events through the
+// generic arm — no split-specific projector logic. The carry is a
+// facet-keyed `commit{carried_from_edge_id}` that `computeFacetStatuses`
+// lands as committed substance, so both canvas surfaces (moderator and
+// participant/audience, both consuming this shared projector + the
+// shared walker) render the inherited edges committed-by-carry.
+// Refinement:
+// tasks/refinements/data-and-methodology/interpretive_split_edge_inheritance.md
+// ---------------------------------------------------------------
+
+describe('projectGraph — interpretive-split inherited edges (ADR 0046)', () => {
+  const READING_1 = '00000000-0000-4000-8000-00000000ad01';
+  const READING_2 = '00000000-0000-4000-8000-00000000ad02';
+  const PARENT_EDGE = '00000000-0000-4000-8000-00000000ad0e';
+  const INHERITED_1 = '00000000-0000-4000-8000-00000000ad11';
+  const INHERITED_2 = '00000000-0000-4000-8000-00000000ad12';
+
+  function makeSetEdgeSubstanceProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    edgeId: string;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: { kind: 'set-edge-substance', edge_id: opts.edgeId, value: 'agreed' },
+      },
+      createdAt: '2026-05-27T00:00:00.000Z',
+    };
+  }
+
+  function makeFacetSubstanceCommit(opts: {
+    sequence: number;
+    edgeId: string;
+    carriedFromEdgeId?: string;
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'commit',
+      actor: ACTOR,
+      payload: {
+        target: 'facet',
+        entity_kind: 'edge',
+        entity_id: opts.edgeId,
+        facet: 'substance',
+        committed_by: ACTOR,
+        committed_at: '2026-05-27T00:00:00.000Z',
+        ...(opts.carriedFromEdgeId !== undefined
+          ? { carried_from_edge_id: opts.carriedFromEdgeId }
+          : {}),
+      },
+      createdAt: '2026-05-27T00:00:00.000Z',
+    };
+  }
+
+  it('renders both inherited edges through the generic arm with committed substance from the carry', () => {
+    const events: Event[] = [
+      // Parent (NODE_A) rebuts the target (NODE_B); substance committed.
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Parent' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'Target' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: PARENT_EDGE,
+        source: NODE_A,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+      makeSetEdgeSubstanceProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        edgeId: PARENT_EDGE,
+      }),
+      makeFacetSubstanceCommit({ sequence: 5, edgeId: PARENT_EDGE }),
+      // Propose-time reading nodes; commit-time inherited cluster.
+      makeNodeCreated({ sequence: 6, nodeId: READING_1, wording: 'Reading one' }),
+      makeNodeCreated({ sequence: 7, nodeId: READING_2, wording: 'Reading two' }),
+      makeEdgeCreated({
+        sequence: 8,
+        edgeId: INHERITED_1,
+        source: READING_1,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+      makeFacetSubstanceCommit({
+        sequence: 9,
+        edgeId: INHERITED_1,
+        carriedFromEdgeId: PARENT_EDGE,
+      }),
+      makeEdgeCreated({
+        sequence: 10,
+        edgeId: INHERITED_2,
+        source: READING_2,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+      makeFacetSubstanceCommit({
+        sequence: 11,
+        edgeId: INHERITED_2,
+        carriedFromEdgeId: PARENT_EDGE,
+      }),
+    ];
+    const { edges } = projectGraph(events);
+    const inherited1 = edges.find((e) => e.data.id === INHERITED_1);
+    const inherited2 = edges.find((e) => e.data.id === INHERITED_2);
+    expect(inherited1).toBeDefined();
+    expect(inherited2).toBeDefined();
+    expect(inherited1?.data.source).toBe(READING_1);
+    expect(inherited2?.data.source).toBe(READING_2);
+    expect(inherited1?.data.target).toBe(NODE_B);
+    expect(inherited2?.data.target).toBe(NODE_B);
+    expect(inherited1?.data.role).toBe('rebuts');
+    expect(inherited2?.data.role).toBe('rebuts');
+    expect(inherited1?.data.facetStatuses.substance).toBe('committed');
+    expect(inherited2?.data.facetStatuses.substance).toBe('committed');
+  });
+});

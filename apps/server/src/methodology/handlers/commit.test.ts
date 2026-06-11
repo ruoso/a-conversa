@@ -778,6 +778,244 @@ describe('commit handler — structural sub-kind: interpretive-split', () => {
   });
 });
 
+// ---------------------------------------------------------------
+// Interpretive-split edge inheritance (ADR 0046).
+//
+// At commit, each of the parent's QUALIFYING outgoing edges is
+// mirrored onto each reading node: `edge-created` (fresh id, the
+// parent edge's role, the reading as source, the target endpoint
+// carried verbatim) + `entity-included` + a facet-keyed
+// `commit{carried_from_edge_id}`, the whole cluster before the
+// split's own proposal-keyed commit. Qualifying = parent is the
+// source, edge included and visible, substance facet committed.
+// Refinement:
+// tasks/refinements/data-and-methodology/interpretive_split_edge_inheritance.md
+// ---------------------------------------------------------------
+
+const SPLIT_TARGET_NODE_ID = '00000000-0000-4000-8000-00000000e040';
+const SPLIT_ANNOTATION_ID = '00000000-0000-4000-8000-00000000e041';
+const EDGE_OUT_COMMITTED_ID = '00000000-0000-4000-8000-00000000e051';
+const EDGE_IN_COMMITTED_ID = '00000000-0000-4000-8000-00000000e052';
+const EDGE_OUT_PROPOSED_ID = '00000000-0000-4000-8000-00000000e053';
+const EDGE_OUT_REMOVED_ID = '00000000-0000-4000-8000-00000000e054';
+const EDGE_TO_ANNOTATION_ID = '00000000-0000-4000-8000-00000000e055';
+
+// Apply an `edge-created` with a polymorphic target endpoint.
+function applyEdgeCreate(
+  projection: ReturnType<typeof createEmptyProjection>,
+  edgeId: string,
+  sourceNodeId: string,
+  target: { node?: string; annotation?: string },
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: edgeId,
+      role: 'rebuts',
+      source_node_id: sourceNodeId,
+      ...(target.node !== undefined ? { target_node_id: target.node } : {}),
+      ...(target.annotation !== undefined ? { target_annotation_id: target.annotation } : {}),
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+// Land the edge's substance facet in the committed terminal state:
+// a `set-edge-substance` proposal supplies the candidate, a facet-keyed
+// commit pins it (`deriveFacetStatus` reads `'committed'`).
+function applyLandedEdgeSubstance(
+  projection: ReturnType<typeof createEmptyProjection>,
+  edgeId: string,
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'proposal', DEBATER_A_ID, T3, {
+      proposal: { kind: 'set-edge-substance', edge_id: edgeId, value: 'agreed' },
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: edgeId,
+      facet: 'substance' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T3,
+    }),
+  );
+}
+
+// Apply the propose-time reading fan-out + the split proposal
+// (PROPOSAL_ID_STRUCT) + the unanimous structural votes.
+function proposeAndAgreeSplit(projection: ReturnType<typeof createEmptyProjection>): void {
+  applyComponentCreate(projection, COMPONENT_NODE_ID_1, 'Reading one.');
+  applyComponentCreate(projection, COMPONENT_NODE_ID_2, 'Reading two.');
+  applyEvent(projection, {
+    ...makeEvent(nextSequence(projection), 'proposal', DEBATER_A_ID, T3, {
+      proposal: {
+        kind: 'interpretive-split',
+        parent_node_id: NODE_ID_STRUCT,
+        readings: [
+          { wording: 'Reading one.', classification: 'fact', node_id: COMPONENT_NODE_ID_1 },
+          { wording: 'Reading two.', classification: 'value', node_id: COMPONENT_NODE_ID_2 },
+        ],
+      },
+    }),
+    id: PROPOSAL_ID_STRUCT,
+  });
+  voteStructural(projection, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+  voteStructural(projection, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+  voteStructural(projection, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+}
+
+describe('commit handler — interpretive-split edge inheritance (ADR 0046)', () => {
+  it('mirrors only the qualifying parent edge onto each reading, cluster before the proposal-keyed commit', () => {
+    const p = seedSession();
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to re-read.');
+    seedStructuralParent(p, SPLIT_TARGET_NODE_ID, 'Target of the rebut.');
+    // Qualifying: outgoing, visible, substance committed.
+    applyEdgeCreate(p, EDGE_OUT_COMMITTED_ID, NODE_ID_STRUCT, { node: SPLIT_TARGET_NODE_ID });
+    applyLandedEdgeSubstance(p, EDGE_OUT_COMMITTED_ID);
+    // Non-qualifying: incoming (the parent is the TARGET), even though
+    // its substance is committed.
+    applyEdgeCreate(p, EDGE_IN_COMMITTED_ID, SPLIT_TARGET_NODE_ID, { node: NODE_ID_STRUCT });
+    applyLandedEdgeSubstance(p, EDGE_IN_COMMITTED_ID);
+    // Non-qualifying: outgoing but substance still proposed.
+    applyEdgeCreate(p, EDGE_OUT_PROPOSED_ID, NODE_ID_STRUCT, { node: SPLIT_TARGET_NODE_ID });
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'set-edge-substance', edge_id: EDGE_OUT_PROPOSED_ID, value: 'agreed' },
+      }),
+    );
+    // Non-qualifying: outgoing and committed but no longer visible.
+    applyEdgeCreate(p, EDGE_OUT_REMOVED_ID, NODE_ID_STRUCT, { node: SPLIT_TARGET_NODE_ID });
+    applyLandedEdgeSubstance(p, EDGE_OUT_REMOVED_ID);
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-removed', MODERATOR_ID, T3, {
+        entity_kind: 'edge',
+        entity_id: EDGE_OUT_REMOVED_ID,
+        removed_by: MODERATOR_ID,
+        removed_at: T3,
+      }),
+    );
+    proposeAndAgreeSplit(p);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    // 2 readings × 1 qualifying edge × (edge-created + entity-included
+    // + carried commit) + the proposal-keyed commit envelope.
+    expect(r.events).toHaveLength(7);
+    const kinds = r.events.map((ev) => ev.kind);
+    expect(kinds).toEqual([
+      'edge-created',
+      'entity-included',
+      'commit',
+      'edge-created',
+      'entity-included',
+      'commit',
+      'commit',
+    ]);
+    const readingIds = [COMPONENT_NODE_ID_1, COMPONENT_NODE_ID_2];
+    const inheritedEdgeIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const created = r.events[i * 3]!;
+      const included = r.events[i * 3 + 1]!;
+      const carried = r.events[i * 3 + 2]!;
+      expect(created.sequence).toBe(action.sequence + i * 3);
+      if (created.kind === 'edge-created') {
+        expect(created.payload.edge_id).toMatch(UUID_RE);
+        expect(created.payload.edge_id).not.toBe(EDGE_OUT_COMMITTED_ID);
+        expect(created.payload.role).toBe('rebuts');
+        expect(created.payload.source_node_id).toBe(readingIds[i]);
+        expect(created.payload.target_node_id).toBe(SPLIT_TARGET_NODE_ID);
+        expect(created.payload.target_annotation_id).toBeUndefined();
+        expect(created.payload.created_by).toBe(MODERATOR_ID);
+        inheritedEdgeIds.push(created.payload.edge_id);
+      }
+      if (included.kind === 'entity-included') {
+        expect(included.payload.entity_kind).toBe('edge');
+        expect(included.payload.entity_id).toBe(inheritedEdgeIds[i]);
+      }
+      if (carried.kind === 'commit') {
+        expect(carried.payload.target).toBe('facet');
+        if (carried.payload.target === 'facet') {
+          expect(carried.payload.entity_kind).toBe('edge');
+          expect(carried.payload.entity_id).toBe(inheritedEdgeIds[i]);
+          expect(carried.payload.facet).toBe('substance');
+          expect(carried.payload.carried_from_edge_id).toBe(EDGE_OUT_COMMITTED_ID);
+        }
+      }
+    }
+    // The two mirrors carry distinct fresh ids.
+    expect(inheritedEdgeIds[0]).not.toBe(inheritedEdgeIds[1]);
+    const commitEnvelope = r.events[6]!;
+    expect(commitEnvelope.kind).toBe('commit');
+    expect(commitEnvelope.sequence).toBe(action.sequence + 6);
+    if (commitEnvelope.kind === 'commit') {
+      expect(commitEnvelope.payload.target).toBe('proposal');
+    }
+  });
+
+  it('emits exactly the pre-task event shape when the parent has zero qualifying edges', () => {
+    const p = seedSession();
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to re-read.');
+    seedStructuralParent(p, SPLIT_TARGET_NODE_ID, 'Target of the rebut.');
+    // Incoming committed + outgoing proposed — neither qualifies.
+    applyEdgeCreate(p, EDGE_IN_COMMITTED_ID, SPLIT_TARGET_NODE_ID, { node: NODE_ID_STRUCT });
+    applyLandedEdgeSubstance(p, EDGE_IN_COMMITTED_ID);
+    applyEdgeCreate(p, EDGE_OUT_PROPOSED_ID, NODE_ID_STRUCT, { node: SPLIT_TARGET_NODE_ID });
+    proposeAndAgreeSplit(p);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]!.kind).toBe('commit');
+    expect(r.events[0]!.sequence).toBe(action.sequence);
+  });
+
+  it('carries an annotation-target endpoint verbatim onto the mirrored edges', () => {
+    const p = seedSession();
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to re-read.');
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: SPLIT_ANNOTATION_ID,
+        kind: 'note',
+        content: 'An annotation the parent rebuts.',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEdgeCreate(p, EDGE_TO_ANNOTATION_ID, NODE_ID_STRUCT, {
+      annotation: SPLIT_ANNOTATION_ID,
+    });
+    applyLandedEdgeSubstance(p, EDGE_TO_ANNOTATION_ID);
+    proposeAndAgreeSplit(p);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.events).toHaveLength(7);
+    for (const i of [0, 3]) {
+      const created = r.events[i]!;
+      expect(created.kind).toBe('edge-created');
+      if (created.kind === 'edge-created') {
+        expect(created.payload.target_annotation_id).toBe(SPLIT_ANNOTATION_ID);
+        expect(created.payload.target_node_id).toBeUndefined();
+      }
+    }
+  });
+});
+
 describe('commit handler — structural sub-kind: axiom-mark', () => {
   it('accepts a commit on a fully-agreed axiom-mark proposal; the declared participant does not need to vote', () => {
     const p = seedSession();

@@ -361,9 +361,23 @@ function checkUnanimousAgreeStructural(
 // envelope in the returned list so the projection's incremental
 // `applyEvent` sees the annotation land BEFORE the `handleCommit` arm
 // runs.
+//
+// `interpretive-split` is the third exception (ADR 0046): at commit,
+// each of the parent's qualifying outgoing edges is mirrored onto each
+// reading node — `edge-created` + `entity-included` + a facet-keyed
+// `commit{carried_from_edge_id}` per (reading × edge). The mirrors are
+// genuine commit-time creations under ADR 0027 §2: a structural
+// consequence of supersession computed from the graph state at commit
+// time (NOT a propose-time snapshot — see ADR 0046's rejected
+// alternatives). The whole cluster precedes the proposal-keyed `commit`
+// envelope so appliers see the parent edge still in place when they
+// resolve the carry. Decompose deliberately does NOT take this branch
+// (ADR 0046 §4 — relations against a bundle don't distribute over its
+// distinct component claims).
 // ---------------------------------------------------------------
 
 function buildStructuralEventsForCommit(
+  projection: Projection,
   proposalPayload: ProposalPayload,
   action: CommitAction,
 ): EventToAppend[] {
@@ -431,6 +445,92 @@ function buildStructuralEventsForCommit(
       createdAt: action.createdAt,
     };
     events.push(annotationCreated);
+  } else if (proposalPayload.kind === 'interpretive-split') {
+    // ADR 0046 — commit-time edge inheritance. A parent edge qualifies
+    // iff the parent is its SOURCE, it is currently included and
+    // visible, and its substance facet carries a landed commit (the
+    // shared derivation's `'committed'` — which also excludes
+    // superseded, withdrawn, disputed, and meta-disagreement states).
+    // Target-side edges never inherit (an inbound agreed edge would
+    // fire immediately against readings nobody evaluated); proposed-
+    // substance edges never inherit (pending negotiations re-propose
+    // against the readings explicitly, matching the restructure
+    // posture in docs/data-model.md L304–305).
+    const qualifyingEdges = projection
+      .getEdgesBySource(proposalPayload.parent_node_id)
+      .filter(
+        (edge) =>
+          edge.visible &&
+          deriveFacetStatus(projection, 'edge', edge.id, 'substance') === 'committed',
+      );
+    for (const reading of proposalPayload.readings) {
+      for (const parentEdge of qualifyingEdges) {
+        // Fresh edge id minted at commit time (as the `annotate` branch
+        // does for annotations); the parent edge's role and target
+        // endpoint (node or annotation) carry verbatim, the reading
+        // node takes the source slot.
+        const inheritedEdgeId = randomUUID();
+        const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: action.sequence + events.length,
+          kind: 'edge-created',
+          actor: action.actor,
+          payload: {
+            edge_id: inheritedEdgeId,
+            role: parentEdge.role,
+            source_node_id: reading.node_id,
+            ...(parentEdge.targetNodeId !== null
+              ? { target_node_id: parentEdge.targetNodeId }
+              : {}),
+            ...(parentEdge.targetAnnotationId !== null
+              ? { target_annotation_id: parentEdge.targetAnnotationId }
+              : {}),
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(edgeCreated);
+        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: action.sequence + events.length,
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'edge',
+            entity_id: inheritedEdgeId,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(entityIncluded);
+        // The substance carry is its own facet-layer event (ADR 0027's
+        // strict separation — the entity events above carry no facet
+        // effect). Appliers resolve `carried_from_edge_id` and land
+        // this facet in the parent edge's terminal state.
+        const carriedCommit: EventToAppendEnvelope<'commit'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: action.sequence + events.length,
+          kind: 'commit',
+          actor: action.actor,
+          payload: {
+            target: 'facet' as const,
+            entity_kind: 'edge' as const,
+            entity_id: inheritedEdgeId,
+            facet: 'substance' as const,
+            committed_by: action.requester,
+            committed_at: action.committedAt,
+            carried_from_edge_id: parentEdge.id,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(carriedCommit);
+      }
+    }
   }
   return events;
 }
@@ -543,7 +643,7 @@ export const commitHandler: Validator<CommitAction> = (
   // Valid — emit the structural fan-out (if any) followed by the
   // `commit` envelope. The structural events take the leading
   // sequence slots; the commit envelope takes the last.
-  const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
+  const structuralEvents = buildStructuralEventsForCommit(projection, proposalPayload, action);
   const commitEvent: EventToAppendEnvelope<'commit'> = {
     id: action.eventId,
     sessionId: action.sessionId,
