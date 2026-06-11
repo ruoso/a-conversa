@@ -12,7 +12,7 @@
 // **What this spec pins (Decision §6).** The whole live scrubber chain on a
 // real backend: generate the **walkthrough** synthetic session (which
 // deterministically yields a deep multi-event log AND a `snapshot-created`
-// event at `log_position 265`), navigate to its `/t/sessions/:id`, and:
+// event near the head), navigate to its `/t/sessions/:id`, and:
 //
 //   (a) the scrubber surface renders (controls + graph); stepping next/prev
 //       and dragging the range move the position-status readout and the
@@ -21,7 +21,7 @@
 //       the boundary affordances backed by the `replay-position` contract;
 //   (c) **inherited snapshot-jump debt (paid here):** the mounted snapshot
 //       list renders the walkthrough's snapshot row; clicking it navigates
-//       the scrubber to the snapshot's `logPosition` (265). This satisfies
+//       the scrubber to the snapshot's recorded `logPosition`. This satisfies
 //       the list-render → click row → jump-to-position spec forwarded from
 //       `snapshot_list_ui.md` §4 / `snapshot_jump_ui.md` §4 to this leaf.
 //
@@ -40,11 +40,17 @@
 
 import { readFile } from 'node:fs/promises';
 
+import { walkthroughEvents } from '../../apps/root/src/walkthrough';
 import { expect, test } from './fixtures/no-scrollbars';
 
-// The walkthrough fixture's snapshot lands at this log position (Segment 1
-// close — `position_navigation.md:42`).
-const SNAPSHOT_LOG_POSITION = 265;
+// The walkthrough fixture's snapshot log position (Segment 1 close) —
+// DERIVED from the canonical stream rather than pinned, so fixture edits
+// never redden this spec.
+const snapshotEvent = walkthroughEvents.find((event) => event.kind === 'snapshot-created');
+if (snapshotEvent === undefined || snapshotEvent.kind !== 'snapshot-created') {
+  throw new Error('walkthrough fixture has no snapshot-created event');
+}
+const SNAPSHOT_LOG_POSITION = snapshotEvent.payload.log_position;
 
 test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkthrough log', () => {
   test('steps, drags, honours the boundaries, and jumps to a snapshot position', async ({
@@ -92,8 +98,8 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
     // With that route now live, the panel renders the *real* diagnostics for
     // the projected state at this stop: at the head the walkthrough's
     // deterministic E15 finding — a `contradicts` edge from a node to a
-    // cross-anchor annotation (sequence 264, included by log position 265 <
-    // head) — surfaces as a `non-self-referential-annotation-contradicts`
+    // cross-anchor annotation (created and included before the head) —
+    // surfaces as a `non-self-referential-annotation-contradicts`
     // coherency-hint under the *advisory* severity group. The contradiction
     // detector deliberately skips annotation endpoints, so the coherency-hint
     // detector raises the advisory instead
@@ -287,7 +293,7 @@ test.describe('Test-mode timeline scrubber — /t/sessions/:id scrubs the walkth
 
     // (c) Inherited snapshot-jump debt: the snapshot list renders the
     // walkthrough's snapshot row; clicking it jumps the scrubber to the
-    // snapshot's logPosition (265).
+    // snapshot's recorded logPosition.
     const snapshotRow = page
       .getByTestId('test-mode-scrubber-snapshots')
       .locator(`[data-log-position="${SNAPSHOT_LOG_POSITION}"]`);
