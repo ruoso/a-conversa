@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate down down-v logs ps seed unblocked clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate down down-v logs ps seed sync-reviews unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -43,6 +43,8 @@ help:
 	@echo "  make logs           tail logs from the dev stack"
 	@echo "  make ps             show dev-stack service status"
 	@echo "  make seed           seed the dev database (stub — see foundation.dev_env.seed_data_script)"
+	@echo "  make sync-reviews   import reviewer-edited translation sheets (packages/i18n-catalogs/review/)"
+	@echo "                      into the catalogs + trackers, then regenerate the sheets"
 	@echo "  make unblocked      list, per milestone, the leaf tasks that are currently unblocked"
 	@echo "                      (uses tj3 to resolve the WBS dep graph; see scripts/unblocked.ts)"
 	@echo "                      pass MILESTONE=<id> to scope to one milestone"
@@ -300,6 +302,15 @@ ps:
 
 seed:
 	@pnpm run seed -- $(if $(FIXTURE),--fixture $(FIXTURE))
+
+# Sync the native-speaker translation review cycle: import any reviewer
+# edits from packages/i18n-catalogs/review/*.review.md (wording fixes →
+# catalogs / walkthrough overlays, sign-offs → *.review.json trackers),
+# then regenerate the sheets so signed-off entries drop out. See the
+# header comments in packages/i18n-catalogs/scripts/{import,export}-review-md.ts.
+sync-reviews:
+	@pnpm --filter @a-conversa/i18n-catalogs run review:import
+	@pnpm --filter @a-conversa/i18n-catalogs run review:export
 
 # List currently-unblocked leaf tasks, grouped by milestone. Uses tj3
 # (TaskJuggler) to resolve the WBS dep graph — see the header comment in

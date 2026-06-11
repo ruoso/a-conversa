@@ -22,7 +22,9 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "check": "tsx scripts/check-parity.ts"
+    "check": "tsx scripts/check-parity.ts",
+    "review:export": "tsx scripts/export-review-md.ts",
+    "review:import": "tsx scripts/import-review-md.ts"
   },
   "dependencies": {
     "i18next": "26.1.0",
