@@ -634,6 +634,31 @@ describe('createServer — rate-limit lockdown (CodeQL js/missing-rate-limiting)
     );
   });
 
+  it('keeps the /readyz allow-list past the per-IP ceiling (readiness probes stay free)', async () => {
+    // Railway's deploy-health probe and the external uptime monitor
+    // hit `/readyz` continuously (ADR 0033); a throttled readiness
+    // probe reads as an outage. Same predicate exemption as
+    // `/healthz`. We assert 503 (not 429): a bare test instance has
+    // no DB and never ran the migration gate, so 503 is the route's
+    // honest answer — the pin is that the status stays the *route's*
+    // answer at every iteration instead of flipping to 429.
+    await withEnv(
+      { RATE_LIMIT_MAX_PER_WINDOW: '2', RATE_LIMIT_TIME_WINDOW_MS: '60000' },
+      async () => {
+        const app = await createServer({ logger: false });
+        await app.ready();
+        try {
+          for (let i = 0; i < 5; i += 1) {
+            const response = await app.inject({ method: 'GET', url: '/readyz' });
+            expect(response.statusCode).toBe(503);
+          }
+        } finally {
+          await app.close();
+        }
+      },
+    );
+  });
+
   it('leaves under-threshold requests unaffected (regression)', async () => {
     // With the default ceiling and a single GET, the rate-limit hook
     // is a no-op — the route's normal status (401 here, because the

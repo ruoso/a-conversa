@@ -155,6 +155,8 @@ task deployment "Deployment" {
     task health_and_readiness_endpoints "/healthz and /readyz" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/health_and_readiness_endpoints.md"
     }
     task uptime_monitoring "External uptime monitoring config" {
       effort 0.5d
