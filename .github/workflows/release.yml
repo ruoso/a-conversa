@@ -1,28 +1,43 @@
-# a-conversa — tagged-release image publish pipeline
+# a-conversa — tag-gated release pipeline
 #
-# Owned by foundation.ci.ci_image_publish. Fires on `v*` tag pushes,
-# builds the multi-stage application image (per ADR 0015), and pushes
-# it to GitHub Container Registry (ghcr.io) under
-# `ghcr.io/<repo-owner>/aconversa-app`.
+# Owned by foundation.ci.ci_image_publish (the ghcr publish; see
+# tasks/refinements/foundation/ci_image_publish.md) and
+# deployment.release_process.release_versioning (the gate; ADR 0034;
+# tasks/refinements/deployment/release_versioning.md).
+# Fires on `v*` tag pushes. Per ADR 0034 the tag is the ONLY path to
+# production, so before anything publishes the `gate` job verifies:
 #
-# Tagging strategy (refinement: tasks/refinements/foundation/ci_image_publish.md):
+#   1. the tag matches the calendar-versioning format
+#      `vYYYY.MM.DD[.N]` (zero-padded; ADR 0034 — no semver),
+#   2. the tagged commit is on `main` (no off-branch releases),
+#   3. CHANGELOG.md carries an entry for this exact version
+#      (the same-commit rule),
+#   4. the ghcr image tag for this version does NOT already exist —
+#      a re-cut/force-pushed tag cannot overwrite a published
+#      release (tags are immutable; a fix gets a new tag).
 #
-#   - Every `vMAJOR.MINOR.PATCH` tag → image tag `MAJOR.MINOR.PATCH`
-#     (docker/metadata-action's `{{version}}` strips the leading `v`).
-#   - Non-pre-release tags also get `:latest`. A pre-release is detected
-#     by the presence of `-` in the git ref (e.g. `v1.0.0-beta.1`); those
-#     deliberately do NOT move `:latest`.
+# The `test` job then re-runs the smoke suites (unit + behavior) on
+# the tagged commit. The full Playwright e2e suite is deliberately
+# NOT re-run here: gate check 2 guarantees the commit landed on main
+# through ci.yml, which includes the e2e job — the smoke re-run only
+# covers the gap of a skipped/cancelled CI run. Rationale:
+# tasks/refinements/deployment/release_versioning.md.
 #
-# Caveat — ADR-0015 stub entry: the application image entry point is
-# still the placeholder banner-and-exit-0 from ADR 0015 until
-# backend.api_skeleton lands the real server bootstrap. v0.x foundation
-# tags publish anyway because the value of this task right now is the
-# *pipeline* (auth to ghcr, semver tag mapping, buildx + GHA cache, no
-# `:latest` on pre-releases) — backend.api_skeleton swaps the meaningful
-# body into the image without touching this workflow.
+# `publish` builds the multi-stage application image (ADR 0015) and
+# pushes it to ghcr.io under `ghcr.io/<repo-owner>/aconversa-app`.
+# Railway does NOT consume that image — per ADR 0031 it builds the
+# Dockerfile itself; the Railway deploy job is appended after publish
+# by the operator-executed prod_railway_app_service step (it needs
+# the RAILWAY_TOKEN secret). The ghcr publish stays as the public
+# open-source artifact.
 #
-# Mirrors ci.yml's `setup` + `build` jobs for Node/Corepack/pnpm and the
-# buildx step. Keep them in lockstep when one moves.
+# Image tagging: every `vYYYY.MM.DD[.N]` tag publishes
+# `:YYYY.MM.DD[.N]` (the `match` pattern strips the leading `v`;
+# calendar versions are not valid semver — leading zeros — so
+# `type=semver` cannot parse them) plus `:latest`.
+#
+# Mirrors ci.yml's `setup` + `build` jobs for Node/Corepack/pnpm and
+# the buildx step. Keep them in lockstep when one moves.
 
 name: Release
 
@@ -32,16 +47,123 @@ on:
       - 'v*'
 
 # `packages: write` is required for `docker/login-action` to push to
-# ghcr.io with the workflow's GITHUB_TOKEN. `contents: read` is the
-# default and matches ci.yml.
+# ghcr.io with the workflow's GITHUB_TOKEN (and lets the gate job
+# inspect existing manifests). `contents: read` is the default and
+# matches ci.yml.
 permissions:
   contents: read
   packages: write
 
 jobs:
+  gate:
+    name: Tag gate (format, main ancestry, changelog, no re-cut)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history — ancestry check needs main)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify calendar-versioning tag format
+        # ADR 0034: vYYYY.MM.DD with optional same-day counter .N.
+        # Zero-padding is enforced so lexicographic tag order equals
+        # chronological order.
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?$'; then
+            echo "::error::Tag '$TAG' does not match the calendar-versioning format vYYYY.MM.DD[.N] (ADR 0034)." >&2
+            exit 1
+          fi
+
+      - name: Verify the tagged commit is on main
+        # ADR 0034: tags are cut from main only. `--is-ancestor`
+        # accepts the commit itself and any commit main has absorbed.
+        run: |
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tagged commit $GITHUB_SHA is not on main; releases are cut from main only (ADR 0034)." >&2
+            exit 1
+          fi
+
+      - name: Verify CHANGELOG.md entry for this version
+        # The same-commit rule: the entry (## YYYY.MM.DD[.N] heading)
+        # lands in the commit that gets tagged.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ESCAPED=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
+          if ! grep -qE "^## ${ESCAPED}([^0-9.]|$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## ${VERSION}' entry; add it in the tagged commit (ADR 0034)." >&2
+            exit 1
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to re-cut an already-published release
+        # A workflow cannot block `git push --force` to a tag ref,
+        # but it CAN make a re-cut tag inert by refusing to overwrite
+        # the published artifact. (The operator additionally enables
+        # GitHub tag protection for v*; this check is the layer that
+        # doesn't depend on the repo setting.)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          OWNER=$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${OWNER}/aconversa-app:${VERSION}"
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "::error::${IMAGE} already exists — tags are immutable (ADR 0034); cut a new tag instead." >&2
+            exit 1
+          fi
+          echo "OK: ${IMAGE} not yet published."
+
+  test:
+    name: Tests on the tagged commit (smoke suites)
+    runs-on: ubuntu-latest
+    needs: gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20 with Corepack
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          HUSKY: '0'
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit + integration smoke suites
+        run: pnpm run test:smoke
+
+      - name: Behavior (Cucumber) smoke suites
+        run: pnpm run test:behavior:smoke
+
   publish:
     name: Build and publish image
     runs-on: ubuntu-latest
+    needs: [gate, test]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,20 +226,22 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute image tags and labels
-        # `{{version}}` strips the leading `v` so `v1.2.3` publishes as
-        # `:1.2.3`. The `latest` tag is gated on the ref NOT containing
-        # a hyphen — i.e. `v1.0.0-beta.1` publishes `:1.0.0-beta.1` only,
-        # while `v1.0.0` publishes both `:1.0.0` and `:latest`. The image
-        # name is forced lowercase via the `${{ github.repository_owner }}`
-        # context (GitHub usernames/orgs are already case-insensitive,
-        # but ghcr.io requires the path segment lowercase on push).
+        # The `match` pattern strips the leading `v` so `v2026.06.01`
+        # publishes as `:2026.06.01`. Calendar versions are not valid
+        # semver (leading zeros), so the previous `type=semver` mapping
+        # cannot parse them. The gate job has already enforced the
+        # calver format, so every tag reaching this job also gets
+        # `:latest`. The image name is forced lowercase via the
+        # `${{ github.repository_owner }}` context (GitHub usernames /
+        # orgs are already case-insensitive, but ghcr.io requires the
+        # path segment lowercase on push).
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/aconversa-app
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+            type=match,pattern=v(.*),group=1
+            type=raw,value=latest
 
       - name: Build and push application image
         # Same multi-stage Dockerfile as ci_build (ADR 0015), this time

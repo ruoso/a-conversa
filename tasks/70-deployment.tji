@@ -195,6 +195,8 @@ task deployment "Deployment" {
     task release_versioning "Versioning scheme (semver, tags, changelog)" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/release_versioning.md (calendar versioning per ADR 0034, not semver)"
     }
     task release_runbook "Release runbook" {
       effort 1d
