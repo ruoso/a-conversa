@@ -150,3 +150,32 @@ Three phases (`scripts/load-test.ts`):
 
 (none — all decided)
 
+## Status
+
+**Done** — 2026-06-12. Landed as:
+
+- [`scripts/load-test.ts`](../../../scripts/load-test.ts) +
+  `make load-test` +
+  [`.github/workflows/load-test.yml`](../../../.github/workflows/load-test.yml)
+  (`workflow_dispatch`); `ws@8` added to root devDependencies.
+- **Executed on a GitHub runner**
+  ([run 27416778865](https://github.com/ruoso/a-conversa/actions/runs/27416778865),
+  via a temporary branch push trigger, removed after the run; the
+  sandbox's network policy blocks registry pulls, same as the
+  rollback rehearsal). The first execution
+  ([run 27416147206](https://github.com/ruoso/a-conversa/actions/runs/27416147206))
+  surfaced that anonymous catch-up is v0-forbidden — recorded above
+  in What-this-is / Inputs / Constraints; the harness was adjusted
+  (authenticated timed connections + one anonymous subscriber pinned
+  in the fan-out) and the rerun passed all floors.
+- **Measured** (ubuntu-latest, fresh `make up` stack, defaults):
+  - Phase A ingest: **1505 events in 0.54 s ≈ 2797 events/s**
+    aggregate over 5 concurrent walkthrough creations (floor: 50).
+  - Phase B audience: **50/50 subscribers caught up**, p50 239 ms /
+    p95 272 ms over an 11-event catch-up (floor: p95 ≤ 5 s).
+  - Phase C fan-out: **73.0 proposes/s** round-trip (100
+    sequence-gated proposes, 300 events appended, 1.37 s) with
+    **15300/15300 `event-applied` frames delivered** across all 51
+    subscribers including the anonymous viewer (floor: 5/s, full
+    delivery).
+- `complete 100` marker in [tasks/70-deployment.tji](../../70-deployment.tji); tj3 parse clean.

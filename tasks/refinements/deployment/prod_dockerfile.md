@@ -118,3 +118,24 @@ Concretely:
 
 (none — all decided)
 
+## Status
+
+**Done** — 2026-06-12. Landed as:
+
+- [`Dockerfile`](../../../Dockerfile) — new `prod-deps` stage
+  (server-closure-filtered `--prod --ignore-scripts` install);
+  runtime stage copies the installed tree and no longer touches
+  corepack/pnpm; production posture (NODE_ENV / USER node / EXPOSE /
+  plain-node entry + in-server signal handlers) documented in the
+  stage comments.
+- [ADR 0015 Amendment](../../../docs/adr/0015-dockerfile-multi-stage-pnpm-corepack.md)
+  recording that the deferred production pass landed.
+- **Validated on a GitHub runner** together with the minimization
+  sibling: the rollback-rehearsal workflow
+  ([run 27416778829](https://github.com/ruoso/a-conversa/actions/runs/27416778829))
+  built the reworked image from the working tree, booted the full
+  compose stack through migrations to `/readyz` 200, and passed the
+  complete rollback drill. The same run's load-test sibling
+  ([run 27416778865](https://github.com/ruoso/a-conversa/actions/runs/27416778865))
+  exercised the image under load.
+- `complete 100` marker in [tasks/70-deployment.tji](../../70-deployment.tji); tj3 parse clean.

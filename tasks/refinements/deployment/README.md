@@ -74,7 +74,16 @@ refinements when scheduled. The repo-only leaves among them (no
 secrets, no privileged access) are tracked as milestone
 `m_predeploy_agent_work` (M9-prep) in
 [`tasks/99-milestones.tji`](../../99-milestones.tji), so agents can
-clear them in parallel with the operator chain above. Their **human touchpoints**, for planning:
+clear them in parallel with the operator chain above. That batch
+shipped 2026-06-11/12; its refinements live in this directory too:
+
+- [`structured_logging.md`](structured_logging.md), [`error_tracking.md`](error_tracking.md), [`basic_metrics.md`](basic_metrics.md), [`health_and_readiness_endpoints.md`](health_and_readiness_endpoints.md) — observability code side (ADR 0033; `docs/observability.md`).
+- [`migration_safety_checks.md`](migration_safety_checks.md), [`rollback_strategy.md`](rollback_strategy.md) — migration discipline (ADR 0034; `docs/rollback-strategy.md`, `make rehearse-rollback`).
+- [`release_versioning.md`](release_versioning.md), [`release_runbook.md`](release_runbook.md), [`release_rollback_runbook.md`](release_rollback_runbook.md) — release process (ADR 0034; `CHANGELOG.md`, the `release.yml` tag gate, `docs/runbooks/`).
+- [`prod_dockerfile.md`](prod_dockerfile.md), [`prod_image_minimization.md`](prod_image_minimization.md) — the production image pass (ADR 0015 Amendments).
+- [`load_test.md`](load_test.md) — the capacity drill (`make load-test`).
+
+Their **human touchpoints**, for planning:
 
 - `observability.error_tracking` — operator creates the Sentry account/project and sets `SENTRY_DSN` (absence is non-fatal per ADR 0033, so the app service can go live without it).
 - `observability.uptime_monitoring` — operator configures the external probe (Sentry uptime or BetterStack) and alert routing.
