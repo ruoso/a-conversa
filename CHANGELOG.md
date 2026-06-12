@@ -25,6 +25,22 @@ lives in the git log and the project WBS (`tasks/`).
 
 ## Unreleased
 
+## 2026.06.12.1
+
+Production-auth pivot and the first tag-triggered deploy.
+
+- **Dex replaces Authelia as the production OIDC issuer**
+  ([ADR 0048](docs/adr/0048-production-oauth-dex-identity-broker.md),
+  superseding ADR 0032): first execution found Authelia ships no
+  upstream-federation (OIDC Relying Party) role, so production now
+  runs `ghcr.io/dexidp/dex:v2.44.0` at `auth.a-conversa.org`,
+  federating to Google. No application code changes — the backend's
+  generic OIDC client is exactly what made the swap cheap (a2187830).
+- **`release.yml` gains the deploy job**: gate → test → publish →
+  `railway up --service app --ci` from the tag checkout, making the
+  `v*` tag the only path to production per ADR 0034 (90488b17). This
+  release is the first to exercise it.
+
 ## 2026.06.12
 
 First release — the complete MVP (milestones M1–M8 plus the
