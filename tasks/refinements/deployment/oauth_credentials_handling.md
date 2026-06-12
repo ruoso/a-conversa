@@ -105,3 +105,12 @@ this per-provider pattern being repeatable.
   `dex`-service Variable expanded into the connector block, one
   redirect URI per provider. This document is the template; extend
   the table when they land.
+
+## Status
+
+**Done — 2026-06-12.** Invariants in force since the Dex bring-up
+(symmetric secret in exactly the two named Variables, Google secret
+Dex-side only, two-store rule). Both rotation procedures consolidated
+into [`docs/runbooks/secret-rotation.md`](../../../docs/runbooks/secret-rotation.md)
+(§1 app↔Dex, §2 Google) and drilled by the operator against
+production on 2026-06-12.

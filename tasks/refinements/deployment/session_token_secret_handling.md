@@ -76,3 +76,11 @@ session-token refinement's deferred denylist note).
 
 (none — all decided; the denylist table remains deferred per the
 session-token refinement)
+
+## Status
+
+**Done — 2026-06-12.** Production value set per the constraints
+(48-byte generated, two stores, boot gates proving the floor).
+Rotation procedure is [`docs/runbooks/secret-rotation.md`](../../../docs/runbooks/secret-rotation.md) §4;
+drilled by the operator on 2026-06-12 — existing session bounced
+through Dex/Google and recovered without a credential prompt.

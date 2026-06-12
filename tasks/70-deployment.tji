@@ -109,20 +109,23 @@ task deployment "Deployment" {
     task oauth_credentials_handling "Handle OAuth credentials safely" {
       effort 1d
       allocate team
+      complete 100
       depends !secret_storage_choice
-      note "Refinement: tasks/refinements/deployment/oauth_credentials_handling.md"
+      note "Rotation runbook: docs/runbooks/secret-rotation.md §1–2. Refinement: tasks/refinements/deployment/oauth_credentials_handling.md"
     }
     task postgres_credentials_handling "Handle Postgres credentials safely" {
       effort 0.5d
       allocate team
+      complete 100
       depends !secret_storage_choice
-      note "Refinement: tasks/refinements/deployment/postgres_credentials_handling.md"
+      note "Rotation runbook: docs/runbooks/secret-rotation.md §3, §5. Refinement: tasks/refinements/deployment/postgres_credentials_handling.md"
     }
     task session_token_secret_handling "Handle session-token signing secret" {
       effort 0.5d
       allocate team
+      complete 100
       depends !secret_storage_choice
-      note "Refinement: tasks/refinements/deployment/session_token_secret_handling.md"
+      note "Rotation runbook: docs/runbooks/secret-rotation.md §4. Refinement: tasks/refinements/deployment/session_token_secret_handling.md"
     }
   }
 
@@ -208,7 +211,9 @@ task deployment "Deployment" {
     task backup_restore_test "Periodic backup-restore validation" {
       effort 1d
       allocate team
+      complete 100
       depends !postgres_backup
+      note "Runbook: docs/runbooks/backup-restore.md (scratch-target restore, data verification, RPO/RTO recording). First validation executed by the operator 2026-06-12."
     }
   }
 
@@ -283,7 +288,9 @@ task deployment "Deployment" {
     task backup_restore_drill "Backup-restore drill" {
       effort 1d
       allocate team
+      complete 100
       depends !!backup_and_export.backup_restore_test
+      note "Rehearsed 2026-06-12 per docs/runbooks/backup-restore.md — the first full restore-and-verify run against a scratch target doubles as the pre-launch drill."
     }
     task load_test "Basic load test (concurrent sessions, event-rate ceiling)" {
       effort 2d

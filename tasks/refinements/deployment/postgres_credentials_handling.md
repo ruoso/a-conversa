@@ -86,3 +86,12 @@ against the live add-on's actual behavior** before it's needed.
 
 - **Railway's app-credential rotation mechanism** at execution time —
   resolved during the rehearsal required by the acceptance criteria.
+
+## Status
+
+**Done — 2026-06-12.** Reference-never-copy verified in the
+networking audit; the Dex-role rotation procedure is
+[`docs/runbooks/secret-rotation.md`](../../../docs/runbooks/secret-rotation.md) §3,
+drilled by the operator on 2026-06-12. The Railway-managed
+app-credential rotation path is runbook §5 — the operator records the
+dashboard's actual mechanism there as part of the drill.
