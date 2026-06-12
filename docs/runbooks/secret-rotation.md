@@ -70,12 +70,19 @@ app user manually without first confirming how the add-on stores what
 it serves through the reference — diverging them bricks the next app
 boot.
 
-- Preferred: Railway's own credential-rotation control on the
-  Postgres service, if the dashboard offers it; the reference updates
-  automatically — restart `app` to pick it up.
-- Findings from the rehearsal (which mechanism the dashboard offers
-  today, exact steps): **recorded by the operator during the drill —
-  keep this section updated when Railway's UI changes.**
+- **Drill finding (2026-06-12):** the dashboard offers **no
+  integrated rotation** — the rotation is manual. The procedure:
+  1. `railway connect postgres` → `ALTER ROLE <appuser> PASSWORD
+     '<new>';`
+  2. Manually update the Postgres service's own credential
+     Variable(s) to the same value, so what
+     `${{Postgres.DATABASE_URL}}` serves matches the role again —
+     this is the step that prevents the reference/role divergence
+     warned about above.
+  3. Restart `app` to pick up the reference's new resolution.
+  Between steps 1 and 3 the app's *new* connections fail (existing
+  pooled ones keep working) — do this outside show hours.
+  Keep this section updated if Railway's UI grows a rotation control.
 
 ## After any rotation
 
