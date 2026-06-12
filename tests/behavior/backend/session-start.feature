@@ -47,10 +47,12 @@ Feature: POST /sessions/:id/start — moderator advances the session out of the 
     # 2, so the subsequent session-mode-changed event lands at sequence 3.
     When I POST /sessions with topic "A debate to start" and privacy "public"
     Then the response status is 201
+    And the sessions row's started_at is null
     When I POST /sessions/:id/start for the most recently created session
     Then the response status is 200
     And the response body's topic is "A debate to start"
     And the response body's endedAt is null
+    And the sessions row's started_at is not null
     And the session_events table has 1 row at sequence 3 with kind "session-mode-changed"
     And the session-mode-changed event's payload new_mode is "operate"
     And the session-mode-changed event's payload previous_mode is "lobby"
@@ -71,11 +73,14 @@ Feature: POST /sessions/:id/start — moderator advances the session out of the 
     Then the response status is 201
     When I POST /sessions/:id/start for the most recently created session
     Then the response status is 200
+    And the sessions row's started_at is not null
     And the session_events table has 1 row at sequence 3 with kind "session-mode-changed"
+    When I remember the sessions row's started_at
     When I POST /sessions/:id/start for the most recently created session
     Then the response status is 200
     And the session_events table has 1 row at sequence 3 with kind "session-mode-changed"
     And only 1 session-mode-changed event exists for the most recently created session
+    And the sessions row's started_at is unchanged
 
   Scenario: Ended session is rejected with 422 session-already-ended
     When I POST /sessions with topic "End me before start" and privacy "public"

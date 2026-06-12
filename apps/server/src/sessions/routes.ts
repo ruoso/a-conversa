@@ -2108,6 +2108,17 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
         //    WS broadcast emit.
         appendedEvents.push(await appendSessionEvent(client, envelope));
 
+        // 8. Maintain the denormalized `started_at` read-model column
+        //    in the SAME transaction as the operate event it mirrors
+        //    (the single writer for the column; sd_schema Decision D2).
+        //    Set only here, on the lobby -> operate transition — the
+        //    idempotency short-circuit above (step 4) returns before
+        //    reaching this point on a re-POST, so `started_at` is
+        //    set-once and never moves. `NOW()` is the server insert
+        //    clock, consistent with the backfill's
+        //    `session_events.created_at` source (sd_schema Decision D3).
+        await client.query(`UPDATE sessions SET started_at = NOW() WHERE id = $1`, [existing.id]);
+
         return existing;
       });
 

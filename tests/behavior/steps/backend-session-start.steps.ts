@@ -254,6 +254,53 @@ Then(
   },
 );
 
+// ------------------------------------------------------------
+// started_at read-model column (sd_schema): set-once on the
+// lobby -> operate transition, in the same transaction as the
+// operate event. Read directly off the `sessions` row.
+// ------------------------------------------------------------
+
+async function latestSessionStartedAt(
+  world: AConversaWorld,
+): Promise<Date | string | null | undefined> {
+  const res = (await world.db.query(
+    'SELECT started_at FROM sessions ORDER BY created_at DESC LIMIT 1',
+  )) as QueryResult<{ started_at: Date | string | null }>;
+  return res.rows[0]?.started_at;
+}
+
+Then("the sessions row's started_at is null", async function (this: AConversaWorld) {
+  const startedAt = await latestSessionStartedAt(this);
+  assert.notEqual(startedAt, undefined, 'expected a sessions row to exist');
+  assert.equal(startedAt, null, 'expected sessions.started_at to be null (lobby session)');
+});
+
+Then("the sessions row's started_at is not null", async function (this: AConversaWorld) {
+  const startedAt = await latestSessionStartedAt(this);
+  assert.notEqual(startedAt, undefined, 'expected a sessions row to exist');
+  assert.notEqual(startedAt, null, 'expected sessions.started_at to be non-null after start');
+});
+
+When("I remember the sessions row's started_at", async function (this: AConversaWorld) {
+  const startedAt = await latestSessionStartedAt(this);
+  assert.notEqual(startedAt, null, 'expected sessions.started_at to be set before remembering it');
+  // Normalize to a comparable primitive (pglite may return a Date).
+  this.scratch['rememberedStartedAt'] =
+    startedAt instanceof Date ? startedAt.toISOString() : String(startedAt);
+});
+
+Then("the sessions row's started_at is unchanged", async function (this: AConversaWorld) {
+  const remembered = this.scratch['rememberedStartedAt'];
+  assert.ok(remembered, 'no remembered started_at — preceding When missing');
+  const startedAt = await latestSessionStartedAt(this);
+  const current = startedAt instanceof Date ? startedAt.toISOString() : String(startedAt);
+  assert.equal(
+    current,
+    remembered,
+    'expected sessions.started_at to be set-once (unchanged across idempotent re-POST)',
+  );
+});
+
 Then(
   'no session-mode-changed event has been recorded for the most recently created session',
   async function (this: AConversaWorld) {

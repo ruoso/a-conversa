@@ -75,6 +75,20 @@ export async function applyMigrations(db: PGlite): Promise<AppliedMigration[]> {
   return applied;
 }
 
+// Re-execute a single migration's SQL against an already-migrated db.
+// The `Before` hook applies every migration (including the latest) to a
+// fresh pglite before any scenario runs, so backfill scenarios cannot
+// observe pre-migration state directly. Instead they seed
+// pre-migration-shaped rows (a historical session with a
+// `session-mode-changed -> operate` event and `started_at IS NULL`)
+// and then re-run the migration to assert its backfill UPDATE. Safe
+// only for migrations written idempotently (IF NOT EXISTS DDL plus a
+// re-runnable backfill), which is the house style (cf. 0002, 0018).
+export async function reexecMigration(db: PGlite, name: string): Promise<void> {
+  const sql = await readFile(join(MIGRATIONS_DIR, `${name}.sql`), 'utf8');
+  await db.exec(sql);
+}
+
 // Exposed for assertions that need the canonical migration count.
 export async function listMigrationFiles(): Promise<string[]> {
   const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });

@@ -109,6 +109,10 @@ interface SessionRow {
   topic: string;
   created_at: Date;
   ended_at: Date | null;
+  // Denormalized session-start read-model column (sd_schema), nullable
+  // until the lobby -> operate transition stamps it. Optional in the
+  // test interface so seeders that predate the column keep working.
+  started_at?: Date | null;
 }
 
 interface SessionEventRow {
@@ -530,6 +534,25 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       const updated: SessionRow = {
         ...(store.sessions[idx] as SessionRow),
         ended_at: new Date('2026-05-10T12:00:01.000Z'),
+      };
+      store.sessions[idx] = updated;
+      return Promise.resolve({ rows: [updated] as unknown as TRow[] });
+    }
+    if (text.includes('UPDATE sessions') && text.includes('SET started_at = NOW()')) {
+      // The `POST /sessions/:id/start` denormalized read-model write
+      // (sd_schema). Sets `started_at` once on the lobby -> operate
+      // transition, in the same transaction as the operate event. The
+      // handler ignores the result (no RETURNING), so we mutate the
+      // store row in place — pinned to a deterministic timestamp for
+      // hermetic tests; production reads NOW() from the DB clock.
+      const targetId = p[0] as string;
+      const idx = store.sessions.findIndex((s) => s.id === targetId);
+      if (idx < 0) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      const updated: SessionRow = {
+        ...(store.sessions[idx] as SessionRow),
+        started_at: new Date('2026-05-10T12:00:01.000Z'),
       };
       store.sessions[idx] = updated;
       return Promise.resolve({ rows: [updated] as unknown as TRow[] });

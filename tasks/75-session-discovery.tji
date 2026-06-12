@@ -26,6 +26,7 @@ task session_discovery "Session discovery" {
   task sd_schema "Schema: session start time + listing indexes" {
     effort 1d
     allocate team
+    complete 100
     note "Add `started_at TIMESTAMPTZ NULL` to sessions, set when the lobby → operate transition lands (the session-mode-changed event, ADR 0028) — the sessions table has no started marker today (lifecycle is created_at/ended_at only, mode lives in the event log). Backfill existing rows from their session-mode-changed events in the same migration. Listing indexes: partial index on (privacy='public' AND started_at IS NOT NULL) ordered started_at DESC for the public list; whatever the topic-search decision needs (ILIKE on a trigram index vs. full-text — refinement decides; topic is short free text). Forward-only per ADR 0020; safety linter applies."
   }
 
