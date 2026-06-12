@@ -58,6 +58,7 @@ task deployment "Deployment" {
       task prod_railway_internal_networking "Internal service discovery + cross-service Variables" {
         effort 0.5d
         allocate team
+        complete 100
         depends !prod_railway_app_service, !prod_railway_dex_service
         note "Configure Railway's per-project internal DNS so app reaches dex and postgres without public-internet hops. Wire shared/referenced Variables so each service sees the env it needs. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_internal_networking.md"
       }
@@ -77,17 +78,20 @@ task deployment "Deployment" {
     task prod_oauth_config "Production OAuth provider configuration" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/deployment/prod_oauth_config.md"
     }
     task prod_tls_and_domain "TLS termination and domain configuration" {
       effort 1d
       allocate team
+      complete 100
       depends !prod_compose_file
       note "Refinement: tasks/refinements/deployment/prod_tls_and_domain.md"
     }
     task prod_reverse_proxy "Reverse proxy / ingress configuration" {
       effort 1d
       allocate team
+      complete 100
       depends !prod_tls_and_domain
       note "Refinement: tasks/refinements/deployment/prod_reverse_proxy.md"
     }
@@ -98,6 +102,7 @@ task deployment "Deployment" {
     task secret_storage_choice "Choose secret-storage approach (env vars, vault, etc.)" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/deployment/secret_storage_choice.md"
     }
     task oauth_credentials_handling "Handle OAuth credentials safely" {
@@ -129,7 +134,9 @@ task deployment "Deployment" {
     task migration_runner_in_prod "Migration runner integration with deploy" {
       effort 1d
       allocate team
+      complete 100
       depends !!prod_compose
+      note "Satisfied by the startup migration gate (apps/server/src/migrate-startup.ts): it ran green against the production database on the first deploys, including tag-deploy v2026.06.12.1 — nothing serves until migrations apply, which is the integration this leaf asked for. No separate runner exists or is needed (ADR 0034)."
     }
     task migration_safety_checks "Pre-deploy migration safety checks" {
       effort 1d
@@ -187,6 +194,8 @@ task deployment "Deployment" {
     task postgres_backup "Postgres backup scheduling" {
       effort 1d
       allocate team
+      complete 100
+      note "Railway add-on daily backups verified enabled in the dashboard (2026-06-12; per ADR 0031 they ship with the add-on — nothing to schedule). Restore validation is the separate backup_restore_test leaf."
     }
     task event_log_export "Per-session event-log export to a portable format" {
       effort 2d

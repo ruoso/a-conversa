@@ -113,3 +113,14 @@ handle this.
   operator knows; it determines whether the Cloudflare fallback is
   needed. Record the answer (registrar, DNS host, account) in the
   password manager and the eventual admin runbook.
+
+## Status
+
+**Done — 2026-06-12.** Both custom domains live with Railway-issued
+certificates: `a-conversa.org` → `app`, `auth.a-conversa.org` → `dex`
+(CNAME confirmed resolving to the Railway edge). External smoke
+checks pass — `/healthz` on the apex and the OIDC discovery document
+on the auth subdomain reporting issuer `https://auth.a-conversa.org`
+— and the app's discovery against the issuer succeeds (verified by
+working production sign-in). No SMTP DNS records, per the ADR 0048
+rework.

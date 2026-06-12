@@ -112,3 +112,17 @@ under Decisions.
   both connect on the first try, and if `pg` misbehaves, the
   documented fix is adding `?host=` family hints rather than falling
   back to the public URL.
+
+## Status
+
+**Done — 2026-06-12.** Audit passed: `DATABASE_URL` (app) and
+`ACONVERSA_PGHOST` (dex) resolve to `railway.internal` hosts,
+`DATABASE_PUBLIC_URL` is referenced by no service, and all references
+resolve. One execution finding worth keeping: the app's first OIDC
+discovery fetches against `https://auth.a-conversa.org` returned a
+non-200 from inside the container while external probes returned 200;
+it began working after the operator added a dex-service reference
+Variable on the `app` service. The causal mechanism is unconfirmed —
+the reference forces a redeploy, which coincided with the custom
+domain's edge-binding propagation — but the reference is kept either
+way. The app→Dex hop stays on the public edge per the Decision above.

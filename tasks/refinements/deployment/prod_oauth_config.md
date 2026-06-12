@@ -155,3 +155,12 @@ app Variables.
 - **Consent-screen logo.** Uploading a logo can itself trigger
   Google's verification flow; skip the logo at launch unless the
   flow is acceptable.
+
+## Status
+
+**Done — 2026-06-12.** Google client live with the Dex callback
+(`https://auth.a-conversa.org/callback`), consent screen published
+with non-sensitive scopes; the end-to-end verification walk passed
+against production (Google → Dex → `a-conversa.org` callback →
+screen-name flow → authenticated shell, session persistent across
+reload). Executed against the ADR 0048 (Dex) rework of this task.

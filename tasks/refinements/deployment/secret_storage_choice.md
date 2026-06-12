@@ -68,3 +68,11 @@ of rules.
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done — 2026-06-12.** Railway Variables + password manager
+conventions in force across every executed provisioning task
+(`ACONVERSA_*` naming per the Dex service refinement; two-store rule
+observed for all generated secrets). The variable-name inventory
+lands with `prod_railway_iac_committed`.

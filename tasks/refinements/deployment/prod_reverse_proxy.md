@@ -89,3 +89,11 @@ App behaviors that interact with a proxy:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done — 2026-06-12.** Verified Railway's edge as the sole proxy
+layer: WebSocket connects and holds through the edge, auth redirect
+hops stay on the two public hostnames (no `railway.internal` /
+`up.railway.app` leakage), and `aconversa-session` carries
+`Secure; HttpOnly` scoped to `a-conversa.org`.
