@@ -186,7 +186,9 @@ task deployment "Deployment" {
     task uptime_monitoring "External uptime monitoring config" {
       effort 0.5d
       allocate team
+      complete 100
       depends !health_and_readiness_endpoints, !!prod_compose
+      note "Resolved 2026-06-12 on reduced scope: Railway Pro threshold monitors (email + in-app) at v1; the external synthetic probe (and the deploy-state webhook receiver) is a recorded deferral to revisit before the first public show — see ADR 0033 Amendments. Refinement: tasks/refinements/deployment/uptime_monitoring.md"
     }
   }
 

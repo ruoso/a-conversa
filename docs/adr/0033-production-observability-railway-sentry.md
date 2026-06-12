@@ -153,3 +153,13 @@ All five refinements cite this ADR as their decision input.
   per Railway service, Sentry for the app, no aggregator — is
   unchanged; references here to "app↔Authelia" interactions read
   "app↔Dex".
+- **2026-06-12 (uptime monitoring)** — Resolved on a different shape
+  than this ADR sketched: the operator upgraded to Railway **Pro**
+  (which did not exist in this ADR's calculus) and v1 ships
+  Railway-native threshold monitors (CPU/RAM/disk/egress, email +
+  in-app) instead of an external probe. The Sentry-uptime /
+  BetterStack synthetic probe of `/readyz` and the OIDC issuer is a
+  **recorded deferral** — Railway cannot observe user-vantage
+  failures (DNS/TLS/edge/issuer-down), so the probe is to be
+  revisited before the first public show. Details and rationale in
+  `tasks/refinements/deployment/uptime_monitoring.md`.
