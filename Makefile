@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate down down-v logs ps seed sync-reviews unblocked clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate rehearse-rollback down down-v logs ps seed sync-reviews unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -38,6 +38,9 @@ help:
 	@echo "                      graph-view/shell) from SOURCE, so editing any of them hot-reloads live."
 	@echo "  make migrate        apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "                      — usually unnecessary now that 'make up' applies migrations on app startup"
+	@echo "  make rehearse-rollback  rehearse the production image-rollback path (ADR 0034) in an isolated"
+	@echo "                      compose project: candidate boots + migrates, then PREVIOUS_IMAGE boots"
+	@echo "                      against the superset schema (see docs/rollback-strategy.md)"
 	@echo "  make down           stop the dev stack (volumes preserved)"
 	@echo "  make down-v         stop the dev stack and drop named volumes"
 	@echo "  make logs           tail logs from the dev stack"
@@ -287,6 +290,14 @@ migrate:
 	@set -a; . ./.env; set +a; \
 		DATABASE_URL=$$(echo "$$DATABASE_URL" | sed 's|@postgres:|@localhost:|') \
 		pnpm run migrate
+
+# Rollback rehearsal (ADR 0034 / docs/rollback-strategy.md). Runs in
+# its own compose project + volumes on host port 3300, so a running
+# dev stack is untouched. Pass PREVIOUS_IMAGE=<image> to rehearse
+# against a real previous release; default is mechanics mode (the
+# candidate rolls back to itself over a synthetic superset schema).
+rehearse-rollback:
+	@./scripts/rehearse-rollback.sh
 
 down:
 	@docker compose down
