@@ -41,6 +41,7 @@ export const TEST_UUIDS = {
   nodeC: '66666666-6666-4666-8666-666666666663',
   edgeA: '77777777-7777-4777-8777-777777777771',
   annA: '88888888-8888-4888-8888-888888888881',
+  annB: '88888888-8888-4888-8888-888888888882',
 } as const;
 
 // Insert a baseline user row so other steps can FK to it without
