@@ -1,0 +1,65 @@
+# a-conversa — on-demand rollback rehearsal (ADR 0034).
+#
+# Owned by deployment.prod_migrations.rollback_strategy
+# (tasks/refinements/deployment/rollback_strategy.md; strategy doc:
+# docs/rollback-strategy.md). Runs `make rehearse-rollback` on a
+# GitHub runner: builds the candidate image from the checked-out
+# tree, boots it on a fresh compose stack (migrations apply, /readyz
+# 200), injects the synthetic superset row into pgmigrations, then
+# boots PREVIOUS_IMAGE against the same database and asserts the
+# startup migration gate takes its no-migrations-to-run path and the
+# server reaches healthy.
+#
+# Manual-dispatch only — this is a pre-release drill (the release
+# runbook calls for it ahead of any release whose migration is not
+# trivially additive), not a per-merge gate: per-merge correctness is
+# ci.yml's job, and the drill's subject (image rollback against a
+# superset schema) only changes when migrations or the gate change.
+#
+# `previous_image` input: leave empty for mechanics mode (the
+# candidate rolls back to itself over the synthetic superset schema);
+# set it to the genuine previous release image
+# (ghcr.io/<owner>/aconversa-app:<version>) for a real-pair drill.
+
+name: Rollback rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_image:
+        description: 'Image to roll back TO (empty = mechanics mode: candidate rolls back to itself)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  # Lets the rehearsal pull a previous release image from ghcr.io
+  # when `previous_image` points there.
+  packages: read
+
+jobs:
+  rehearse:
+    name: Image-rollback drill (compose)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        # Only needed when previous_image points at ghcr.io; harmless
+        # otherwise.
+        if: ${{ inputs.previous_image != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the rehearsal
+        env:
+          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+        run: |
+          # An empty PREVIOUS_IMAGE must be unset so the script's
+          # mechanics-mode default applies.
+          if [ -z "$PREVIOUS_IMAGE" ]; then unset PREVIOUS_IMAGE; fi
+          make rehearse-rollback
