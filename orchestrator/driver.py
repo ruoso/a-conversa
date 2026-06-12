@@ -932,9 +932,9 @@ class ClaudeCli(AgentCli):
     name = "claude"
     default_models = {
         "orchestrator": "claude-sonnet-4-6",
-        "refinement_writer": "claude-opus-4.8",
-        "implementer": "claude-opus-4.8",
-        "fixer": "claude-opus-4.8",
+        "refinement_writer": "claude-opus-4-8",
+        "implementer": "claude-opus-4-8",
+        "fixer": "claude-opus-4-8",
         "closer": "claude-sonnet-4-6",
         "default": "claude-opus-4-8",
     }
