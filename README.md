@@ -4,7 +4,7 @@ A debate platform that helps people debate by classifying every statement and on
 
 ## Status
 
-**M0–M6 complete; M7 (End-to-end debate) in flight.** Foundation, data model + methodology engine, backend MVP, the M3-lobby manual smoke, and the Moderator, Participant, and Audience MVPs (M0–M6) have all landed (see [milestones in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the End-to-end debate milestone (M7 — 314/337 leaves done), and the Replay MVP (M8 — 314/357 leaves done). The orchestrator that drives WBS work is described in [orchestrator/README.md](orchestrator/README.md); `make unblocked` is the canonical "what's ready to pick up." If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
+**Live in production at [www.a-conversa.org](https://www.a-conversa.org); milestones M0–M9 complete.** The full MVP — data model + methodology engine, backend, the Moderator / Participant / Audience surfaces, end-to-end debate, replay, landing page — shipped through M8, and M9 (Deployment ready, 2026-06-12) put it in production: Railway-hosted (app + [Dex](https://dexidp.io/) OIDC broker + Postgres, [ADR 0031](docs/adr/0031-production-hosting-railway-paas.md) / [ADR 0048](docs/adr/0048-production-oauth-dex-identity-broker.md)), tag-gated deploys ([ADR 0034](docs/adr/0034-releases-calendar-versioning-tag-deploy.md)), drilled runbooks under [docs/runbooks/](docs/runbooks/). All gating work for M10 (first show recorded) is done; the milestone closes when the show itself is recorded. The orchestrator that drives WBS work is described in [orchestrator/README.md](orchestrator/README.md); `make unblocked` is the canonical "what's ready to pick up." If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions live in [docs/adr/](docs/adr/).
 
 ## What is a-conversa?
 
@@ -24,7 +24,9 @@ For a worked example of the format in action, see [docs/example-walkthrough.md](
 - [docs/participant-ui.md](docs/participant-ui.md) — debater tablet flows: per-facet voting (the central design), withdrawal, axiom-mark proposal, view of structural diagnostics and change history.
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate exercising the design.
 - [docs/adr/](docs/adr/) — Architecture Decision Records. Each ADR captures one architectural choice (status, context, decision, consequences); see [docs/adr/README.md](docs/adr/README.md) for the convention.
-- [ORCHESTRATOR.md](ORCHESTRATOR.md) — startup prompt for an orchestrator session that drives the WBS forward, using `make unblocked` as its sole window into "what's ready to pick up."
+- [docs/runbooks/](docs/runbooks/) — production operations: [admin.md](docs/runbooks/admin.md) is the entry point (orientation, task index, troubleshooting playbook); release, rollback, post-deploy smoke, secret rotation, and backup restore each have their own. The production topology record is [infra/railway/README.md](infra/railway/README.md).
+- [docs/obs-setup.md](docs/obs-setup.md) — OBS Browser-source setup for show producers broadcasting the audience surface.
+- [orchestrator/README.md](orchestrator/README.md) — the orchestrator that drives the WBS forward, using `make unblocked` as its sole window into "what's ready to pick up."
 
 ## Localization
 
@@ -32,7 +34,7 @@ UI localized in **English (US)**, **Brazilian Portuguese**, and **Latin American
 
 ## Local development
 
-Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). A three-service Docker Compose stack (`app + postgres + authelia`) is brought up by `make up`; see [docs/dev-environment.md](docs/dev-environment.md) for the full walkthrough.
+Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). A three-service Docker Compose stack (`app + postgres + authelia` — Authelia is the dev-only mock OIDC issuer; production uses Dex per [ADR 0048](docs/adr/0048-production-oauth-dex-identity-broker.md)) is brought up by `make up`; see [docs/dev-environment.md](docs/dev-environment.md) for the full walkthrough.
 
 ### Prerequisites
 
@@ -52,7 +54,7 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 - Lint / format / typecheck: `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`.
 - Stack-validation smokes: `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}`.
 - `make up` brings up Postgres + Authelia + the app container (auto-creating `.env` from `.env.example` if absent), waits for healthy, and prints the URL banner. The app listens on `:3000` and `/healthz` flips to 200 once startup migrations finish. `make up-prod-mode` is the same boot without the dev override (used by CI). `make down` / `make down-v` tear the stack down (the latter also drops named volumes).
-- `make seed` — currently a stub that errors clearly; real seeding lands with [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md).
+- `make seed` — seeds the dev database with an example session (`FIXTURE=<name>` selects one); see [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md).
 
 ### End-to-end tests
 
