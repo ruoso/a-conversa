@@ -203,6 +203,48 @@ describe('WsSubscriptionRegistry — public-API invariants', () => {
 // Refinement:
 //   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
 
+describe('WsSubscriptionRegistry — stats() (metrics emitter source)', () => {
+  // Read-only counts consumed by deployment.observability.basic_metrics;
+  // pinned here so the metrics line's wsSubscribedSessions /
+  // wsSubscriptions fields can't drift from the registry's actual
+  // bookkeeping. Refinement: tasks/refinements/deployment/basic_metrics.md.
+
+  it('reports zeros on a fresh registry', () => {
+    const reg = new WsSubscriptionRegistry();
+    expect(reg.stats()).toEqual({ sessions: 0, connections: 0, subscriptions: 0 });
+  });
+
+  it('counts sessions, connections, and pairs after subscribes', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X);
+    reg.subscribe(CONN_A, SESS_Y);
+    reg.subscribe(CONN_B, SESS_X);
+
+    expect(reg.stats()).toEqual({ sessions: 2, connections: 2, subscriptions: 3 });
+  });
+
+  it('is idempotent under duplicate subscribes', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X);
+    reg.subscribe(CONN_A, SESS_X);
+
+    expect(reg.stats()).toEqual({ sessions: 1, connections: 1, subscriptions: 1 });
+  });
+
+  it('tracks unsubscribe and removeConnection back down to zero', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X);
+    reg.subscribe(CONN_B, SESS_X);
+    reg.subscribe(CONN_B, SESS_Y);
+
+    reg.unsubscribe(CONN_A, SESS_X);
+    expect(reg.stats()).toEqual({ sessions: 2, connections: 1, subscriptions: 2 });
+
+    reg.removeConnection(CONN_B);
+    expect(reg.stats()).toEqual({ sessions: 0, connections: 0, subscriptions: 0 });
+  });
+});
+
 const USER_A = '11111111-1111-4111-8111-1111111111a1';
 const USER_B = '22222222-2222-4222-8222-2222222222b2';
 

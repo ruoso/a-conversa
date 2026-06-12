@@ -249,6 +249,27 @@ export class WsSubscriptionRegistry {
   }
 
   /**
+   * Read-only registry counts — consumed by the metrics emitter
+   * (`deployment.observability.basic_metrics`) for the periodic
+   * `app-metrics` log line. `sessions` / `connections` are the two
+   * index sizes (empty sets are pruned, so the sizes are exact);
+   * `subscriptions` is the total number of (connection, session)
+   * pairs, summed over `bySession` (both indices hold the same pairs
+   * by the class invariant, so either side sums to the same total).
+   */
+  stats(): { sessions: number; connections: number; subscriptions: number } {
+    let subscriptions = 0;
+    for (const conns of this.bySession.values()) {
+      subscriptions += conns.size;
+    }
+    return {
+      sessions: this.bySession.size,
+      connections: this.byConnection.size,
+      subscriptions,
+    };
+  }
+
+  /**
    * Add a (connection, session) subscription. Idempotent — calling
    * twice with the same tuple is a no-op (the underlying `Set.add`
    * is itself idempotent; both indices remain consistent).
