@@ -23,12 +23,6 @@ on:
         description: 'Baseline ref (empty = origin/main; for a release drill use the tag in production)'
         required: false
         default: ''
-  # TEMPORARY: dispatch requires the workflow on the default branch;
-  # this branch trigger exists only to execute the drill once for the
-  # migration_dry_run task and is removed in the completion commit.
-  push:
-    branches:
-      - claude/wbs-audit-open-leaves
 
 permissions:
   contents: read
