@@ -82,7 +82,8 @@
     "overrides": {
       "vitest>vite": "^7.0.0",
       "vite-node>vite": "^7.0.0",
-      "@vitest/mocker>vite": "^7.0.0"
+      "@vitest/mocker>vite": "^7.0.0",
+      "esbuild": ">=0.28.1"
     }
   }
 }
