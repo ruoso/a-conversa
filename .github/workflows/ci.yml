@@ -146,6 +146,14 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+      - name: Migration safety linter
+        # ADR 0034 backward-compat invariant: every migration must be
+        # tolerable by the previous deployed image (rollback is image
+        # rollback). PR-time enforcement point; also wired into
+        # `pnpm run check`. Refinement:
+        # tasks/refinements/deployment/migration_safety_checks.md.
+        run: pnpm run lint:migrations
+
   format:
     # Split out of `checks` by foundation.ci.ci_format. Runs
     # `pnpm format:check` (prettier --check .) against the whole repo.
