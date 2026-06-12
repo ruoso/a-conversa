@@ -30,6 +30,12 @@ on:
         description: 'Image to roll back TO (empty = mechanics mode: candidate rolls back to itself)'
         required: false
         default: ''
+  # TEMPORARY: validates the prod_dockerfile + prod_image_minimization
+  # rework on a runner (the agent sandbox cannot build images); removed
+  # in the completion commit together with the size-comparison step.
+  push:
+    branches:
+      - claude/m9-pre-milestone-tasks-wp8jk5
 
 permissions:
   contents: read
@@ -63,3 +69,23 @@ jobs:
           # mechanics-mode default applies.
           if [ -z "$PREVIOUS_IMAGE" ]; then unset PREVIOUS_IMAGE; fi
           make rehearse-rollback
+
+      - name: TEMPORARY — image size comparison + package-manager spot-check
+        # Validation evidence for prod_dockerfile + prod_image_minimization;
+        # removed in the completion commit with the temporary trigger above.
+        run: |
+          set -euo pipefail
+          echo "--- minimized image (working tree) ---"
+          docker image ls aconversa/app:rehearsal-candidate
+          echo "--- foundation image (pre-rework Dockerfile from origin/main) ---"
+          git fetch origin main --depth=1
+          git show FETCH_HEAD:Dockerfile > /tmp/old.Dockerfile
+          docker build -q -f /tmp/old.Dockerfile -t aconversa/app:pre-rework . >/dev/null
+          docker image ls aconversa/app:pre-rework
+          echo "--- package managers must be absent from the runtime image ---"
+          docker run --rm --entrypoint sh aconversa/app:rehearsal-candidate -c '
+            for t in npm npx pnpm corepack yarn; do
+              if command -v "$t" >/dev/null 2>&1; then echo "FOUND $t"; exit 1; fi
+            done
+            echo "no package managers present"
+            node --version'
