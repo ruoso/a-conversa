@@ -146,6 +146,8 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !structured_logging
+      complete 100
+      note "Refinement: tasks/refinements/deployment/error_tracking.md"
     }
     task basic_metrics "Basic metrics endpoint (request rates, WS connections, event-log lag)" {
       effort 1d
