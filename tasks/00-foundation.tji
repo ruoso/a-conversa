@@ -240,7 +240,8 @@ task foundation "Foundation" {
     task cucumber_v8_wasm_jit_crash "Node v24 + pglite WASM jit-crash in cucumber teardown" {
       effort 0.5d
       allocate team
-      note "Debt surfaced by fixer sub-agent during aud_axiom_mark_animation (commit audience.aud_axiom_mark_animation). Node v24 fatal V8 JIT crash in ThreadIsolation::UnregisterWasmAllocation during pglite WASM teardown; needs NODE_OPTIONS=--jitless workaround or Node version pin in test:behavior:smoke. See tasks/refinements/audience/aud_axiom_mark_animation.md Status block."
+      complete 100
+      note "Debt surfaced by fixer sub-agent during aud_axiom_mark_animation. RESOLVED by the Node-version-aware cucumber runner (scripts/run-cucumber.mjs, PR #15 / commit 33877a1): probes and forwards --no-memory-protection-keys and --no-wasm-code-gc, the latter disabling the WASM code-GC teardown path whose ThreadIsolation::UnregisterWasmAllocation assertion crashed Node v24; Node 20 (CI/Docker) neither needs nor accepts the flags and is unaffected. The leaf predated the fix and was never closed — marker added at the 2026-06-12 completion-desync audit (operator confirmed the crash is no longer observed; the related parking-lot item was already cleared)."
     }
   }
 }
