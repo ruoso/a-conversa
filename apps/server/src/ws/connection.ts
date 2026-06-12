@@ -609,6 +609,16 @@ function buildConnectionHandler(
 const openConnections = new Set<WsConnectionContext>();
 
 /**
+ * Read-only count of currently open WS connections — consumed by the
+ * metrics emitter (`deployment.observability.basic_metrics`) for the
+ * periodic `app-metrics` log line. Module-scoped like the set itself;
+ * see the trade-off note above about multi-instance conflation.
+ */
+export function countOpenWsConnections(): number {
+  return openConnections.size;
+}
+
+/**
  * Module-scoped per-user index: maps a user id to the set of open
  * `WsConnectionContext`s owned by that user. Maintained alongside
  * `openConnections` so `closeUserConnections(userId, ...)` is O(1) on

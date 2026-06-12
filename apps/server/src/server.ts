@@ -85,6 +85,7 @@ import { closeUserConnections } from './ws/connection.js';
 import { ApiError } from './errors.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
+import { metricsEmitterPlugin } from './metrics.js';
 import { openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { readyzPlugin } from './routes/readyz.js';
@@ -727,6 +728,15 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // second on every emit. Refinement:
   // tasks/refinements/backend/ws_proposal_status_broadcast.md.
   await app.register(wsProposalStatusBroadcastPlugin);
+
+  // Periodic application-metrics log line (ADR 0033: log lines, not
+  // a metrics pipeline). Emits one `app-metrics` info line per 60s
+  // with WS connection / subscription counts, event-loop delay, and
+  // process memory. The per-tick registry read is lazy, so the
+  // registration position is uncritical; it sits with the WS plugins
+  // whose bookkeeping it reports. Refinement:
+  // tasks/refinements/deployment/basic_metrics.md.
+  await app.register(metricsEmitterPlugin);
 
   // Static-frontends plugin — serves the root app at `/` plus the
   // surface bundles under `/_surfaces/*` from the same Fastify process

@@ -153,6 +153,8 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !structured_logging
+      complete 100
+      note "Refinement: tasks/refinements/deployment/basic_metrics.md (reshaped by ADR 0033: interval log lines, not an endpoint)"
     }
     task health_and_readiness_endpoints "/healthz and /readyz" {
       effort 0.5d

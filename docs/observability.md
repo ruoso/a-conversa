@@ -219,9 +219,47 @@ Railway treats a deploy as healthy only once `/readyz` returns 200,
 which makes migration failures visible to the deploy machinery
 (ADR 0033: "`/readyz` becomes the deploy gate").
 
-<!--
-Sections added by sibling deployment.observability tasks as they land:
+## Metrics
 
-## Metrics          — deployment.observability.basic_metrics
+_Owned by `deployment.observability.basic_metrics`
+([refinement](../tasks/refinements/deployment/basic_metrics.md))._
+
+There is no custom metrics pipeline in v1 (ADR 0033). Railway's
+dashboard covers service-level CPU / RAM / network / request rate.
+Application-level metrics are emitted as **structured log lines**:
+every 60 seconds the server logs one `info` line with
+`msg: "app-metrics"` and the data under a `metrics` bag
+([`apps/server/src/metrics.ts`](../apps/server/src/metrics.ts)).
+
+Field glossary — and what "bad" looks like:
+
+| Field                  | Meaning                                        | Worry when…                                          |
+| ---------------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| `wsConnections`        | open WebSocket connections                     | far above expected audience size, or stuck at 0 mid-show |
+| `wsSubscribedSessions` | sessions with ≥1 subscriber                    | 0 while a session is supposedly live                 |
+| `wsSubscriptions`      | total (connection, session) subscription pairs | grows without bound (leak: pairs not pruned on close) |
+| `eventLoopDelayP99Ms`  | p99 event-loop delay over the past interval    | sustained tens of ms — the fan-out is saturating     |
+| `eventLoopDelayMaxMs`  | max event-loop delay over the past interval    | spikes into hundreds of ms                           |
+| `rssBytes`             | resident set size                              | monotonic growth across hours (leak)                 |
+| `heapUsedBytes`        | V8 heap in use                                 | same                                                 |
+| `uptimeSec`            | process uptime                                 | unexpected resets (crash-loop)                       |
+
+Useful Railway log-search queries (substring match on the raw line):
+
+- `app-metrics` — the full metrics time series.
+- `"level":50` / `"level":40` — errors / warnings (see Logs above).
+- `responseTime` — request-completion lines; per-handler latency
+  lives here per-request rather than as an aggregated metric (the
+  refinement's Decisions explain why).
+
+Note on ADR 0033's "event-log lag" sketch: the event append →
+projection → broadcast path is synchronous in-process — there is no
+queue to lag — so the saturation signal emitted instead is
+event-loop delay. A future multi-instance bus would add a real queue
+depth field.
+
+<!--
+Section added by the remaining deployment.observability task when it lands:
+
 ## Uptime monitoring — deployment.observability.uptime_monitoring
 -->
