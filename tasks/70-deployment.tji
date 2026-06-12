@@ -10,11 +10,15 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends root_app.root_moderator_cutover, backend.api_skeleton.serve_static_frontends_multi_surface
+      complete 100
+      note "Refinement: tasks/refinements/deployment/prod_dockerfile.md"
     }
     task prod_image_minimization "Minimize production image (size + attack surface)" {
       effort 1d
       allocate team
       depends !prod_dockerfile
+      complete 100
+      note "Refinement: tasks/refinements/deployment/prod_image_minimization.md"
     }
     task prod_image_publish "Publish image to a container registry on tagged release" {
       effort 1d
@@ -259,6 +263,8 @@ task deployment "Deployment" {
     task load_test "Basic load test (concurrent sessions, event-rate ceiling)" {
       effort 2d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/load_test.md"
     }
   }
 }

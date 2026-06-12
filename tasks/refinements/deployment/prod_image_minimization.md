@@ -101,3 +101,24 @@ Shrink the runtime image and its attack surface on top of the
 
 (none — all decided)
 
+## Status
+
+**Done** — 2026-06-12. Landed as:
+
+- [`Dockerfile`](../../../Dockerfile) — runtime stage hardening in a
+  single `RUN` layer: `apk upgrade --no-cache` + removal of the base
+  image's npm / corepack / yarn (lib dirs, `/usr/local/bin` symlinks,
+  `/opt/yarn*`).
+- **Validated on a GitHub runner** via the rollback-rehearsal
+  workflow ([run 27416778829](https://github.com/ruoso/a-conversa/actions/runs/27416778829),
+  temporary branch trigger + temporary size-comparison step, both
+  removed after the run): the minimized image built, applied all
+  migrations, served `/readyz` 200, and passed the full rollback
+  drill; the in-run spot-check printed "no package managers present"
+  (npm / npx / pnpm / corepack / yarn all absent) with `node
+  v20.20.2` still working as `USER node`.
+- **Sizes from the same run** (clean builder): foundation Dockerfile
+  **288 MB** → reworked + hardened **226 MB** (−22%; the
+  server-filtered prod-deps restructure from `prod_dockerfile` plus
+  this task's base-layer tooling removal).
+- `complete 100` marker in [tasks/70-deployment.tji](../../70-deployment.tji); tj3 parse clean.

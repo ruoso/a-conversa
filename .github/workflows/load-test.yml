@@ -26,12 +26,6 @@ on:
         description: 'Sequence-gated proposes in the fan-out phase (default 100)'
         required: false
         default: ''
-  # TEMPORARY: dispatch requires the workflow on the default branch;
-  # this branch trigger exists only to execute the load test once for
-  # the load_test task and is removed in the completion commit.
-  push:
-    branches:
-      - claude/m9-pre-milestone-tasks-wp8jk5
 
 permissions:
   contents: read
