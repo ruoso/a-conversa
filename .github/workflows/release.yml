@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history — ancestry check needs main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -99,7 +99,7 @@ jobs:
           fi
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -127,12 +127,12 @@ jobs:
     needs: gate
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node 20 with Corepack
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Enable Corepack and activate pnpm
         run: |
@@ -168,14 +168,14 @@ jobs:
     needs: [gate, test]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node 20 with Corepack
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Node major matches ADR 0001 (LTS we run) and ADR 0015
           # (Dockerfile base image). Keep these in lockstep with ci.yml.
-          node-version: '20'
+          node-version: '24'
 
       - name: Enable Corepack and activate pnpm
         # `packageManager` in root package.json pins pnpm@9.15.4 (ADR
@@ -221,7 +221,7 @@ jobs:
         # Uses the workflow's auto-provisioned GITHUB_TOKEN; works for
         # any repo without extra secrets. `packages: write` (above) is
         # what makes the token actually able to push.
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -279,7 +279,7 @@ jobs:
     environment: production
     steps:
       - name: Checkout the tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli
