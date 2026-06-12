@@ -25,6 +25,22 @@ lives in the git log and the project WBS (`tasks/`).
 
 ## Unreleased
 
+## 2026.06.12.2
+
+Config-as-code for the app service's deploy settings.
+
+- **`railway.json` committed** (27f98715): Railway now reads the app
+  service's build/deploy settings from the repo on every deploy —
+  notably the healthcheck moves from `/healthz` to **`/readyz`**, so
+  a deployment doesn't go live until the database is reachable and
+  migrations have applied (ADR 0033's deploy gate). This release is
+  the first to exercise it, closing `prod_railway_iac_committed`;
+  the narrative manifest lives at `infra/railway/README.md`.
+- Record reconciliation with live production: `www.a-conversa.org` is
+  the canonical hostname (ADR 0031 amendment, 4b1352fd), and the full
+  e2e suite was validated against Postgres 18, the prod add-on's
+  major (36cd0574).
+
 ## 2026.06.12.1
 
 Production-auth pivot and the first tag-triggered deploy.
