@@ -44,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           # Same Node major as ci.yml / release.yml (ADR 0001 / 0015).
