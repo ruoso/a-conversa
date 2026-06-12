@@ -38,9 +38,14 @@ to `main` never deploy.
      migration is additive, or carries a justified
      `-- migration-safety: allow …` marker you have personally read.
    - If any new migration is **not trivially additive**: run the
-     migration dry run against a prod-sized local stack
-     (`deployment_tests.migration_dry_run`), and run the rollback
-     rehearsal against the image currently in production:
+     migration dry run against a prod-sized local stack —
+
+     ```sh
+     BASE_REF=v<current-prod-version> make migration-dry-run
+     ```
+
+     — and run the rollback rehearsal against the image currently in
+     production:
 
      ```sh
      PREVIOUS_IMAGE=ghcr.io/ruoso/aconversa-app:<current-prod-version> make rehearse-rollback

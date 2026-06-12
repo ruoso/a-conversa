@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate load-test rehearse-rollback down down-v logs ps seed sync-reviews unblocked clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate load-test migration-dry-run rehearse-rollback down down-v logs ps seed sync-reviews unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -40,6 +40,8 @@ help:
 	@echo "                      — usually unnecessary now that 'make up' applies migrations on app startup"
 	@echo "  make load-test      run the basic load test against a running dev stack ('make up' first):"
 	@echo "                      ingest throughput, concurrent anonymous subscribers, live fan-out ceiling"
+	@echo "  make migration-dry-run  apply the working tree's pending migrations (vs BASE_REF, default"
+	@echo "                      origin/main) against an isolated prod-sized-seeded postgres (ADR 0034)"
 	@echo "  make rehearse-rollback  rehearse the production image-rollback path (ADR 0034) in an isolated"
 	@echo "                      compose project: candidate boots + migrates, then PREVIOUS_IMAGE boots"
 	@echo "                      against the superset schema (see docs/rollback-strategy.md)"
@@ -299,6 +301,14 @@ migrate:
 # LOAD_PROPOSES + floor thresholds; see scripts/load-test.ts.
 load-test:
 	@pnpm exec tsx scripts/load-test.ts
+
+# Migration dry run (deployment_tests.migration_dry_run; ADR 0034).
+# Isolated postgres on port 5499 in its own compose project; baseline
+# = BASE_REF (default origin/main), candidate = working tree, applied
+# through the real node-pg-migrate runner over generate_series-seeded
+# prod-sized data. See scripts/migration-dry-run.sh for the knobs.
+migration-dry-run:
+	@./scripts/migration-dry-run.sh
 
 # Rollback rehearsal (ADR 0034 / docs/rollback-strategy.md). Runs in
 # its own compose project + volumes on host port 3300, so a running
