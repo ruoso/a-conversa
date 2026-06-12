@@ -17,9 +17,11 @@
 //      debate through the production validate->append->broadcast
 //      write path in one transaction. Metric: events appended / s.
 //   B. Concurrent audience — one `structured` synthetic session
-//      flipped public; LOAD_SUBSCRIBERS anonymous WS connections,
-//      each subscribe + catch-up(0). Metrics: success rate,
-//      time-to-caught-up p50/p95.
+//      flipped public; LOAD_SUBSCRIBERS authenticated WS connections,
+//      each subscribe + catch-up(0) (anonymous catch-up is deferred
+//      in v0 — the handler answers `forbidden`), plus one anonymous
+//      subscriber kept in the fan-out accounting (ADR 0029 path).
+//      Metrics: success rate, time-to-caught-up p50/p95.
 //   C. Live fan-out ceiling — with the phase-B subscribers attached,
 //      the authenticated host connection drives LOAD_PROPOSES
 //      wording-only capture-node proposes in the protocol's
@@ -254,12 +256,19 @@ async function main(): Promise<void> {
     psql(`SELECT count(*) FROM session_events WHERE session_id = '${publicSessionId}';`),
   );
 
+  // The timed audience connections authenticate: anonymous catch-up /
+  // snapshot are deferred in v0 (the handlers answer `forbidden`; see
+  // aud_anonymous_ws_subscribe + the catch-up handler's anonymous
+  // branch), and the subscribe + broadcast fan-out path is identical
+  // for anonymous vs authenticated connections. One extra ANONYMOUS
+  // subscriber (no catch-up) is kept in the fan-out accounting so the
+  // ADR 0029 path stays exercised end to end.
   const subscribers: WsClient[] = [];
   const caughtUpMs: number[] = [];
   await Promise.all(
     Array.from({ length: SUBSCRIBERS }, async () => {
       const t0 = Date.now();
-      const client = new WsClient();
+      const client = new WsClient(cookie);
       subscribers.push(client);
       await client.open();
       const sub = await client.request('subscribe', { sessionId: publicSessionId });
@@ -272,6 +281,13 @@ async function main(): Promise<void> {
       caughtUpMs.push(Date.now() - t0);
     }),
   );
+  const anonViewer = new WsClient();
+  await anonViewer.open();
+  const anonSub = await anonViewer.request('subscribe', { sessionId: publicSessionId });
+  if (anonSub.type !== 'subscribed') fail(`anonymous subscribe answered ${anonSub.type}`);
+  // Joins the fan-out delivery accounting (its baseline is 0 replay
+  // frames — it never catches up), but not the catch-up timings.
+  subscribers.push(anonViewer);
   caughtUpMs.sort((a, b) => a - b);
   const caughtP50 = percentile(caughtUpMs, 50);
   const caughtP95 = percentile(caughtUpMs, 95);
@@ -366,7 +382,7 @@ async function main(): Promise<void> {
       eventsAppended: appendedByC,
       wallMs: cWallMs,
       proposesPerSec: round2(proposeRps),
-      broadcastFramesExpected: expectedPerSubscriber * SUBSCRIBERS,
+      broadcastFramesExpected: expectedPerSubscriber * subscribers.length,
       broadcastFramesDelivered: deliveredTotal,
       subscribersFullyDelivered: fullyDelivered,
     },
@@ -385,8 +401,10 @@ async function main(): Promise<void> {
   if (proposeRps < MIN_PROPOSE_RPS) {
     fail(`propose rate ${String(round2(proposeRps))}/s below floor ${String(MIN_PROPOSE_RPS)}`);
   }
-  if (fullyDelivered !== SUBSCRIBERS) {
-    fail(`${String(fullyDelivered)}/${String(SUBSCRIBERS)} subscribers received every broadcast`);
+  if (fullyDelivered !== subscribers.length) {
+    fail(
+      `${String(fullyDelivered)}/${String(subscribers.length)} subscribers received every broadcast`,
+    );
   }
   console.log('[load-test] PASS: all floors met');
 }

@@ -22,9 +22,13 @@ Three phases (`scripts/load-test.ts`):
    one transaction, per ADR 0041); measure events appended per
    second.
 2. **Concurrent audience** — flip a `structured` synthetic session
-   public, open N anonymous WebSocket connections (the ADR 0029
-   audience shape), each `subscribe` + `catch-up(sinceSequence: 0)`;
-   measure success rate and time-to-caught-up p50/p95.
+   public, open N WebSocket connections, each `subscribe` +
+   `catch-up(sinceSequence: 0)`; measure success rate and
+   time-to-caught-up p50/p95. The timed connections authenticate —
+   anonymous catch-up/snapshot are deferred in v0 (the handlers
+   answer `forbidden`; surfaced by the first runner execution) — and
+   one extra anonymous subscriber stays in the fan-out accounting so
+   the ADR 0029 path is exercised end to end.
 3. **Live fan-out ceiling** — with those N subscribers attached, an
    authenticated host connection drives wording-only `capture-node`
    proposes in a sequence-gated loop (the protocol intentionally
@@ -55,12 +59,14 @@ Three phases (`scripts/load-test.ts`):
   the stack's `SESSION_TOKEN_SECRET` — no browser, no Authelia round
   trip in the measured path.
 - **Audience shape**: anonymous WS upgrade + `subscribe` to a public
-  session (ADR 0029), `catch-up` from 0 (snapshot fallback above
-  `WS_CATCHUP_MAX_EVENTS=500` — the `structured` log is below it, so
-  the slice-replay path is what's measured). Caps that shape the
-  harness: catch-up rate limit (10/min/connection — one per
-  connection stays under it), subscription cap (32/connection — one
-  each).
+  session works (ADR 0029), but anonymous `catch-up` and `snapshot`
+  are v0-deferred (both handlers answer `forbidden` for
+  `connection.user === undefined`; a future `aud_anonymous_catch_up`
+  leaf owns the widening). `catch-up` from 0 takes the slice-replay
+  path below `WS_CATCHUP_MAX_EVENTS=500` — the `structured` log is
+  far below it. Caps that shape the harness: catch-up rate limit
+  (10/min/connection — one per connection stays under it),
+  subscription cap (32/connection — one each).
 - **Write shape**: `propose` with
   `{ kind: 'capture-node', node_id, wording }`, sequence-gated via
   `expectedSequence`, host-as-moderator authority (the synthetic
@@ -75,6 +81,11 @@ Three phases (`scripts/load-test.ts`):
   `LOAD_SUBSCRIBERS` (50), `LOAD_PROPOSES` (100), plus the floor
   thresholds. Prints a JSON metrics report; exits non-zero when any
   floor is violated.
+- **Audience connections authenticate for the timed catch-up**; the
+  broadcast fan-out path is connection-identity-agnostic (the
+  subscription registry delivers by connectionId), so the measured
+  ceiling holds for anonymous viewers too — pinned by the extra
+  anonymous subscriber in the delivery accounting.
 - **Floors** (deliberately generous — a failure means something is
   badly wrong, not that the hardware is modest):
   - ingest ≥ 50 events/s aggregate;
