@@ -1,4 +1,4 @@
-# Postgres credentials handling — managed app credential + Authelia role
+# Postgres credentials handling — managed app credential + Dex role
 
 **TaskJuggler entry**: [tasks/70-deployment.tji](../../70-deployment.tji) — task `deployment.prod_secrets.postgres_credentials_handling`
 **Effort estimate**: 0.5d
@@ -12,10 +12,12 @@ Handling rules for the two database credentials:
 1. **App credential** — generated and held by the Railway Postgres
    add-on; consumed by the `app` service **only** as the
    `${{Postgres.DATABASE_URL}}` reference.
-2. **Authelia role credential** — operator-generated (`openssl rand
+2. **Dex role credential** — operator-generated (`openssl rand
    -hex 24`, created in [`prod_postgres_config.md`](prod_postgres_config.md));
-   lives as the `authelia` service's `AUTHELIA_STORAGE_PASSWORD`
-   Variable + password manager.
+   lives as the `dex` service's `ACONVERSA_STORAGE_PASSWORD`
+   Variable + password manager. *(Variable name carried over from the
+   Authelia attempt; the `ACONVERSA_` naming convention is recorded in
+   [`prod_railway_dex_service.md`](prod_railway_dex_service.md).)*
 
 ## Why it needs to be done
 
@@ -37,7 +39,7 @@ rotatable without archaeology.
   (tunneled, no pasted URL). `DATABASE_PUBLIC_URL` stays unused; if an
   external tool ever genuinely needs it, that's a deliberate decision
   to record, not a convenience.
-- **Authelia's role** follows the two-store rule like any
+- **Dex's role** follows the two-store rule like any
   operator-generated secret, and stays least-privilege (its database
   only — verified in `prod_postgres_config` acceptance).
 - Pino redaction (backend-hardening) is the backstop against
@@ -46,12 +48,12 @@ rotatable without archaeology.
 
 ## Rotation procedures
 
-**Authelia role password:**
+**Dex role password:**
 
 1. Generate new value; `railway connect postgres` →
-   `ALTER ROLE authelia PASSWORD '<new>';`
-2. Update `AUTHELIA_STORAGE_PASSWORD` + password manager; restart
-   `authelia`; verify boot (storage connect) and a sign-in.
+   `ALTER ROLE dex PASSWORD '<new>';`
+2. Update `ACONVERSA_STORAGE_PASSWORD` + password manager; restart
+   `dex`; verify boot (storage connect) and a sign-in.
 
 **App credential** (Railway-managed): use Railway's credential
 rotation if the dashboard offers it (the `DATABASE_URL` reference
@@ -68,8 +70,8 @@ against the live add-on's actual behavior** before it's needed.
 - App-service Variables show `DATABASE_URL` as a reference; the
   resolved string exists nowhere else (dashboard search +
   password-manager review).
-- `AUTHELIA_STORAGE_PASSWORD` in both stores; role is least-privilege.
-- The Authelia-role rotation has been drilled once; the app-credential
+- `ACONVERSA_STORAGE_PASSWORD` in both stores; role is least-privilege.
+- The Dex-role rotation has been drilled once; the app-credential
   rotation path has been *investigated and written down* (which
   mechanism Railway offers, and the exact steps) in the password
   manager note / admin runbook.

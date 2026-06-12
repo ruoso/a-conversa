@@ -1,7 +1,7 @@
 # 0032 — Production OAuth: Authelia federating to Google (Microsoft / Facebook / GitHub post-v1)
 
 - **Date**: 2026-05-24
-- **Status**: Accepted
+- **Status**: Superseded by [ADR 0048](0048-production-oauth-dex-identity-broker.md)
 
 ## Context
 
@@ -160,3 +160,18 @@ This ADR commits to the federation shape. End-to-end verification
 (a browser session signing in via Google → Authelia → the app at
 `a-conversa.org`) belongs to the `deployment.prod_compose.prod_oauth_config`
 refinement, which cites this ADR as its decision input.
+
+## Amendments
+
+- **2026-06-12** — Superseded by [ADR 0048](0048-production-oauth-dex-identity-broker.md).
+  First execution of `prod_railway_authelia_service` discovered that
+  the central premise here is unimplementable: Authelia has no
+  upstream-federation (OIDC Relying Party) capability in any released
+  version — it is a planning-stage roadmap item upstream. The
+  decision's provider list and rationale (Google at v1; Microsoft /
+  Facebook / GitHub post-v1; Apple skipped), the broker pattern, and
+  the Railway/Postgres service shape carry forward into ADR 0048 with
+  Dex in the issuer role; the Authelia-specific production
+  configuration (SMTP notifier, operator-managed JWKS, the
+  `authelia.a-conversa.org` subdomain, the pbkdf2 client-secret
+  digest) does not.

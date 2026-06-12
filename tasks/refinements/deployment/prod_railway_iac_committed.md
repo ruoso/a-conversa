@@ -45,23 +45,23 @@ gap is filled with a documented manifest next to the native file.
    for the `app` service per Railway's current schema: Dockerfile
    builder, healthcheck path (`/healthz`, later `/readyz`), restart
    policy. If Railway supports per-service config files for
-   image-based services, add the `authelia` service's (image pin,
+   image-based services, add the `dex` service's (image pin,
    start command, target port); otherwise it goes in step 2.
 2. **The manifest.** Author `infra/railway/README.md` documenting, for
    each of the three services: source (repo+Dockerfile / image pin /
    add-on), target port, healthcheck, custom domain, start command,
    and the **complete Variable-name inventory** with one line each:
    where the value comes from (generation command, console, or
-   reference) and which refinement documents it. The Authelia config
+   reference) and which refinement documents it. The Dex config
    *template* is already in
-   [`prod_railway_authelia_service.md`](prod_railway_authelia_service.md);
+   [`prod_railway_dex_service.md`](prod_railway_dex_service.md);
    link, don't duplicate.
 3. **Cross-check against live.** Walk the dashboard service-by-service
    confirming the manifest misses nothing (Variables view vs
    inventory, domains vs manifest, start commands vs manifest).
 4. **Secret-leak gate.** Before committing, grep the new files for
    every secret's first 8 characters (from the password manager) and
-   for telltale patterns (`postgres://`, `-----BEGIN`, `$pbkdf2`,
+   for telltale patterns (`postgres://`, `-----BEGIN`,
    `GOCSPX-` (Google secret prefix)). The committed artifacts must
    contain names, references, and structure only.
 5. **Commit** per the repo ritual (doc/config-only commit).

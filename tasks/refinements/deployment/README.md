@@ -12,7 +12,7 @@ history, or an agent transcript.
 Decision inputs for the whole set:
 
 - [ADR 0031](../../../docs/adr/0031-production-hosting-railway-paas.md) — Railway PaaS, project `aconversa`, three services.
-- [ADR 0032](../../../docs/adr/0032-production-oauth-authelia-federation.md) — Authelia federating to Google; prod Authelia config shape.
+- [ADR 0048](../../../docs/adr/0048-production-oauth-dex-identity-broker.md) — Dex federating to Google; prod Dex config shape. *(Supersedes [ADR 0032](../../../docs/adr/0032-production-oauth-authelia-federation.md), whose Authelia-federation premise failed on first execution, 2026-06-12.)*
 - [ADR 0033](../../../docs/adr/0033-production-observability-railway-sentry.md) — Railway logs + Sentry; `/readyz` as deploy gate.
 - [ADR 0034](../../../docs/adr/0034-releases-calendar-versioning-tag-deploy.md) — calendar versioning, tag-triggered deploy, image rollback.
 
@@ -23,20 +23,19 @@ Before starting, the operator needs:
 - [ ] **Railway account** with a payment method (Hobby plan, ~$5/mo base). Billing is a personal/financial action — only the operator can do this.
 - [ ] **GitHub admin** on the a-conversa repository (to install the Railway GitHub App and add an Actions secret).
 - [ ] **Google account** with access to Google Cloud Console (to create the OAuth client).
-- [ ] **Registrar / DNS control for `a-conversa.org`** (to add the CNAME/ALIAS records and, later, the SMTP sender-domain records).
-- [ ] **An SMTP provider account** (operator's pick — see `prod_railway_authelia_service.md`) for Authelia's notifier.
+- [ ] **Registrar / DNS control for `a-conversa.org`** (to add the CNAME/ALIAS records).
 - [ ] **A password manager** (or equivalent offline secret store) to hold the canonical copy of every generated secret.
-- [ ] **A local machine with Docker and `openssl`** to run the secret-generation commands (the Authelia image generates its own key material).
+- [ ] **A local machine with `openssl`** to run the secret-generation commands.
 
 ## Execution order
 
 The dependency-correct order for a first production bring-up:
 
 1. [`prod_railway_project_bootstrap.md`](prod_railway_project_bootstrap.md) — account, CLI, project, GitHub link.
-2. [`prod_postgres_config.md`](prod_postgres_config.md) — Postgres add-on, the `authelia` database + role.
+2. [`prod_postgres_config.md`](prod_postgres_config.md) — Postgres add-on, the `dex` database + role.
 3. [`prod_oauth_config.md`](prod_oauth_config.md) (Google Cloud Console half) — can run in parallel with 2; produces the Google client ID/secret that step 5 consumes.
 4. [`prod_railway_app_service.md`](prod_railway_app_service.md) — `app` service, Variables, tag-triggered deploy.
-5. [`prod_railway_authelia_service.md`](prod_railway_authelia_service.md) — `authelia` service, prod config rendering, all Authelia secrets.
+5. [`prod_railway_dex_service.md`](prod_railway_dex_service.md) — `dex` service, prod config rendering, the client secret (plus teardown of the superseded `authelia` service attempt).
 6. [`prod_railway_internal_networking.md`](prod_railway_internal_networking.md) — private-network audit + cross-service Variable references.
 7. [`prod_tls_and_domain.md`](prod_tls_and_domain.md) — custom domains + DNS records; flips the public URLs live.
 8. [`prod_reverse_proxy.md`](prod_reverse_proxy.md) — verification only (satisfied by Railway's edge).

@@ -145,3 +145,16 @@ Railway project that actually serves traffic) belongs to the
 `deployment.prod_container.prod_dockerfile` refinement and the
 subsequent Railway-config refinement, both of which cite this ADR
 as their platform decision.
+
+## Amendments
+
+- **2026-06-12** — The identity service in the Decision's service
+  list changed: [ADR 0048](0048-production-oauth-dex-identity-broker.md)
+  supersedes ADR 0032, replacing the `authelia` service
+  (`authelia/authelia:4.39` at `authelia.a-conversa.org`) with a
+  `dex` service (upstream `ghcr.io/dexidp/dex` image, tag pinned at
+  refinement execution) at `auth.a-conversa.org`. Authelia shipped
+  no upstream-federation role to configure. The platform decision —
+  three Railway services, private networking, Variables for secrets,
+  CNAME-per-service TLS — is unchanged; the secret inventory shrinks
+  (no SMTP credentials, no operator-managed JWKS; see ADR 0048).

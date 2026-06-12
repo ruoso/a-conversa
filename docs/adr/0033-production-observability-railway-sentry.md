@@ -142,3 +142,14 @@ configuration are owned by:
   BetterStack as the probe and documents the alert routing.
 
 All five refinements cite this ADR as their decision input.
+
+## Amendments
+
+- **2026-06-12** — The second service's log stream is now the `dex`
+  service tab, not `authelia`: [ADR 0048](0048-production-oauth-dex-identity-broker.md)
+  supersedes ADR 0032 and replaces Authelia with Dex in production
+  (Dex logs JSON via its `logger` config — exact key confirmed at
+  refinement execution). The observability shape — one log stream
+  per Railway service, Sentry for the app, no aggregator — is
+  unchanged; references here to "app↔Authelia" interactions read
+  "app↔Dex".

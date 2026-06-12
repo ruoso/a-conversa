@@ -81,9 +81,9 @@ Existing artifacts:
    | `NODE_ENV` | `production` | arms the boot gates (secret denylist, Secure cookies, CORS/WS-origin lockdown, JSON logs) |
    | `APP_BASE_URL` | `https://a-conversa.org` | OIDC redirect URI derives from it (`/api/auth/callback`) |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | **reference**, not a pasted value — [`postgres_credentials_handling.md`](postgres_credentials_handling.md) |
-   | `OIDC_ISSUER_URL` | `https://authelia.a-conversa.org` | must equal the issuer Authelia advertises |
-   | `OIDC_CLIENT_ID` | `aconversa-app-prod` | per ADR 0032 |
-   | `OIDC_CLIENT_SECRET` | plaintext half of the generated pair | [`oauth_credentials_handling.md`](oauth_credentials_handling.md) — the digest half goes in the Authelia config |
+   | `OIDC_ISSUER_URL` | `https://auth.a-conversa.org` | must equal the issuer Dex advertises (ADR 0048) |
+   | `OIDC_CLIENT_ID` | `aconversa-app-prod` | per ADR 0048 |
+   | `OIDC_CLIENT_SECRET` | the symmetric app↔Dex client secret | [`oauth_credentials_handling.md`](oauth_credentials_handling.md) — same value as the `dex` service's `ACONVERSA_OAUTH_CLIENT_SECRET` |
    | `SESSION_TOKEN_SECRET` | `openssl rand -base64 48` | [`session_token_secret_handling.md`](session_token_secret_handling.md) |
    | `SENTRY_DSN` | *(leave unset)* | set when `observability.error_tracking` lands; absence is non-fatal (ADR 0033) |
 
@@ -102,7 +102,7 @@ Existing artifacts:
    delegated to an implementation agent — it contains no secret
    values, only the secret *name*.
 7. **First deploy.** Trigger a deploy (manual "Deploy" on the service,
-   or cut the first tag once the Authelia service is also up). Watch
+   or cut the first tag once the Dex service is also up). Watch
    the deploy logs for the migration gate applying all migrations,
    then the listen line; confirm the service goes healthy on
    `/healthz`.

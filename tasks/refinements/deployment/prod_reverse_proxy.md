@@ -52,9 +52,10 @@ App behaviors that interact with a proxy:
    verification walk, watch the network tab — every redirect hop is on
    the two public hostnames; nothing leaks `railway.internal`,
    `*.up.railway.app`, or a port number.
-3. **Cookie flags:** in devtools, confirm `aconversa-session` and
-   `authelia_session` are `Secure; HttpOnly` and scoped to
-   `a-conversa.org`.
+3. **Cookie flags:** in devtools, confirm `aconversa-session` is
+   `Secure; HttpOnly` and scoped to `a-conversa.org` (Dex's own flow
+   cookies are transient and scoped to `auth.a-conversa.org`; no
+   shared-domain cookie exists in the Dex design).
 4. **Railway-generated domains:** after the custom domains work,
    decide whether the `*.up.railway.app` fallback domains stay enabled
    (useful as an is-it-DNS-or-is-it-the-app debugging probe; harmless

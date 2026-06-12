@@ -38,7 +38,7 @@ session-token refinement's deferred denylist note).
   entropy; comfortably over the 32-byte floor). Generated at
   app-service setup; two-store rule applies.
 - **No sharing or derivation:** not reused for, or derived from, any
-  Authelia secret — the app and Authelia rotate independently.
+  Dex secret — the app and Dex rotate independently.
 - **Rotation policy:** no calendar-based rotation. Rotate on (a) any
   suspected exposure, (b) operator turnover, (c) opportunistically if
   the value was ever displayed in a screen-share/recording context.
@@ -47,9 +47,10 @@ session-token refinement's deferred denylist note).
   out mid-anything.
 - **Rotation procedure:** update the Variable + password manager →
   restart `app` → every existing session and in-flight pending cookie
-  is invalid (users silently re-OIDC via Authelia, whose own session
-  may still be live — the UX is a redirect bounce, not a credential
-  prompt). **Never during a live show**; sessions die mid-debate.
+  is invalid (users silently re-OIDC via Dex, where the upstream
+  Google session is typically still live — the UX is a redirect
+  bounce, not a credential prompt). **Never during a live show**;
+  sessions die mid-debate.
 - If a "log everyone out" moderation lever is ever needed, this is
   it — but note it's all-or-nothing until the deferred denylist table
   lands.
@@ -61,7 +62,7 @@ session-token refinement's deferred denylist note).
 - Two-store rule satisfied; password-manager entry notes the
   generation date and the rotation policy above.
 - One rotation drilled before launch (off-hours): rotate → confirm an
-  existing browser session bounces through Authelia and recovers.
+  existing browser session bounces through Dex/Google and recovers.
 
 ## Decisions
 

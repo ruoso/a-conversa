@@ -1,15 +1,21 @@
-# TLS and domain — a-conversa.org + authelia.a-conversa.org
+# TLS and domain — a-conversa.org + auth.a-conversa.org
 
 **TaskJuggler entry**: [tasks/70-deployment.tji](../../70-deployment.tji) — task `deployment.prod_compose.prod_tls_and_domain`
 **Effort estimate**: 1d
-**Inherited dependencies**: `prod_compose_file` rollup (the `app` and `authelia` services exist and are healthy on their Railway-generated domains).
+**Inherited dependencies**: `prod_compose_file` rollup (the `app` and `dex` services exist and are healthy on their Railway-generated domains).
 **Executor**: human operator (Railway dashboard + DNS registrar access).
+
+> **Reworked 2026-06-12** for [ADR 0048](../../../docs/adr/0048-production-oauth-dex-identity-broker.md):
+> the identity subdomain is `auth.a-conversa.org` → `dex` service
+> (was `authelia.a-conversa.org` → `authelia`), and the SPF/DKIM
+> batching is gone — Dex sends no mail, so there is no SMTP sender
+> domain to authenticate.
 
 ## What this task is
 
 Attach the production hostnames to the two public services and get
 valid TLS on both: `a-conversa.org` (apex) → `app`,
-`authelia.a-conversa.org` → `authelia`. Railway auto-provisions
+`auth.a-conversa.org` → `dex`. Railway auto-provisions
 Let's Encrypt certificates once the DNS records resolve; the work is
 the dashboard half, the registrar half, and the propagation wait.
 
@@ -17,25 +23,22 @@ the dashboard half, the registrar half, and the propagation wait.
 
 Every URL already wired into the system assumes these names:
 `APP_BASE_URL=https://a-conversa.org`,
-`OIDC_ISSUER_URL=https://authelia.a-conversa.org`, the
-`aconversa-app-prod` redirect URI, the Google client's callback, and
-the Authelia cookie domain. Until DNS + TLS are live, the app boots
+`OIDC_ISSUER_URL=https://auth.a-conversa.org`, the
+`aconversa-app-prod` redirect URI, and the Google client's callback.
+Until DNS + TLS are live, the app boots
 but no auth flow can complete — this task is the gate to the
 end-to-end verification in `prod_oauth_config`.
 
 ## Inputs / context
 
-From [ADR 0031](../../../docs/adr/0031-production-hosting-railway-paas.md):
-
-> **TLS + domain.** Railway auto-provisions Let's Encrypt certificates
-> for any custom domain. `a-conversa.org` points at the `app` service
-> via a CNAME registered at the domain's DNS provider. Authelia is
-> reachable at `authelia.a-conversa.org` (separate CNAME → the
-> `authelia` service).
-
-Authelia's cookie domain is `a-conversa.org` with Authelia on a
-subdomain (ADR 0032) — the shared parent domain is what lets the
-Authelia session cookie and the app cookies coexist.
+From [ADR 0031](../../../docs/adr/0031-production-hosting-railway-paas.md)
+(as amended 2026-06-12 for ADR 0048): Railway auto-provisions
+Let's Encrypt certificates for any custom domain. `a-conversa.org`
+points at the `app` service via a CNAME registered at the domain's
+DNS provider; the identity service is reachable at
+`auth.a-conversa.org` (separate CNAME → the `dex` service) so the
+OIDC issuer URL is HTTPS-clean for both the browser and the
+in-network app→dex call.
 
 **Apex caveat the ADR glosses over:** a literal CNAME at the zone apex
 (`a-conversa.org`) is invalid DNS — apex records must be A/AAAA or a
@@ -45,12 +48,12 @@ handle this.
 ## Execution steps (operator)
 
 1. **Railway side.** On the `app` service → Settings → Networking →
-   Custom Domain → add `a-conversa.org`. On the `authelia` service,
-   add `authelia.a-conversa.org`. Railway displays the DNS target for
+   Custom Domain → add `a-conversa.org`. On the `dex` service,
+   add `auth.a-conversa.org`. Railway displays the DNS target for
    each (a `*.up.railway.app` name or equivalent) and waits for
    verification.
 2. **Registrar side.** At the DNS provider for `a-conversa.org`:
-   - `authelia.a-conversa.org` → **CNAME** to the target Railway shows.
+   - `auth.a-conversa.org` → **CNAME** to the target Railway shows.
    - `a-conversa.org` (apex) → **ALIAS/ANAME/flattened CNAME** to its
      target, if the provider supports it. If it doesn't, the
      documented fallback is moving DNS hosting (not registration) to a
@@ -58,19 +61,16 @@ handle this.
      set to **DNS-only mode** (gray cloud; proxy mode would put a
      second proxy in front of Railway's edge and complicate cert
      issuance and WebSockets for no v1 benefit).
-   - While in the zone editor, also add the **SPF/DKIM records** for
-     the SMTP sender domain (from `prod_railway_authelia_service`
-     step 3) so the email-related DNS lands in one edit session.
 3. **Wait and verify issuance.** Railway verifies the records and
    issues certificates (minutes to an hour, DNS-propagation bound).
    Both domains show "issued" in the dashboard.
 4. **Smoke-check both hosts:**
    ```sh
    curl -sSf https://a-conversa.org/healthz
-   curl -sSf https://authelia.a-conversa.org/.well-known/openid-configuration | head -c 200
+   curl -sSf https://auth.a-conversa.org/.well-known/openid-configuration | head -c 200
    ```
    Both serve valid TLS (no `-k` needed) and the OIDC discovery
-   document reports issuer `https://authelia.a-conversa.org`.
+   document reports issuer `https://auth.a-conversa.org`.
 5. **Restart the `app` service** (or just observe its next deploy):
    its boot-time OIDC discovery against the issuer must now succeed —
    before this task it could only fail.
@@ -92,9 +92,8 @@ handle this.
 - The two `curl` checks in step 4 pass from outside Railway with
   valid certificates.
 - App boot logs show OIDC discovery success against
-  `https://authelia.a-conversa.org`.
-- DNS zone contains the two service records (plus the SMTP SPF/DKIM
-  records if batched here).
+  `https://auth.a-conversa.org`.
+- DNS zone contains the two service records.
 
 ## Decisions
 
@@ -102,9 +101,11 @@ handle this.
   DNS hosting to Cloudflare free (DNS-only)** — the minimal resolution
   of the apex-CNAME constraint without adding a proxy layer or
   renumbering the product onto `www`.
-- **SMTP DNS batched into this task's zone-edit session** — pure
-  logistics; the records belong to the notifier story but the
-  registrar login belongs to this task.
+- **SMTP SPF/DKIM batching dropped (2026-06-12)** — the original plan
+  batched the notifier sender-domain records into this task's
+  zone-edit session; ADR 0048 removed the SMTP notifier entirely, so
+  the zone carries no email records until some future feature
+  actually sends mail.
 
 ## Open questions
 

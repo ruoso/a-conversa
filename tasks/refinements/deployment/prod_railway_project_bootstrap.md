@@ -16,7 +16,7 @@ Railway's build system.
 
 ## Why it needs to be done
 
-Every other `prod_railway_*` leaf (`app` service, `authelia` service,
+Every other `prod_railway_*` leaf (`app` service, `dex` service,
 networking, IaC export) and `prod_postgres_config` operate **inside**
 this project. None of them can start until the project exists and the
 GitHub link is in place.
@@ -30,6 +30,10 @@ From [ADR 0031](../../../docs/adr/0031-production-hosting-railway-paas.md):
 
 > **Cost shape.** Hobby plan ($5/mo base, includes $5 usage) covers the
 > app + Authelia + Postgres at projected v1 traffic.
+
+*(Per [ADR 0048](../../../docs/adr/0048-production-oauth-dex-identity-broker.md)
+the identity service is now Dex — if anything lighter than the
+Authelia the estimate assumed.)*
 
 Hobby tier is single-region (US-East) and always-on — both intended
 (ADR 0031 Consequences).
@@ -87,3 +91,10 @@ Hobby tier is single-region (US-East) and always-on — both intended
   billing page; configuring them is deferred to the `admin_runbook`
   refinement per ADR 0031, but the operator may set a soft limit
   (e.g., $25/mo) while already on the billing page.
+
+## Status
+
+**Done — 2026-06-12.** The `aconversa` Railway project exists with the
+GitHub repo linked and the CLI authenticated; the `postgres`, `app`,
+and `dex` services were all created inside it (their own refinements
+carry the per-service detail).

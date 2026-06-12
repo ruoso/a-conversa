@@ -37,6 +37,7 @@ task deployment "Deployment" {
       task prod_railway_project_bootstrap "Railway account, CLI, and aconversa project" {
         effort 0.5d
         allocate team
+        complete 100
         note "One-time bootstrap: create Railway account, install Railway CLI, create the `aconversa` project, link to the GitHub repo. Captures the manual prerequisites before any service can be defined. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_project_bootstrap.md"
       }
       task prod_railway_app_service "App service: Dockerfile build trigger + Variables wiring" {
@@ -45,17 +46,18 @@ task deployment "Deployment" {
         depends !prod_railway_project_bootstrap
         note "Add the `app` service in the Railway project: configure tag-triggered build from the repo Dockerfile, wire the Variables consumed by the app (SESSION_TOKEN_SECRET, APP_BASE_URL, OIDC_*, DATABASE_URL via Postgres add-on reference, SENTRY_DSN). Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_app_service.md"
       }
-      task prod_railway_authelia_service "Authelia service: upstream image + prod config rendering" {
+      task prod_railway_dex_service "Dex service: upstream image + prod config rendering" {
         effort 1d
         allocate team
+        complete 100
         depends !prod_railway_project_bootstrap
-        note "Add the `authelia` service in the Railway project from the upstream authelia/authelia:4.39 image. Render the production Authelia config (Postgres storage, SMTP notifier, rotated signing keys, Google upstream client) from Railway Variables. The upstream-provider OAuth-client creation in Google Cloud Console belongs to prod_oauth_config; this task lands the service shell + config plumbing. Per ADR 0031 and ADR 0032. Refinement: tasks/refinements/deployment/prod_railway_authelia_service.md"
+        note "Add the `dex` service in the Railway project from the upstream ghcr.io/dexidp/dex:v2.44.0 image. Render the production Dex config (Postgres storage, aconversa-app-prod static client, Google connector) from Railway Variables; tear down the superseded half-configured authelia service. The upstream-provider OAuth-client creation in Google Cloud Console belongs to prod_oauth_config; this task lands the service shell + config plumbing. Per ADR 0031 and ADR 0048 (was prod_railway_authelia_service under ADR 0032 until its federation premise failed on first execution, 2026-06-12). Refinement: tasks/refinements/deployment/prod_railway_dex_service.md"
       }
       task prod_railway_internal_networking "Internal service discovery + cross-service Variables" {
         effort 0.5d
         allocate team
-        depends !prod_railway_app_service, !prod_railway_authelia_service
-        note "Configure Railway's per-project internal DNS so app reaches authelia and postgres without public-internet hops. Wire shared/referenced Variables so each service sees the env it needs. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_internal_networking.md"
+        depends !prod_railway_app_service, !prod_railway_dex_service
+        note "Configure Railway's per-project internal DNS so app reaches dex and postgres without public-internet hops. Wire shared/referenced Variables so each service sees the env it needs. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_internal_networking.md"
       }
       task prod_railway_iac_committed "Railway IaC manifest committed to repo" {
         effort 0.5d
@@ -67,6 +69,7 @@ task deployment "Deployment" {
     task prod_postgres_config "Production Postgres configuration (managed or self-hosted)" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/deployment/prod_postgres_config.md"
     }
     task prod_oauth_config "Production OAuth provider configuration" {

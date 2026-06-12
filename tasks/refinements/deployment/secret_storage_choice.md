@@ -25,13 +25,13 @@ of rules.
    same name. A secret in one store but not the other is a defect.
 2. **Naming.** The Variable name is the contract: app-consumed
    variables use the server's env names (`SESSION_TOKEN_SECRET`, …);
-   Authelia-consumed ones use the `AUTHELIA_*` / `GOOGLE_*` / `SMTP_*`
+   Dex-consumed ones use the `ACONVERSA_*` / `GOOGLE_*`
    names fixed in
-   [`prod_railway_authelia_service.md`](prod_railway_authelia_service.md).
+   [`prod_railway_dex_service.md`](prod_railway_dex_service.md).
    The full inventory lives in `infra/railway/README.md`
    ([`prod_railway_iac_committed.md`](prod_railway_iac_committed.md)).
-3. **Generation hygiene.** Generate locally (`openssl rand`,
-   `authelia crypto …`); pass into Railway via dashboard paste or
+3. **Generation hygiene.** Generate locally (`openssl rand`);
+   pass into Railway via dashboard paste or
    `railway variables --set "NAME=$(…)"` command substitution. No
    secret value in shell history, files in the repo tree, transcripts,
    or tickets.
