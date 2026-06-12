@@ -1,0 +1,101 @@
+# a-conversa — on-demand basic load test.
+#
+# Owned by deployment.deployment_tests.load_test
+# (tasks/refinements/deployment/load_test.md). Brings up the dev-mode
+# compose stack (`make up` — the synthetic seam the harness drives is
+# production-gated off) and runs scripts/load-test.ts: ingest
+# throughput (concurrent walkthrough synthetic sessions), concurrent
+# anonymous audience subscribers (catch-up latency), and the
+# sequence-gated live fan-out ceiling. Floors fail the job; the JSON
+# report in the log is the benchmark record.
+#
+# Manual-dispatch only — a capacity drill, not a per-merge gate (the
+# numbers move with runner hardware; the floors are what regressions
+# would trip, and `make load-test` runs the same harness locally).
+
+name: Load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscribers:
+        description: 'Concurrent anonymous subscribers (default 50)'
+        required: false
+        default: ''
+      proposes:
+        description: 'Sequence-gated proposes in the fan-out phase (default 100)'
+        required: false
+        default: ''
+  # TEMPORARY: dispatch requires the workflow on the default branch;
+  # this branch trigger exists only to execute the load test once for
+  # the load_test task and is removed in the completion commit.
+  push:
+    branches:
+      - claude/m9-pre-milestone-tasks-wp8jk5
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: Load test (compose)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20 with Corepack
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          HUSKY: '0'
+        run: pnpm install --frozen-lockfile
+
+      - name: Bring up the dev-mode stack
+        run: |
+          make up
+          echo "[waiting for /healthz to flip to 200]"
+          for i in $(seq 1 90); do
+            if curl --fail --silent http://localhost:3000/healthz > /dev/null 2>&1; then
+              echo "[/healthz OK after ${i}s]"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "stack never became healthy" >&2
+          docker compose logs app | tail -50 >&2
+          exit 1
+
+      - name: Run the load test
+        env:
+          LOAD_SUBSCRIBERS: ${{ inputs.subscribers }}
+          LOAD_PROPOSES: ${{ inputs.proposes }}
+        run: |
+          # Empty inputs must be unset so the harness defaults apply.
+          if [ -z "$LOAD_SUBSCRIBERS" ]; then unset LOAD_SUBSCRIBERS; fi
+          if [ -z "$LOAD_PROPOSES" ]; then unset LOAD_PROPOSES; fi
+          make load-test
+
+      - name: Tear down
+        if: always()
+        run: make down-v
