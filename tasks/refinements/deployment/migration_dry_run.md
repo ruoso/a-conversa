@@ -143,3 +143,27 @@ on-demand workflow venue) that:
 
 (none — all decided)
 
+
+## Status
+
+**Done** — 2026-06-12. Landed as:
+
+- [`scripts/migration-dry-run.sh`](../../../scripts/migration-dry-run.sh) +
+  `make migration-dry-run` +
+  [`.github/workflows/migration-dry-run.yml`](../../../.github/workflows/migration-dry-run.yml)
+  (`workflow_dispatch`, `base_ref` input).
+- [`docs/runbooks/release.md`](../../../docs/runbooks/release.md) —
+  the migration checklist now names the command.
+- **Executed on a GitHub runner**
+  ([run 27420008301](https://github.com/ruoso/a-conversa/actions/runs/27420008301),
+  via a temporary branch trigger, removed after the run) with
+  `BASE_REF=origin/main` and a real pending candidate
+  (`0017_edges_polymorphic_endpoints.sql`): baseline 17 migrations
+  applied; default seed (1k users / 50k nodes / 49,999 chained edges /
+  50 sessions / 200k session_events); the candidate — an
+  `ALTER TABLE edges` plus the `NULLS NOT DISTINCT` unique-index
+  build over the seeded edges — **applied in 1 s** (budget 120 s);
+  row counts survived unchanged and the `pgmigrations` ledger matched
+  the 18-file corpus. The whole drill (postgres boot → teardown) took
+  31 s on ubuntu-latest.
+- `complete 100` marker in [tasks/70-deployment.tji](../../70-deployment.tji); tj3 parse clean.

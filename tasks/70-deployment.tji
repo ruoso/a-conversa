@@ -254,6 +254,8 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !!prod_migrations.migration_safety_checks
+      complete 100
+      note "Refinement: tasks/refinements/deployment/migration_dry_run.md (reshaped by ADR 0034: prod-sized local stack, not staging)"
     }
     task backup_restore_drill "Backup-restore drill" {
       effort 1d

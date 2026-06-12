@@ -82,6 +82,7 @@ shipped 2026-06-11/12; its refinements live in this directory too:
 - [`release_versioning.md`](release_versioning.md), [`release_runbook.md`](release_runbook.md), [`release_rollback_runbook.md`](release_rollback_runbook.md) — release process (ADR 0034; `CHANGELOG.md`, the `release.yml` tag gate, `docs/runbooks/`).
 - [`prod_dockerfile.md`](prod_dockerfile.md), [`prod_image_minimization.md`](prod_image_minimization.md) — the production image pass (ADR 0015 Amendments).
 - [`load_test.md`](load_test.md) — the capacity drill (`make load-test`).
+- [`migration_dry_run.md`](migration_dry_run.md) — pending-migrations drill against a prod-sized isolated postgres (`make migration-dry-run`; ADR 0034's reshaping of the old "staging dry-run"). Not in the M9-prep milestone membership but the same repo-only class; shipped at the 2026-06-12 open-leaf audit.
 
 Their **human touchpoints**, for planning:
 
