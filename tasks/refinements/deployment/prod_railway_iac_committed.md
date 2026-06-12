@@ -97,6 +97,24 @@ gap is filled with a documented manifest next to the native file.
 - **Manifest lives at `infra/railway/README.md`** — sibling to
   `infra/authelia/` and `infra/postgres/`, mirroring the dev-infra
   layout convention.
+- **Slim execution (2026-06-12): index, not inventory.** During the
+  ADR 0048 rework every service refinement absorbed its own Variable
+  table, config template, and deploy detail — a duplicated inventory
+  here would be a second source of truth that drifts. The manifest is
+  one line per fact, linking the owning refinement. Two further calls
+  made at execution:
+  - **Railway's `railway.ts` SDK route rejected** (the CLI's
+    `config pull/plan/apply` needs the Railway TypeScript SDK
+    installed in the repo): a vendor SDK in the product dependency
+    tree for ops-only tooling, and Railway-specific executable config
+    is *worse* than prose for the move-off scenario this task exists
+    for. `railway status --json` (secret-free, verified) is the
+    live-state fetch and cross-check instead.
+  - **`railway.json` healthcheck is `/readyz`, not `/healthz`** —
+    the readiness endpoint landed
+    (`observability.health_and_readiness_endpoints`, complete) and
+    ADR 0033 names it the deploy gate; enforcing it from the repo
+    upgrades the dashboard's original `/healthz` setting.
 
 ## Open questions
 
