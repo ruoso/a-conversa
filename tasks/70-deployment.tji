@@ -253,7 +253,9 @@ task deployment "Deployment" {
     task obs_setup_guide "OBS setup guide for show producers" {
       effort 1d
       allocate team
+      complete 100
       depends audience.aud_obs_integration.aud_obs_setup_docs
+      note "Production grounding of docs/obs-setup.md (host www.a-conversa.org + the apex deep-link trap). Refinement: tasks/refinements/deployment/obs_setup_guide.md"
     }
     task admin_runbook "Admin runbook (common tasks, troubleshooting)" {
       effort 1d

@@ -6,9 +6,26 @@ Audience: a show producer setting up an OBS Studio Browser source for the audien
 
 Out of scope: deploying the audience host (owned by [`deployment.deployment_docs`](../tasks/70-deployment.tji)), the moderator-facing flow that flips a session between public and private (see [moderator-ui.md](moderator-ui.md)), replay-mode deep-linking (a future leaf under `replay_test.*`), and a general OBS Studio tutorial (use [obsproject.com](https://obsproject.com/) for that). No screenshots — the repo's docs are text-only by convention (see [`docs/architecture.md`](architecture.md) for the project overview).
 
+## The production instance
+
+For the production a-conversa instance, `<host>` is
+**`www.a-conversa.org`** — an audience URL looks like
+`https://www.a-conversa.org/a/sessions/<sessionId>`.
+
+**Always include the `www`.** The bare domain (`a-conversa.org`) only
+redirects its root: a deep link like
+`a-conversa.org/a/sessions/<id>` returns **404**, and inside an OBS
+Browser source that failure is silent — you'll stare at an empty
+transparent source. If the graph doesn't render, checking the URL's
+host for the `www` is the first move (see the
+[admin runbook](runbooks/admin.md) for why the apex behaves this
+way).
+
+Self-hosted instances substitute their own host throughout.
+
 ## Prerequisites
 
-- A deployed audience host. This doc uses `https://<host>` as the placeholder; substitute the URL your deployment lives at.
+- A deployed audience host. This doc uses `https://<host>` as the placeholder; for the production instance see [The production instance](#the-production-instance) above.
 - The **session id** (UUID) you want to broadcast. The session id is the canonical identifier in the audience URL — not the session's title. The moderator can copy it from their own URL bar after opening the session's operate route, or from the operator-facing console.
 - **OBS Studio 28 or newer.** Alpha-channel compositing on the Browser source is the default on supported versions; no extra OBS configuration is required.
 - The session must be in **public** mode for an OBS Browser source to reach it. See [Public vs. private sessions](#public-vs-private-sessions) below for the reasoning.
