@@ -204,6 +204,8 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !release_versioning
+      complete 100
+      note "Refinement: tasks/refinements/deployment/release_runbook.md"
     }
     task release_rollback_runbook "Rollback runbook" {
       effort 1d
