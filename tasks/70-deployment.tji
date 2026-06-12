@@ -125,6 +125,8 @@ task deployment "Deployment" {
     task migration_safety_checks "Pre-deploy migration safety checks" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/migration_safety_checks.md"
     }
     task rollback_strategy "Document and test rollback strategy" {
       effort 1d

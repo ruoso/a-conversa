@@ -22,12 +22,13 @@
     "build": "pnpm -r --workspace-concurrency=1 build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "lint:migrations": "tsx scripts/lint-migrations.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
     "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
     "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json",
-    "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run typecheck:tools && pnpm run typecheck:tests",
+    "check": "pnpm run lint && pnpm run lint:migrations && pnpm run format:check && pnpm run typecheck && pnpm run typecheck:tools && pnpm run typecheck:tests",
     "prepare": "husky"
   },
   "lint-staged": {
