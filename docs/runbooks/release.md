@@ -86,17 +86,16 @@ The tag push runs the `Release` workflow; its stages, in order:
 2. **Tests** — unit + behavior smoke suites on the tagged commit.
 3. **Publish** — image to `ghcr.io/ruoso/aconversa-app:<version>`
    (+ `:latest`).
-4. **Deploy** — the Railway job (once wired) deploys the tagged
-   commit; Railway's deploy-health gate is `/readyz`
-   ([docs/observability.md](../observability.md)).
+4. **Deploy** — the `deploy` job (wired 2026-06-12) runs
+   `railway up --service app --ci` from the tag checkout; Railway's
+   deploy-health gate is `/readyz`
+   ([docs/observability.md](../observability.md), enforced from
+   [`railway.json`](../../railway.json)).
 
-Post-deploy verification:
-
-- `https://a-conversa.org/readyz` returns 200 with both checks `ok`;
-- `https://a-conversa.org/healthz` reports the new version stamp;
-- the Sentry releases page shows the new release string;
-- run the post-deploy smoke checklist (owned by
-  `deployment_tests.smoke_test_after_deploy`).
+Post-deploy verification: run the post-deploy smoke checklist —
+[`docs/runbooks/post-deploy-smoke.md`](post-deploy-smoke.md) (owned by
+`deployment_tests.smoke_test_after_deploy`). It covers the `/readyz` /
+`/healthz` probes, the auth walk, and a minimal live-session exercise.
 
 ## The two-tag dance (destructive migrations)
 

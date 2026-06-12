@@ -263,6 +263,7 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !!prod_compose, !!prod_secrets, !!prod_migrations
+      note "Checklist: docs/runbooks/post-deploy-smoke.md (linked from the release runbook). Refinement: tasks/refinements/deployment/smoke_test_after_deploy.md"
     }
     task migration_dry_run "Migration dry-run on staging" {
       effort 1d
