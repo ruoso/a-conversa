@@ -266,7 +266,8 @@ task deployment "Deployment" {
     task adr_log "Architecture decision record (ADR) log" {
       effort 1d
       allocate team
-      note "Track major decisions with rationale; mirrors the design docs' decisions."
+      complete 100
+      note "Satisfied by established practice rather than new work (2026-06-12): docs/adr/ holds the log (48 ADRs at completion), with the convention — format, statuses, supersession links, amendment-pass rule — codified in docs/adr/README.md, which also records that directory as the log's long-term home. The task predates the practice it asked for."
     }
   }
 
