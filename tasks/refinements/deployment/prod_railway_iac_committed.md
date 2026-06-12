@@ -120,3 +120,14 @@ gap is filled with a documented manifest next to the native file.
 
 - **Railway's IaC coverage at execution time** — determines the split
   between step 1 and step 2; the acceptance criteria hold either way.
+
+## Status
+
+**Done — 2026-06-12.** Slim execution per the dated Decisions note:
+`railway.json` (Dockerfile builder, `/readyz` healthcheck, on-failure
+restarts) and the index-style `infra/railway/README.md` committed
+(27f98715), leak-gate grep clean, cross-checked against live state
+via `railway status --json`. Validated by the `v2026.06.12.2` deploy:
+Railway read the file (config-sourced settings show the file icon in
+the service settings) and the deployment went healthy through the
+`/readyz` gate.

@@ -65,6 +65,7 @@ task deployment "Deployment" {
       task prod_railway_iac_committed "Railway IaC manifest committed to repo" {
         effort 0.5d
         allocate team
+        complete 100
         depends !prod_railway_internal_networking
         note "Commit `railway.json` (or Railway's current IaC format) capturing the project, services, build sources, custom domains, and Variable references. Makes the prod orchestration reproducible from source control. Variable *values* stay out of git (Railway Variables); the manifest references them by name. Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_iac_committed.md"
       }
@@ -266,6 +267,7 @@ task deployment "Deployment" {
     task smoke_test_after_deploy "Post-deploy smoke test (health, login, simple session)" {
       effort 1d
       allocate team
+      complete 100
       depends !!prod_compose, !!prod_secrets, !!prod_migrations
       note "Checklist: docs/runbooks/post-deploy-smoke.md (linked from the release runbook). Refinement: tasks/refinements/deployment/smoke_test_after_deploy.md"
     }

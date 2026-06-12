@@ -67,3 +67,15 @@ clicking-through into a repeatable gate.
   frequent, fold steps 2–3 into an authenticated synthetic check
   (needs a dedicated test Google identity and secret handling for
   it; pairs naturally with `uptime_monitoring`'s probe story).
+
+## Status
+
+**Done — 2026-06-12.** Checklist authored at
+[`docs/runbooks/post-deploy-smoke.md`](../../../docs/runbooks/post-deploy-smoke.md),
+linked from the release runbook, and executed in full against the
+live `v2026.06.12.2` deploy — all sections green (pipeline/platform
+health, Google sign-in walk, live session over WebSocket). Of note:
+that release also exercised the failure path end-to-end — the deploy
+job failed once on a misconfigured `RAILWAY_TOKEN` (production
+GitHub environment), production stayed on the prior deployment, and
+the re-run of the failed job deployed clean.
