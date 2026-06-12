@@ -48,6 +48,7 @@
 import { resolveSessionTokenSecret, SessionSecretRejectedError } from './auth/index.js';
 import { applyMigrationsOnStartup, withFastifyLogger } from './migrate-startup.js';
 import { markMigrationGateCompleted, markMigrationGateSkipped } from './readiness.js';
+import { initSentry } from './sentry.js';
 import { createServer } from './server.js';
 
 /**
@@ -80,6 +81,15 @@ function parseBoolEnv(raw: string | undefined): boolean {
 }
 
 async function main(): Promise<void> {
+  // --- Sentry error tracking (ADR 0033) ---
+  //
+  // Initialized FIRST so every later startup-failure path is at
+  // least eligible for capture, and so the Fastify error capture
+  // inside `createServer()` sees an armed SDK. With `SENTRY_DSN`
+  // unset (every dev / CI / compose-without-Sentry stack) this is a
+  // structural no-op — see sentry.ts.
+  initSentry(process.env);
+
   // --- Session-token secret strength gate ---
   //
   // Validate `SESSION_TOKEN_SECRET` BEFORE building the Fastify

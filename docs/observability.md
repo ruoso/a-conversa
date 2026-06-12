@@ -148,6 +148,40 @@ The three `NODE_ENV` modes (all pinned in `logger.test.ts`):
   the rendering differs, which is why local output looks nothing
   like the prod JSON this document describes.
 
+## Error tracking
+
+_Owned by `deployment.observability.error_tracking`
+([refinement](../tasks/refinements/deployment/error_tracking.md))._
+
+Production error tracking is **Sentry** via `@sentry/node`
+([`apps/server/src/sentry.ts`](../apps/server/src/sentry.ts)):
+stack traces with grouping and email notification, complementing the
+short-retention `"level":50` log lines in Railway's dashboard.
+
+- **Arming.** The SDK initializes only when the `SENTRY_DSN`
+  environment variable is set (a Railway Variable in production —
+  see the
+  [app-service refinement](../tasks/refinements/deployment/prod_railway_app_service.md)).
+  Absence is a structural no-op: no client, no hooks, no network —
+  dev, CI, and compose stacks run unarmed with zero behavioral
+  change. The operator creates the Sentry project and sets the
+  Variable; nothing in the repo needs to change.
+- **What enrolls.** Route errors via Sentry's official Fastify
+  error handler (running alongside — not replacing — the canonical
+  `{ error: { code, message } }` envelope handler), plus
+  process-level `uncaughtException` / `unhandledRejection` through
+  the SDK's default integrations. Handled WS-protocol rejections
+  stay log-only by design.
+- **Event metadata.** `environment` comes from `NODE_ENV`;
+  `release` is the same build stamp `/healthz` reports, so an event
+  and a probe agree about which build produced it.
+- **What is not sent.** `sendDefaultPii` stays off: no cookies,
+  no authorization headers, no request bodies. Performance tracing
+  is disabled (error tracking only, per ADR 0033).
+
+If Sentry's free tier ever stops fitting, the documented migration
+path is GlitchTip — same SDK, different DSN (ADR 0033).
+
 ## Health and readiness
 
 _Owned by `deployment.observability.health_and_readiness_endpoints`
@@ -188,7 +222,6 @@ which makes migration failures visible to the deploy machinery
 <!--
 Sections added by sibling deployment.observability tasks as they land:
 
-## Error tracking   — deployment.observability.error_tracking
 ## Metrics          — deployment.observability.basic_metrics
 ## Uptime monitoring — deployment.observability.uptime_monitoring
 -->

@@ -88,6 +88,7 @@ import { createLoggerOptions } from './logger.js';
 import { openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { readyzPlugin } from './routes/readyz.js';
+import { attachSentryErrorCapture } from './sentry.js';
 import { staticFrontendsPlugin } from './routes/static-frontends.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
 import { replayRoutesPlugin } from './replay/routes.js';
@@ -468,6 +469,14 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // Fastify's default serializer. Refinement:
   // tasks/refinements/backend/error_handling.md.
   await app.register(errorHandlerPlugin);
+
+  // Sentry error capture (ADR 0033) — observes route errors via the
+  // onError hook + diagnostics channel, alongside (not replacing)
+  // the envelope handler above. Guarded on the SDK actually being
+  // initialized (`SENTRY_DSN` set, armed in index.ts), so every
+  // test-constructed instance registers nothing here. Refinement:
+  // tasks/refinements/deployment/error_tracking.md.
+  attachSentryErrorCapture(app);
 
   // Global per-IP rate limiter — closes the CodeQL
   // `js/missing-rate-limiting` gap surfaced on every route handler in
