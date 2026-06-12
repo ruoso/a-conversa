@@ -213,6 +213,8 @@ task deployment "Deployment" {
       effort 1d
       allocate team
       depends !release_runbook, !!prod_migrations.rollback_strategy
+      complete 100
+      note "Refinement: tasks/refinements/deployment/release_rollback_runbook.md"
     }
   }
 
