@@ -37,8 +37,9 @@ of rules.
    or tickets.
 4. **No third copies.** No `.env.production` on disk, no secrets in CI
    (the only CI secret is `RAILWAY_TOKEN`, which is a credential *to*
-   the store, held in GitHub Actions secrets), no secrets in
-   `railway.json` or any committed file.
+   the store, held in the `production` GitHub environment so only the
+   tag-gated deploy job can read it), no secrets in `railway.json` or
+   any committed file.
 5. **Rotation is per-secret, documented in the sibling refinements**
    ([`session_token_secret_handling.md`](session_token_secret_handling.md),
    [`postgres_credentials_handling.md`](postgres_credentials_handling.md),

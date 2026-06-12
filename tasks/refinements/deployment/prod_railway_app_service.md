@@ -91,12 +91,16 @@ Existing artifacts:
    defaults — set none of them.
 5. **Create the deploy token.** Project Settings → Tokens: create a
    project token scoped to the production environment, named
-   `github-actions-deploy`. Add it to the GitHub repo as Actions
-   secret **`RAILWAY_TOKEN`** (repo Settings → Secrets and variables →
-   Actions). Record it in the password manager.
+   `github-actions-deploy`. Store it as secret **`RAILWAY_TOKEN`** in
+   the GitHub **`production` environment** (repo Settings →
+   Environments → `production` → Environment secrets), not as a repo
+   secret — environment secrets are only readable by jobs that
+   declare `environment: production`, and the environment's
+   deployment-tag rule (`v*`) keeps every other ref's runs away from
+   the token. Record it in the password manager.
 6. **Extend `release.yml`.** Add a deploy job after the existing
-   publish job: checkout the tag, then
-   `railway up --service app --ci` with `RAILWAY_TOKEN` in the
+   publish job: declare `environment: production`, checkout the tag,
+   then `railway up --service app --ci` with `RAILWAY_TOKEN` in the
    environment (the CLI builds/deploys the checked-out tag commit).
    This is the "signals Railway" step from ADR 0034 and may be
    delegated to an implementation agent — it contains no secret
@@ -168,6 +172,9 @@ tag-deploy path is proven end-to-end: release `v2026.06.12.1` ran
 gate → test → publish → `railway up --service app --ci` green with no
 manual dashboard action (Actions run 27438898514), deploying via the
 `release.yml` deploy job (90488b17) authenticated by the
-`RAILWAY_TOKEN` repo secret. This also completes
+`RAILWAY_TOKEN` secret (originally a repo secret; moved on 2026-06-12
+to the `production` GitHub environment with a `v*` deployment-tag
+rule, so only tag-triggered jobs declaring the environment can read
+it). This also completes
 `deployment.prod_container.prod_image_publish` per its reshaping note
 (the deploy signal was the remaining substance of that leaf).

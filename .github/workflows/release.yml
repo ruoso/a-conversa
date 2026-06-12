@@ -29,8 +29,9 @@
 # Dockerfile itself; the `deploy` job (appended 2026-06-12 by the
 # prod_railway_app_service step) signals Railway with
 # `railway up --ci` from the tag checkout, authenticated by the
-# RAILWAY_TOKEN repo secret (ADR 0034's deploy signal). The ghcr
-# publish stays as the public open-source artifact.
+# RAILWAY_TOKEN secret from the `production` GitHub environment
+# (ADR 0034's deploy signal). The ghcr publish stays as the public
+# open-source artifact.
 #
 # Image tagging: every `vYYYY.MM.DD[.N]` tag publishes
 # `:YYYY.MM.DD[.N]` (the `match` pattern strips the leading `v`;
@@ -271,6 +272,11 @@ jobs:
     # does not consume the ghcr image).
     runs-on: ubuntu-latest
     needs: [gate, test, publish]
+    # RAILWAY_TOKEN lives in the `production` GitHub environment, not
+    # in repo secrets, so only jobs that claim this environment can
+    # read it. The environment's deployment-tag rule (`v*`) keeps
+    # runs from other refs — PRs, branches — out entirely.
+    environment: production
     steps:
       - name: Checkout the tagged commit
         uses: actions/checkout@v4
