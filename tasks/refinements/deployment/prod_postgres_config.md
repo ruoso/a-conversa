@@ -129,7 +129,17 @@ defaults.
 - **Railway's Postgres major at execution time.** If the add-on ships
   a major newer than 16, run the e2e suite against that major in the
   local compose stack before the first show (cheap insurance; the
-  schema uses no version-sensitive features).
+  schema uses no version-sensitive features). **Resolved 2026-06-12:**
+  the add-on runs major 18 (`ghcr.io/railwayapp-templates/postgres-ssl:18`),
+  and the full Playwright e2e suite passed (258/258) against
+  `postgres:18-alpine` on the local compose stack. One gotcha for a
+  future dev-stack upgrade to 18: the official `postgres:18` image
+  refuses a volume mounted at `/var/lib/postgresql/data` even when
+  empty — its convention moved to mounting at `/var/lib/postgresql`
+  with the cluster in a versioned subdirectory (enabling
+  `pg_upgrade --link`); the insurance run used that mount
+  temporarily, and the committed dev compose stays on 16 per
+  ADR 0016 until a deliberate upgrade.
 
 ## Status
 
