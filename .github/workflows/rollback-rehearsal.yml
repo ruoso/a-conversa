@@ -30,6 +30,13 @@ on:
         description: 'Image to roll back TO (empty = mechanics mode: candidate rolls back to itself)'
         required: false
         default: ''
+  # TEMPORARY: dispatch requires the workflow on the default branch;
+  # this branch trigger exists only to execute the rehearsal once for
+  # the rollback_strategy task and is removed in the completion
+  # commit.
+  push:
+    branches:
+      - claude/m9-pre-milestone-tasks-wp8jk5
 
 permissions:
   contents: read
