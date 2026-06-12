@@ -80,6 +80,7 @@ task data_and_methodology "Data and methodology" {
     task edges_table_polymorphic_endpoint_migration "Widen edges table for polymorphic source/target annotation endpoints" {
       effort 0.5d
       allocate team
+      complete 100
       depends data_and_methodology.event_types.edge_target_annotation_schema_extension
       note -8<-
         Source of debt: edge_target_annotation_schema_extension — DB migration mirroring the wire-schema
@@ -87,6 +88,8 @@ task data_and_methodology "Data and methodology" {
         added as nullable FKs to annotations; per-endpoint CHECK XOR constraints enforce exactly-one-set
         at the DB layer (mirrors 0006_annotations.sql pattern). Not load-bearing until a production write
         path mints annotation-endpoint edges.
+        Refinement: tasks/refinements/data-and-methodology/edges_table_polymorphic_endpoint_migration.md
+        (landed as 0017_edges_polymorphic_endpoints.sql at the 2026-06-12 open-leaf audit).
       ->8-
     }
     task seed_data_for_tests "Seed-data fixtures for tests" {

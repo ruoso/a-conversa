@@ -25,3 +25,38 @@ Feature: 0005_edges — UNIQUE on (role, source, target), reverse direction allo
     Given a user, and two nodes A and B by that user
     When I insert an edge "supports" with a non-existent source node
     Then the insert is rejected with a foreign-key-violation error
+
+  # 0017_edges_polymorphic_endpoints — endpoints may be annotations;
+  # per-endpoint XOR CHECKs; uniqueness preserved over the widened
+  # tuple via NULLS NOT DISTINCT.
+
+  Scenario: An edge from a node to an annotation is recorded
+    Given a user, two nodes A and B, and an annotation on A by that user
+    When I insert an edge "contradicts" from node B to the annotation
+    Then the edge with the annotation target is recorded
+
+  Scenario: An edge from an annotation to a node is recorded
+    Given a user, two nodes A and B, and an annotation on A by that user
+    When I insert an edge "contradicts" from the annotation to node B
+    Then the edge with the annotation source is recorded
+
+  Scenario: An edge with both a node and an annotation source is rejected
+    Given a user, two nodes A and B, and an annotation on A by that user
+    When I insert an edge "supports" with both source endpoint columns set
+    Then the insert is rejected with a check-violation error
+
+  Scenario: An edge with no target endpoint is rejected
+    Given a user, two nodes A and B, and an annotation on A by that user
+    When I insert an edge "supports" with no target endpoint
+    Then the insert is rejected with a check-violation error
+
+  Scenario: Duplicate annotation-target edge is rejected
+    Given a user, two nodes A and B, and an annotation on A by that user
+    And an edge "contradicts" from node B to the annotation
+    When I insert an edge "contradicts" from node B to the annotation
+    Then the insert is rejected with a unique-violation error
+
+  Scenario: An edge referencing a non-existent annotation is rejected
+    Given a user, and two nodes A and B by that user
+    When I insert an edge "contradicts" with a non-existent target annotation
+    Then the insert is rejected with a foreign-key-violation error
