@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate rehearse-rollback down down-v logs ps seed sync-reviews unblocked clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode up-backing dev dev-app _bring-up migrate load-test rehearse-rollback down down-v logs ps seed sync-reviews unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -38,6 +38,8 @@ help:
 	@echo "                      graph-view/shell) from SOURCE, so editing any of them hot-reloads live."
 	@echo "  make migrate        apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "                      — usually unnecessary now that 'make up' applies migrations on app startup"
+	@echo "  make load-test      run the basic load test against a running dev stack ('make up' first):"
+	@echo "                      ingest throughput, concurrent anonymous subscribers, live fan-out ceiling"
 	@echo "  make rehearse-rollback  rehearse the production image-rollback path (ADR 0034) in an isolated"
 	@echo "                      compose project: candidate boots + migrates, then PREVIOUS_IMAGE boots"
 	@echo "                      against the superset schema (see docs/rollback-strategy.md)"
@@ -290,6 +292,13 @@ migrate:
 	@set -a; . ./.env; set +a; \
 		DATABASE_URL=$$(echo "$$DATABASE_URL" | sed 's|@postgres:|@localhost:|') \
 		pnpm run migrate
+
+# Basic load test (deployment.deployment_tests.load_test). Needs a
+# running DEV-mode stack (`make up` — the synthetic seam is
+# production-gated off). Knobs: LOAD_SESSIONS, LOAD_SUBSCRIBERS,
+# LOAD_PROPOSES + floor thresholds; see scripts/load-test.ts.
+load-test:
+	@pnpm exec tsx scripts/load-test.ts
 
 # Rollback rehearsal (ADR 0034 / docs/rollback-strategy.md). Runs in
 # its own compose project + volumes on host port 3300, so a running
