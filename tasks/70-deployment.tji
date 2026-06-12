@@ -258,6 +258,8 @@ task deployment "Deployment" {
     task admin_runbook "Admin runbook (common tasks, troubleshooting)" {
       effort 1d
       allocate team
+      complete 100
+      note "docs/runbooks/admin.md — index + incident playbook. Refinement: tasks/refinements/deployment/admin_runbook.md"
     }
     task adr_log "Architecture decision record (ADR) log" {
       effort 1d
