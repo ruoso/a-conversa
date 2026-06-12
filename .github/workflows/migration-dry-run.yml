@@ -37,7 +37,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'

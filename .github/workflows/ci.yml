@@ -68,7 +68,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           # Node major matches ADR 0001 (LTS we run) and ADR 0015
@@ -116,7 +116,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -166,7 +166,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -217,7 +217,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -261,7 +261,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -351,7 +351,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -537,7 +537,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -664,7 +664,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node 20 with Corepack
+      - name: Set up Node 24 with Corepack
         uses: actions/setup-node@v6
         with:
           node-version: '24'
