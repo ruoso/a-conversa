@@ -1,0 +1,93 @@
+# 75 — Session discovery
+#
+# "My Sessions" and "Public Sessions": paginated, searchable lists
+# that let a returning user get back to their sessions (as moderator
+# or participant) and let anyone browse public sessions — with
+# role-aware "join live" and "see replay" entry points. Registered
+# 2026-06-12; gates milestone m_session_discovery (M11) in
+# tasks/99-milestones.tji.
+#
+# Product constraints fixed at registration (operator, 2026-06-12):
+#   * Both lists are paginated, searchable by description (the
+#     sessions `topic` column) and by date, sorted by start time.
+#   * "Public Sessions" lists ONLY public sessions that have already
+#     started — while a session is in lobby mode its id is the secret
+#     participants join with, so unstarted sessions must never be
+#     enumerable. "My Sessions" has no such restriction (you need to
+#     get back to your own lobby).
+#   * "Join live" routes by role: moderator surface (/m/*) if you
+#     host/moderate the session, participant surface (/p/*) if you
+#     hold a debater slot, audience surface (/a/*) otherwise.
+#   * "See replay" launches the audience surface's replay mode
+#     (visibility gating per ADR 0045).
+
+task session_discovery "Session discovery" {
+
+  task sd_schema "Schema: session start time + listing indexes" {
+    effort 1d
+    allocate team
+    note "Add `started_at TIMESTAMPTZ NULL` to sessions, set when the lobby → operate transition lands (the session-mode-changed event, ADR 0028) — the sessions table has no started marker today (lifecycle is created_at/ended_at only, mode lives in the event log). Backfill existing rows from their session-mode-changed events in the same migration. Listing indexes: partial index on (privacy='public' AND started_at IS NOT NULL) ordered started_at DESC for the public list; whatever the topic-search decision needs (ILIKE on a trigram index vs. full-text — refinement decides; topic is short free text). Forward-only per ADR 0020; safety linter applies."
+  }
+
+  task sd_api "Session-list API" {
+    task sd_my_sessions_endpoint "GET /api/sessions/mine — authenticated, role-annotated" {
+      effort 1d
+      allocate team
+      depends !!sd_schema
+      note "Sessions where the caller is host (sessions.host_user_id) or holds any session_participants row (moderator / debater-A / debater-B), each row annotated with the caller's role so the client can route 'join live' without a second request. Includes lobby-mode (unstarted) and ended sessions. Pagination + topic search + date filter, sorted by start time (lobby sessions with NULL started_at sort to the top — they're the ones you most likely want back into). Requires the session cookie; same auth surface as the existing /api/auth/* routes. Behavior tests per ADR 0007/0022 alongside."
+    }
+    task sd_public_sessions_endpoint "GET /api/sessions/public — anonymous, started-only" {
+      effort 1d
+      allocate team
+      depends !!sd_schema
+      note "Anonymous endpoint (same trust level as the public-session audience surface, ADR 0029). Returns ONLY privacy='public' AND started_at IS NOT NULL — the lobby-secrecy constraint in this file's header is the load-bearing requirement; a behavior test must pin that an unstarted public session is absent from the list. Pagination + topic search + date filter, sorted started_at DESC. Response carries only listing fields (id, topic, started_at, ended_at) — no participant data."
+    }
+  }
+
+  task sd_frontend "Discovery surfaces in the root app" {
+    task sd_session_list_component "Shared paginated session-list component" {
+      effort 2d
+      allocate team
+      depends !!sd_api
+      note "One component for both lists (they differ in data source and link affordances, not shape): search bar over topic, date filter, pagination, sorted by start time; per-row 'join live' and 'see replay' affordances supplied by the page. Lives in the root app's surface (ADR 0026 micro-frontend layout) or a shared package if the audience surface later wants it — refinement decides placement. Localized in en-US/pt-BR/es-419 (ADR 0024); axe checks per ADR 0040."
+    }
+    task sd_my_sessions_page "My Sessions page (authenticated)" {
+      effort 1d
+      allocate team
+      depends !sd_session_list_component
+      note "Authenticated route in the root app, linked from the signed-in chrome; unauthenticated visits bounce through the existing sign-in flow. Shows the caller's role per row (host/moderator/debater badge)."
+    }
+    task sd_public_sessions_page "Public Sessions page (anonymous)" {
+      effort 1d
+      allocate team
+      depends !sd_session_list_component
+      note "Public route in the root app, linked from the landing page. No auth required (the endpoint is anonymous)."
+    }
+    task sd_join_live_link "Role-aware 'join live' routing" {
+      effort 1d
+      allocate team
+      depends !sd_session_list_component
+      note "Routes from the list row to /m/* when the caller hosts/moderates, /p/* when they hold a debater slot (role comes annotated from /api/sessions/mine), /a/* otherwise — including every row of the public list for signed-out users. Lobby-mode sessions route the moderator/participant into their lobby flow; the audience link only applies to started sessions."
+    }
+    task sd_see_replay_link "'See replay' → audience replay mode" {
+      effort 0.5d
+      allocate team
+      depends !sd_session_list_component
+      note "Launches the audience surface's replay navigation (client-side position navigation per ADR 0043) for the row's session; visibility gating per ADR 0045 (public-session replay is anonymous; private replay requires the same auth as the live surface). Refinement decides availability (started vs. ended sessions) against what ADR 0045 already gates."
+    }
+  }
+
+  task sd_e2e "Playwright e2e: discovery flows" {
+    effort 2d
+    allocate team
+    depends !sd_frontend
+    note "Against the compose stack with the seeded user pool: My Sessions shows host + participant sessions with correct role badges and routes join-live to /m, /p respectively; Public Sessions lists a started public session, never an unstarted one (the lobby-secrecy pin at the UI layer), never a private one; search by topic and date filter narrow both lists; pagination walks; see-replay lands in the audience replay surface; signed-out join-live on a public row lands in /a. Per-locale projects + axe per the established e2e conventions."
+  }
+
+  task sd_docs "DESIGN.md + docs update" {
+    effort 0.5d
+    allocate team
+    depends !sd_e2e
+    note "Fold session discovery into DESIGN.md and docs/architecture.md (the surfaces, the lobby-secrecy rule for the public list, the role-aware entry points); amendment pass over any ADR whose text this touches (likely ADR 0029's anonymous-access scope)."
+  }
+}

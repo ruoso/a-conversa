@@ -122,4 +122,10 @@ task milestones "Milestones" {
     depends !m_replay_mvp, !m_deployment_ready, end_of_mission.design_md_update
     note "The proof-of-concept YouTube show is recorded using the platform end-to-end. Validates the format on real participants and an audience. Show-readiness polish (operator keyboard shortcuts, participant diagnostics + history views, audience segment/chapter markers) gates this milestone — not v1-MVP-essential, but wanted before recording a real show."
   }
+
+  task m_session_discovery "M11: Session discovery" {
+    milestone
+    depends !m_deployment_ready, session_discovery
+    note "Returning users can find their way back: 'My Sessions' (host or participant, role-annotated, paginated, searchable by topic and date, sorted by start time) and 'Public Sessions' (started public sessions only — while in lobby the session id is the participant-join secret, so unstarted sessions are never enumerable). Role-aware 'join live' (moderator → /m, debater → /p, everyone else → /a) and 'see replay' (audience replay mode, ADR 0045 gating) per row. Registered 2026-06-12 alongside tasks/75-session-discovery.tji; first post-launch feature milestone. Numbering above M10 is the orchestrator priority signal — the show does not gate this work."
+  }
 }
