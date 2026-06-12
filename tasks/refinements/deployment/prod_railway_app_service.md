@@ -79,7 +79,7 @@ Existing artifacts:
    | Variable | Value | Notes |
    |---|---|---|
    | `NODE_ENV` | `production` | arms the boot gates (secret denylist, Secure cookies, CORS/WS-origin lockdown, JSON logs) |
-   | `APP_BASE_URL` | `https://a-conversa.org` | OIDC redirect URI derives from it (`/api/auth/callback`) |
+   | `APP_BASE_URL` | `https://www.a-conversa.org` | OIDC redirect URI derives from it (`/api/auth/callback`); `www` is canonical per ADR 0031's hostname-scheme amendment (2026-06-12) |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | **reference**, not a pasted value — [`postgres_credentials_handling.md`](postgres_credentials_handling.md) |
    | `OIDC_ISSUER_URL` | `https://auth.a-conversa.org` | must equal the issuer Dex advertises (ADR 0048) |
    | `OIDC_CLIENT_ID` | `aconversa-app-prod` | per ADR 0048 |

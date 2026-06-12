@@ -11,6 +11,17 @@
 > batching is gone — Dex sends no mail, so there is no SMTP sender
 > domain to authenticate.
 
+> **Hostname outcome (2026-06-12, execution).** The DNS host offers
+> no apex ALIAS/flattening, and rather than move DNS hosting (the
+> documented Cloudflare fallback), the operator made
+> **`www.a-conversa.org` canonical** → `app` service, with registrar
+> forwarding on the apex (`GET /` 301s to `www`; deep paths 404, HEAD
+> 405). Recorded as ADR 0031's hostname-scheme amendment. The steps
+> below describe the originally planned apex-canonical layout; the
+> Status block records what actually shipped. Known cost: bare-domain
+> deep links don't redirect — ask the registrar for path-preserving
+> forwarding if that ever becomes available.
+
 ## What this task is
 
 Attach the production hostnames to the two public services and get
@@ -117,10 +128,12 @@ handle this.
 ## Status
 
 **Done — 2026-06-12.** Both custom domains live with Railway-issued
-certificates: `a-conversa.org` → `app`, `auth.a-conversa.org` → `dex`
-(CNAME confirmed resolving to the Railway edge). External smoke
-checks pass — `/healthz` on the apex and the OIDC discovery document
-on the auth subdomain reporting issuer `https://auth.a-conversa.org`
-— and the app's discovery against the issuer succeeds (verified by
+certificates: **`www.a-conversa.org`** → `app` (see the hostname
+outcome note above — `www` is canonical; the apex is registrar
+root-forwarding only) and `auth.a-conversa.org` → `dex` (CNAMEs
+confirmed resolving to the Railway edge). External smoke checks pass
+— `/healthz` on `www` returns 200 and the OIDC discovery document on
+the auth subdomain reports issuer `https://auth.a-conversa.org` —
+and the app's discovery against the issuer succeeds (verified by
 working production sign-in). No SMTP DNS records, per the ADR 0048
 rework.

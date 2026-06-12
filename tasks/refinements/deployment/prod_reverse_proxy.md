@@ -94,6 +94,7 @@ App behaviors that interact with a proxy:
 
 **Done — 2026-06-12.** Verified Railway's edge as the sole proxy
 layer: WebSocket connects and holds through the edge, auth redirect
-hops stay on the two public hostnames (no `railway.internal` /
+hops stay on the public hostnames (no `railway.internal` /
 `up.railway.app` leakage), and `aconversa-session` carries
-`Secure; HttpOnly` scoped to `a-conversa.org`.
+`Secure; HttpOnly` on `www.a-conversa.org` (the canonical app host
+per ADR 0031's hostname-scheme amendment).

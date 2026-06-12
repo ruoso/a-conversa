@@ -146,3 +146,13 @@ End-to-end verification (browser → Google → Dex →
 `a-conversa.org` session) stays with the
 `deployment.prod_compose.prod_oauth_config` refinement, now citing
 this ADR as its decision input.
+
+## Amendments
+
+- **2026-06-12** — The downstream client's redirect URI in the
+  Decision reads `https://a-conversa.org/api/auth/callback`; execution
+  settled the app's canonical hostname as `www.a-conversa.org` (see
+  ADR 0031's hostname-scheme amendment), so the registered redirect
+  URI is **`https://www.a-conversa.org/api/auth/callback`**. The
+  issuer (`auth.a-conversa.org`) and everything else here are
+  unchanged.

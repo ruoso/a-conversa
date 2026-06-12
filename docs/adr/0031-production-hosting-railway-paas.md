@@ -158,3 +158,13 @@ as their platform decision.
   three Railway services, private networking, Variables for secrets,
   CNAME-per-service TLS — is unchanged; the secret inventory shrinks
   (no SMTP credentials, no operator-managed JWKS; see ADR 0048).
+- **2026-06-12 (hostname scheme)** — Execution settled the app's
+  canonical hostname as **`www.a-conversa.org`**, not the apex this
+  ADR assumed. The apex-CNAME constraint (a literal CNAME at the
+  zone apex is invalid DNS) met a DNS host without ALIAS/flattening
+  support; rather than move DNS hosting, the operator attached `www`
+  to the `app` service and configured registrar forwarding on the
+  apex (root-only 301 → `www`; deep paths are not preserved).
+  `APP_BASE_URL`, the `aconversa-app-prod` redirect URI, and all
+  app-facing URLs are on `www`; `auth.a-conversa.org` is unaffected.
+  Recorded in `tasks/refinements/deployment/prod_tls_and_domain.md`.

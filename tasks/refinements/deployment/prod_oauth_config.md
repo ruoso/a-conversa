@@ -96,7 +96,7 @@ app Variables.
    Google account picker (sole connector + `skipApprovalScreen`; if
    Dex interposes a connector-selection page, note it — cosmetic, not
    a failure) → consent → back to Dex → back to
-   `https://a-conversa.org/api/auth/callback` → screen-name
+   `https://www.a-conversa.org/api/auth/callback` → screen-name
    prompt (first login) → authenticated app shell.
 9. Confirm the session survives a page reload (the `aconversa-session`
    cookie is set, `Secure`, on `a-conversa.org`), and `GET /api/auth/me`
@@ -108,8 +108,8 @@ app Variables.
 
 - The redirect URI registered with Google is **Dex's callback**,
   never the app's — the app's own callback
-  (`https://a-conversa.org/api/auth/callback`) is registered only on
-  the `aconversa-app-prod` static client inside the Dex config.
+  (`https://www.a-conversa.org/api/auth/callback`) is registered only
+  on the `aconversa-app-prod` static client inside the Dex config.
   Keeping these two layers straight is the main execution hazard of
   this task.
 - Scopes stay at `openid email profile` — the platform stores only the
@@ -161,6 +161,6 @@ app Variables.
 **Done — 2026-06-12.** Google client live with the Dex callback
 (`https://auth.a-conversa.org/callback`), consent screen published
 with non-sensitive scopes; the end-to-end verification walk passed
-against production (Google → Dex → `a-conversa.org` callback →
+against production (Google → Dex → `www.a-conversa.org` callback →
 screen-name flow → authenticated shell, session persistent across
 reload). Executed against the ADR 0048 (Dex) rework of this task.
