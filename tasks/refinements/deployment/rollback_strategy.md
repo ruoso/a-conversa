@@ -170,3 +170,27 @@ This task delivers the two halves the ADR leaves open:
 
 (none — all decided)
 
+## Status
+
+**Done** — 2026-06-12. Landed as:
+
+- [`docs/rollback-strategy.md`](../../../docs/rollback-strategy.md) —
+  the strategy document (lever, gate behavior on rollback, invariant
+  + enforcement, two-tag dance worked example, violation recovery).
+- [`scripts/rehearse-rollback.sh`](../../../scripts/rehearse-rollback.sh) +
+  `make rehearse-rollback` +
+  [`.github/workflows/rollback-rehearsal.yml`](../../../.github/workflows/rollback-rehearsal.yml)
+  (`workflow_dispatch`) — the committed rehearsal and its two venues.
+- **Rehearsal executed and PASSED** on a GitHub runner
+  ([run 27415108536](https://github.com/ruoso/a-conversa/actions/runs/27415108536),
+  via a temporary branch push trigger, removed after the run):
+  candidate built from the working tree, booted with all migrations
+  applied and `/readyz` 200; synthetic superset row injected;
+  previous-image boot (mechanics mode) against the superset
+  `pgmigrations` reached healthy with `/healthz` + `/readyz` 200 and
+  the gate's no-migrations-to-run log line present; `down -v`
+  cleanup ran. The implementation-agent sandbox could not host the
+  drill (Docker daemon available but the network policy 403s
+  registry blob CDNs), which is what the workflow venue is for.
+- `complete 100` marker in [tasks/70-deployment.tji](../../70-deployment.tji); tj3 parse clean.
+
