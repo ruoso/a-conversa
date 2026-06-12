@@ -131,6 +131,8 @@ task deployment "Deployment" {
     task rollback_strategy "Document and test rollback strategy" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/deployment/rollback_strategy.md"
     }
   }
 
