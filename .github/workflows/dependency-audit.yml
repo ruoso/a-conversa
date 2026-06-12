@@ -42,13 +42,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node 20 with Corepack
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Same Node major as ci.yml / release.yml (ADR 0001 / 0015).
-          node-version: '20'
+          node-version: '24'
 
       - name: Enable Corepack and activate pnpm
         # `packageManager` in root package.json pins pnpm@9.15.4
