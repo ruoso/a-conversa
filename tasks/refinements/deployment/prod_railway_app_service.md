@@ -158,3 +158,16 @@ Existing artifacts:
   checkout for the build; confirm at execution time that this respects
   `.dockerignore` and produces the same image as CI's buildx job (it
   builds the same Dockerfile from the same tree, so it should).
+
+## Status
+
+**Done — 2026-06-12.** `app` service live on Railway with the full
+Variable table (Dex-era values per ADR 0048: issuer
+`https://auth.a-conversa.org`, symmetric client secret). The
+tag-deploy path is proven end-to-end: release `v2026.06.12.1` ran
+gate → test → publish → `railway up --service app --ci` green with no
+manual dashboard action (Actions run 27438898514), deploying via the
+`release.yml` deploy job (90488b17) authenticated by the
+`RAILWAY_TOKEN` repo secret. This also completes
+`deployment.prod_container.prod_image_publish` per its reshaping note
+(the deploy signal was the remaining substance of that leaf).

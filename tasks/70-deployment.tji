@@ -23,6 +23,7 @@ task deployment "Deployment" {
     task prod_image_publish "Publish image to a container registry on tagged release" {
       effort 1d
       allocate team
+      complete 100
       depends !prod_dockerfile, foundation.ci.ci_image_publish
       note "Reshaped by ADR 0031: no external registry in prod — Railway builds the Dockerfile from the tag, so this leaf reduces to configuring the tag-triggered Railway deploy. That work is specified in tasks/refinements/deployment/prod_railway_app_service.md (deploy-token + release.yml deploy job + auto-deploy-off); completing prod_railway_app_service completes this leaf in the same session. The ghcr.io publish that already exists is foundation.ci.ci_image_publish's artifact, not this task's."
     }
@@ -43,6 +44,7 @@ task deployment "Deployment" {
       task prod_railway_app_service "App service: Dockerfile build trigger + Variables wiring" {
         effort 0.5d
         allocate team
+        complete 100
         depends !prod_railway_project_bootstrap
         note "Add the `app` service in the Railway project: configure tag-triggered build from the repo Dockerfile, wire the Variables consumed by the app (SESSION_TOKEN_SECRET, APP_BASE_URL, OIDC_*, DATABASE_URL via Postgres add-on reference, SENTRY_DSN). Per ADR 0031. Refinement: tasks/refinements/deployment/prod_railway_app_service.md"
       }
