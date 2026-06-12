@@ -26,10 +26,11 @@
 # `publish` builds the multi-stage application image (ADR 0015) and
 # pushes it to ghcr.io under `ghcr.io/<repo-owner>/aconversa-app`.
 # Railway does NOT consume that image — per ADR 0031 it builds the
-# Dockerfile itself; the Railway deploy job is appended after publish
-# by the operator-executed prod_railway_app_service step (it needs
-# the RAILWAY_TOKEN secret). The ghcr publish stays as the public
-# open-source artifact.
+# Dockerfile itself; the `deploy` job (appended 2026-06-12 by the
+# prod_railway_app_service step) signals Railway with
+# `railway up --ci` from the tag checkout, authenticated by the
+# RAILWAY_TOKEN repo secret (ADR 0034's deploy signal). The ghcr
+# publish stays as the public open-source artifact.
 #
 # Image tagging: every `vYYYY.MM.DD[.N]` tag publishes
 # `:YYYY.MM.DD[.N]` (the `match` pattern strips the leading `v`;
@@ -258,3 +259,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy the tagged commit to Railway
+    # ADR 0034: the tag is the only path to production; this job is the
+    # "signals Railway" step, sequenced strictly after gate + test +
+    # publish so the workflow remains the single sequencing point
+    # (tasks/refinements/deployment/prod_railway_app_service.md,
+    # Decisions). `railway up` uploads the checked-out tag tree and
+    # Railway builds the same Dockerfile from it (ADR 0031 — Railway
+    # does not consume the ghcr image).
+    runs-on: ubuntu-latest
+    needs: [gate, test, publish]
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to the app service
+        # --ci streams build logs and exits non-interactively. The
+        # token is a project token scoped to the production
+        # environment (prod_railway_app_service step 5).
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service app --ci
