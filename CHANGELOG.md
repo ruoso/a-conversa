@@ -25,6 +25,20 @@ lives in the git log and the project WBS (`tasks/`).
 
 ## Unreleased
 
+## 2026.06.12.3
+
+Security bump and the operator-runbook set.
+
+- **esbuild upgraded to 0.28.1** (121660b2), clearing the Dependabot
+  security findings on the default branch.
+- **Operational runbooks landed**: post-deploy smoke checklist,
+  secret rotation (all five production secrets, drilled against
+  production), and backup restore (drilled against a scratch target)
+  — `docs/runbooks/` (617742a0, 11433f01, fb100bb5).
+- Monitoring: Railway Pro threshold monitors configured; the external
+  uptime probe is a recorded deferral to revisit before the first
+  show (de58cd7a, ADR 0033 Amendments).
+
 ## 2026.06.12.2
 
 Config-as-code for the app service's deploy settings.
