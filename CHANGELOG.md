@@ -25,6 +25,25 @@ lives in the git log and the project WBS (`tasks/`).
 
 ## Unreleased
 
+## 2026.06.13
+
+Session discovery — viewers can now find sessions instead of needing a
+direct link.
+
+- **Public Sessions page**: an anonymous, paginated list of sessions
+  that have started, served from a new `GET /api/sessions/public`
+  endpoint (d13e6d69, fbee1312, d2da32a6).
+- **My Sessions page**: an authenticated, role-annotated list of the
+  signed-in user's sessions, backed by `GET /api/sessions/mine`
+  (c7bafc5d, 51ef1844).
+- **Discovery affordances**: each listed session offers a role-aware
+  "join live" route and, where applicable, a "See replay" link
+  (db685f05, 13b5a888).
+- Sessions now record a `started_at` timestamp (with a backfill for
+  existing rows), which is what the public list filters and orders on
+  (5273ff8a). End-to-end coverage for the discovery flows landed
+  alongside (b32b7ebd).
+
 ## 2026.06.12.3
 
 Security bump and the operator-runbook set.
