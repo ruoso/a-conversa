@@ -65,13 +65,27 @@ export function CallToActionSection(): ReactElement {
           {t('landing.cta.browsePublicSessions')}
         </Link>
         {isAuthenticated ? (
-          <Link
-            to="/logout"
-            data-testid="root-logout-link"
-            className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
-          >
-            {t('auth.login.logout')}
-          </Link>
+          <>
+            {/*
+              The "My sessions" entry point (D7) lives only in the authenticated
+              branch — a signed-out visitor must not see it, since the route
+              would just bounce them through the sign-in flow.
+            */}
+            <Link
+              to="/sessions/mine"
+              data-testid="root-view-my-sessions"
+              className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+            >
+              {t('landing.cta.viewMySessions')}
+            </Link>
+            <Link
+              to="/logout"
+              data-testid="root-logout-link"
+              className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+            >
+              {t('auth.login.logout')}
+            </Link>
+          </>
         ) : (
           <LoginButton className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700" />
         )}

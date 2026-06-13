@@ -58,6 +58,7 @@ task session_discovery "Session discovery" {
     task sd_my_sessions_page "My Sessions page (authenticated)" {
       effort 1d
       allocate team
+      complete 100
       depends !sd_session_list_component
       note "Authenticated route in the root app, linked from the signed-in chrome; unauthenticated visits bounce through the existing sign-in flow. Shows the caller's role per row (host/moderator/debater badge)."
     }

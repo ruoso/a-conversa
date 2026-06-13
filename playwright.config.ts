@@ -659,5 +659,29 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // My Sessions page e2e
+    // (session_discovery.sd_frontend.sd_my_sessions_page, refinement
+    // `tasks/refinements/session_discovery/sd_my_sessions_page.md`).
+    // The authenticated mirror of `chromium-public-sessions` (D9): it pays the
+    // page's own reachability + auth-bounce + host-badge + lobby-rows-appear
+    // debt with a thin compose-stack spec, while the heavier multi-user role
+    // matrix and the not-yet-built join-live routing stay in `sd_e2e`. The
+    // project loads alice's bootstrap jar (`setup-auth`) as its storage state,
+    // so the test page both seeds (same-origin API) and browses as alice; the
+    // single auth-bounce case opens its own anonymous context. Single locale
+    // en-US (cross-locale catalog text is pinned at the parity layer);
+    // `ignoreHTTPSErrors` for the OIDC self-signed cert crossed during the
+    // setup dance and the auth-bounce redirect.
+    {
+      name: 'chromium-my-sessions',
+      testMatch: /my-sessions-page\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
   ],
 });

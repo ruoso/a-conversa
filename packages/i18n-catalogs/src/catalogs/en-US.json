@@ -40,6 +40,16 @@
     "publicSessions": {
       "title": "Public sessions",
       "subtitle": "Browse public debates that have already started."
+    },
+    "mySessions": {
+      "title": "My sessions",
+      "subtitle": "Sessions you host or take part in — including lobbies you can rejoin.",
+      "role": {
+        "host": "Host",
+        "moderator": "Moderator",
+        "debater": "Debater",
+        "ariaLabel": "Your role: {role}"
+      }
     }
   },
   "chrome": {
@@ -253,7 +263,8 @@
     "cta": {
       "title": "Start a debate",
       "body": "Spin up a session and put a real disagreement on the map — or sign in to pick up where you left off.",
-      "browsePublicSessions": "Browse public sessions"
+      "browsePublicSessions": "Browse public sessions",
+      "viewMySessions": "My sessions"
     },
     "footer": {
       "tagline": "a-conversa — structured debate you can see.",

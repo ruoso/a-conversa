@@ -40,6 +40,16 @@
     "publicSessions": {
       "title": "Sessões públicas",
       "subtitle": "Explore debates públicos que já começaram."
+    },
+    "mySessions": {
+      "title": "Minhas sessões",
+      "subtitle": "Sessões que você organiza ou das quais participa — incluindo salas de espera às quais você pode voltar.",
+      "role": {
+        "host": "Anfitrião",
+        "moderator": "Moderador",
+        "debater": "Debatedor",
+        "ariaLabel": "Seu papel: {role}"
+      }
     }
   },
   "chrome": {
@@ -253,7 +263,8 @@
     "cta": {
       "title": "Inicie um debate",
       "body": "Crie uma sessão e coloque uma discordância real no mapa — ou entre para continuar de onde parou.",
-      "browsePublicSessions": "Ver sessões públicas"
+      "browsePublicSessions": "Ver sessões públicas",
+      "viewMySessions": "Minhas sessões"
     },
     "footer": {
       "tagline": "a-conversa — debate estruturado que você consegue ver.",
