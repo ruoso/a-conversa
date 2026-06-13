@@ -25,6 +25,7 @@ import {
   sessionCreatedPayloadSchema,
   sessionEndedPayloadSchema,
   sessionModeChangedPayloadSchema,
+  sessionRestartedPayloadSchema,
   snapshotCreatedPayloadSchema,
   validateEvent,
   votePayloadSchema,
@@ -171,6 +172,58 @@ describe('session-ended payload schema', () => {
   it('rejects a non-ISO ended_at', () => {
     const result = sessionEndedPayloadSchema.safeParse({ ended_at: 'tomorrow' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('session-restarted payload schema', () => {
+  it('accepts an empty object', () => {
+    const result = sessionRestartedPayloadSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects extra keys (strict empty object)', () => {
+    // Per D2 the payload carries no state; `.strict()` ensures a
+    // drifted writer that tried to smuggle a `restarted_at` (or any
+    // other) field fails the schema rather than silently dropping it.
+    const result = sessionRestartedPayloadSchema.safeParse({
+      restarted_at: '2026-06-13T12:00:00Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('validates a full envelope via validateEvent', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 4,
+      kind: 'session-restarted' as const,
+      actor: ACTOR_ID,
+      payload: {},
+      createdAt: '2026-06-13T12:00:00Z',
+    };
+    const parsed = validateEvent(envelope);
+    expect(parsed.kind).toBe('session-restarted');
+    expect(parsed.payload).toEqual({});
+  });
+
+  it('rejects an envelope with a non-empty payload and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 4,
+      kind: 'session-restarted' as const,
+      actor: ACTOR_ID,
+      payload: { restarted_at: '2026-06-13T12:00:00Z' },
+      createdAt: '2026-06-13T12:00:00Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'session-restarted'");
   });
 });
 
@@ -1574,6 +1627,9 @@ describe('placeholder payload schemas', () => {
       'session-ended',
       'participant-joined',
       'participant-left',
+      // Added by sl_restart_endpoint — the stateless reopen marker a
+      // moderator restart appends; the inverse of session-ended.
+      'session-restarted',
       'node-created',
       'edge-created',
       'annotation-created',
@@ -1968,6 +2024,7 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     joined_at: '2026-05-10T12:35:00Z',
   },
   'participant-left': { user_id: USER_ID, left_at: '2026-05-10T12:55:00Z' },
+  'session-restarted': {},
   'node-created': {
     node_id: NODE_ID,
     wording: 'A capital-N node statement.',

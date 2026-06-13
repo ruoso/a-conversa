@@ -17,6 +17,9 @@ importers:
       '@a-conversa/i18n-catalogs':
         specifier: workspace:*
         version: link:packages/i18n-catalogs
+      '@a-conversa/shared-types':
+        specifier: workspace:*
+        version: link:packages/shared-types
       '@axe-core/playwright':
         specifier: ^4.10.2
         version: 4.11.3(playwright-core@1.60.0)

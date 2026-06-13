@@ -38,6 +38,7 @@ task session_lifecycle "Session lifecycle controls" {
   task sl_restart_endpoint "POST /api/sessions/:id/restart — reopen an ended session" {
     effort 1d
     allocate team
+    complete 100
     depends backend.session_management.end_session_endpoint, data_and_methodology.event_types.session_lifecycle_events
     note "Mirror of the end endpoint (backend.session_management.end_session_endpoint): moderator-only, clears sessions.ended_at back to NULL and emits a new `session-restarted` event at the next sequence, atomically in one transaction; the row returns to 'live' (started_at stays set). Register the `session-restarted` event kind in the event-type registry (alongside session_lifecycle_events) and make the projection + replay loader tolerate it — it records the reopen for the change history and carries no state beyond that. 409 if the session is not currently ended (only an ended session can restart); 403 not-a-moderator for non-hosts; 404 for invisible sessions — same authority/visibility contract as end. Behavior tests per ADR 0007/0022."
   }

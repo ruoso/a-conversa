@@ -186,6 +186,7 @@ export function affectedEntities(event: Event): AffectedEntities {
     // -- No graph-entity id: flash nothing (Constraints §10, Acceptance §8).
     case 'session-created':
     case 'session-ended':
+    case 'session-restarted':
     case 'participant-joined':
     case 'participant-left':
     case 'session-mode-changed':

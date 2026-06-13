@@ -374,6 +374,17 @@ export interface SessionModeChanged {
   newMode: SessionMode;
 }
 
+// Per sl_restart_endpoint D4 — the projector's `session-restarted` arm
+// appends this entry to the change feed when a `'session-restarted'`
+// event applies. The handler also returns the projected session state
+// to `open` (a restarted session is behaviorally live again); this
+// entry is what signals the reopen to consumers that want to
+// distinguish a restart from a fresh `session-created`. It carries no
+// fields — the reopen has no state beyond its occurrence.
+export interface SessionRestartedChange {
+  kind: 'session-restarted';
+}
+
 export interface ParticipantJoinedChange {
   kind: 'participant-joined';
   userId: string;
@@ -474,6 +485,7 @@ export interface NodeWordingUpdatedChange {
 export type ProjectionChange =
   | SessionStateChanged
   | SessionModeChanged
+  | SessionRestartedChange
   | ParticipantJoinedChange
   | ParticipantLeftChange
   | NodeAddedChange

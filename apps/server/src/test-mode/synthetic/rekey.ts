@@ -172,6 +172,17 @@ function rekeyEvent(event: Event, sequence: number, ctx: RekeyContext): Event {
         createdAt,
         payload: { ...event.payload },
       };
+    case 'session-restarted':
+      // Empty payload (sl_restart_endpoint D2) — nothing to remap.
+      return {
+        id,
+        sessionId,
+        sequence,
+        kind: 'session-restarted',
+        actor,
+        createdAt,
+        payload: { ...event.payload },
+      };
     case 'participant-joined':
       return {
         id,

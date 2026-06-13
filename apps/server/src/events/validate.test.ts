@@ -62,6 +62,7 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     joined_at: '2026-05-10T12:35:00Z',
   },
   'participant-left': { user_id: USER_ID, left_at: '2026-05-10T12:55:00Z' },
+  'session-restarted': {},
   'node-created': {
     node_id: NODE_ID,
     wording: 'A capital-N node statement.',
@@ -445,6 +446,9 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   'session-ended': (base) => ({ ...base, ended_at: 'tomorrow' }),
   'participant-joined': (base) => ({ ...base, user_id: 'not-a-uuid' }),
   'participant-left': (base) => ({ ...base, user_id: 'not-a-uuid' }),
+  // The empty payload is `.strict()`, so any extra key surfaces a
+  // payload-level rejection (the reopen carries no fields — D2).
+  'session-restarted': (base) => ({ ...base, restarted_at: 'tomorrow' }),
   'node-created': (base) => ({ ...base, node_id: 'not-a-uuid' }),
   'edge-created': (base) => ({ ...base, role: 'undermines' }),
   'annotation-created': (base) => ({ ...base, kind: 'rebuttal' }),

@@ -2777,6 +2777,182 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   );
 
   // ───────────────────────────────────────────────────────────────
+  // POST /api/sessions/:id/restart — moderator reopens an ENDED
+  // session. The exact authority/visibility mirror of the end
+  // endpoint above, with the state precondition inverted: restart
+  // requires the session to be currently ended. In one transaction it
+  // clears `sessions.ended_at` back to NULL (the row returns to the
+  // `live` derived status — `started_at` is untouched) AND appends a
+  // `session-restarted` event at the next per-session sequence. The
+  // event carries no payload (per sl_restart_endpoint D2 — the reopen
+  // is recorded by the event's existence at its sequence, nothing
+  // more; the cleared column is NULL, so there is no value to carry).
+  //
+  // Refinement: tasks/refinements/session_lifecycle/sl_restart_endpoint.md
+  // ───────────────────────────────────────────────────────────────
+  app.post(
+    '/api/sessions/:id/restart',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Restart (reopen) an ended debate session (moderator-only)',
+        description:
+          'Reopens an ended session by clearing `ended_at` back to NULL and emitting a ' +
+          '`session-restarted` event into `session_events` at the next available sequence. ' +
+          'Both writes are atomic (single transaction); the row returns to the `live` ' +
+          'derived status (`started_at` is untouched). Only the session host (the ' +
+          'moderator at v1) may restart the session. The exact authority/visibility mirror ' +
+          'of the end endpoint.\n\n' +
+          'Visibility-then-authority ordering: invisible sessions (private + caller is ' +
+          'neither host nor participant) return 404 `not-found` BEFORE any authority ' +
+          'check, preserving the existence-non-leak property. Visible-but-not-host ' +
+          'returns 403 `not-a-moderator`. A not-ended session (lobby or live) returns 409 ' +
+          '`session-not-ended` — like end, restart is deliberately NOT idempotent because ' +
+          'only an ended session can be reopened, and a second `session-restarted` event ' +
+          'would corrupt the per-session log.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        response: {
+          200: sessionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant).
+      const appendedEvents: Event[] = [];
+
+      // Same single-transaction shape as end: the visibility check,
+      // the authority check, the precondition check, the UPDATE, the
+      // MAX(sequence) read, and the event INSERT are atomic with
+      // respect to concurrent restart/end attempts on the same
+      // session.
+      const updatedRow = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE — identical to end.
+        //    The host/participant path retains access to ended
+        //    sessions (an ended session is precisely what restart
+        //    operates on), and the host (always the moderator-only
+        //    caller) always passes the visibility gate. Invisible
+        //    sessions return 404 BEFORE any authority check.
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND ${visibilityWhereFragment(2)}
+           FOR UPDATE`,
+          [sessionId, userId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Authority — only the host may restart the session.
+        if (existing.host_user_id !== userId) {
+          throw new ApiError(
+            403,
+            'not-a-moderator',
+            'only the session host may restart the session',
+          );
+        }
+
+        // 3. Precondition — the INVERSE of end. Only an ended session
+        //    can be reopened; a not-ended session (lobby or live)
+        //    returns 409 with a discriminating code. Like end's 409,
+        //    this is deliberately NOT idempotent — restarting a live
+        //    session is a meaningful state error, not a no-op.
+        if (existing.ended_at === null) {
+          throw new ApiError(409, 'session-not-ended', 'session is not currently ended');
+        }
+
+        // 4. Clear `ended_at` back to NULL. `started_at` is NOT
+        //    touched, so a session that was live before it ended
+        //    returns to the `live` derived status. RETURNING surfaces
+        //    the full row (the shape `sessionRowToResponse` consumes).
+        const updateResult = await client.query<SessionsInsertRow>(
+          `UPDATE sessions
+           SET ended_at = NULL
+           WHERE id = $1
+           RETURNING id, host_user_id, privacy, topic, created_at, ended_at`,
+          [sessionId],
+        );
+        const updated = updateResult.rows[0];
+        if (updated === undefined) {
+          // Defensive — should be unreachable. The WHERE matched a
+          // row we just SELECTed under FOR UPDATE.
+          throw new ApiError(500, 'internal-error', 'session UPDATE returned no row');
+        }
+
+        // 5. Application-managed monotonic sequence allocator (ADR
+        //    0020) — identical to end. Read MAX(sequence), INSERT at
+        //    MAX+1; the UNIQUE (session_id, sequence) constraint is
+        //    the second-line guard against concurrent writers.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 6. Build the `session-restarted` envelope and run it through
+        //    `validateEvent`. The payload is empty — the reopen is
+        //    recorded by the event's existence at its sequence; the
+        //    envelope's `createdAt` timestamps it.
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId: updated.id,
+          sequence: nextSeq,
+          kind: 'session-restarted' as const,
+          actor: userId,
+          payload: {},
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+
+        // 7. INSERT the event row; collect it for the post-COMMIT WS
+        //    broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
+
+        return updated;
+      });
+
+      // Post-commit broadcast emit.
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
+
+      return reply.code(200).send(sessionRowToResponse(updatedRow));
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────────
   // POST /api/sessions/:id/start — moderator advances the session out
   // of the lobby into the operate canvas. Per ADR 0028 the transition
   // is signalled by a dedicated `session-mode-changed` wire event.

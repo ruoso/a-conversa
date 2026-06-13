@@ -135,6 +135,16 @@ export const eventKinds = [
   'session-ended',
   'participant-joined',
   'participant-left',
+  // Session reopen (per sl_restart_endpoint). The moderator restarts
+  // an ended session via `POST /api/sessions/:id/restart`, which clears
+  // `sessions.ended_at` back to NULL (the row returns to the `live`
+  // derived status) and appends this event. It is the literal inverse
+  // of `session-ended` and carries no payload — the event's existence
+  // at its sequence records the reopen, and the envelope's `createdAt`
+  // timestamps it (contrast `session-ended`, which carries the
+  // `ended_at` it set; restart's cleared column is NULL, so there is
+  // nothing analogous to record).
+  'session-restarted',
   // Global entity creation
   'node-created',
   'edge-created',
@@ -248,6 +258,17 @@ export const participantLeftPayloadSchema = z.object({
 });
 
 export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema>;
+
+// `session-restarted` carries no payload (per sl_restart_endpoint D2).
+// Reopening an ended session sets `sessions.ended_at` back to NULL —
+// there is no new value worth recording (contrast `session-ended`,
+// which records the `ended_at` it set), and the envelope's `createdAt`
+// already timestamps the reopen. `.strict()` rejects extra keys so a
+// drifted writer that tried to smuggle a `restarted_at` (or any other)
+// field fails the schema-on-write gate rather than silently dropping it.
+export const sessionRestartedPayloadSchema = z.object({}).strict();
+
+export type SessionRestartedPayload = z.infer<typeof sessionRestartedPayloadSchema>;
 
 // -- Entity creation event payload schemas ---------------------------
 //
@@ -765,6 +786,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'session-ended': sessionEndedPayloadSchema,
   'participant-joined': participantJoinedPayloadSchema,
   'participant-left': participantLeftPayloadSchema,
+  // Owned by sl_restart_endpoint
+  'session-restarted': sessionRestartedPayloadSchema,
   // Owned by entity_creation_events
   'node-created': nodeCreatedPayloadSchema,
   'edge-created': edgeCreatedPayloadSchema,
@@ -803,6 +826,7 @@ export interface EventPayloadMap {
   'session-ended': SessionEndedPayload;
   'participant-joined': ParticipantJoinedPayload;
   'participant-left': ParticipantLeftPayload;
+  'session-restarted': SessionRestartedPayload;
   'node-created': NodeCreatedPayload;
   'edge-created': EdgeCreatedPayload;
   'annotation-created': AnnotationCreatedPayload;

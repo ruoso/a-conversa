@@ -154,7 +154,11 @@ export function summarizeEvent(event: Event): EventSummary {
       };
 
     // -- Empty payload: no meaningful summary (Decision §D5) ----------
+    // `session-restarted` (sl_restart_endpoint) carries no payload; a
+    // localized change-history summary + its i18n catalog key are owned
+    // by the moderator restart-button UI task, not this backend task.
     case 'session-ended':
+    case 'session-restarted':
     case 'participant-left':
     case 'proposal-withdrawn':
       return NONE;

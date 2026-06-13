@@ -101,6 +101,46 @@ describe('applyEvent — session-created / session-ended', () => {
   });
 });
 
+describe('applyEvent — session-restarted (sl_restart_endpoint)', () => {
+  it('a created→ended→restarted log projects to the open state', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 'Reopen me',
+        created_at: T0,
+      }),
+    );
+    applyEvent(projection, makeEvent(2, 'session-ended', MODERATOR_ID, T1, { ended_at: T1 }));
+    expect(projection.sessionState).toBe('ended');
+
+    const changes = applyEvent(projection, makeEvent(3, 'session-restarted', MODERATOR_ID, T2, {}));
+    // Restart returns the projected state to open (mirroring
+    // session-created) and emits a dedicated `session-restarted`
+    // change-feed entry (NOT a generic session-state-changed) so
+    // consumers can distinguish a reopen from a fresh creation.
+    expect(projection.sessionState).toBe('open');
+    expect(changes).toEqual([{ kind: 'session-restarted' }]);
+  });
+
+  it('round-trips identically through projectFromLog', () => {
+    const log = [
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 'Reopen me',
+        created_at: T0,
+      }),
+      makeEvent(2, 'session-ended', MODERATOR_ID, T1, { ended_at: T1 }),
+      makeEvent(3, 'session-restarted', MODERATOR_ID, T2, {}),
+    ];
+    const projection = projectFromLog(log, SESSION_ID);
+    expect(projection.sessionState).toBe('open');
+  });
+});
+
 describe('applyEvent — session-mode-changed (ADR 0028)', () => {
   it('initial currentMode is "lobby" before any session-mode-changed event applies', () => {
     const projection = createEmptyProjection(SESSION_ID);

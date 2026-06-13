@@ -133,6 +133,19 @@ function handleSessionEnded(
   changes.push({ kind: 'session-state-changed', state: 'ended' });
 }
 
+// Per sl_restart_endpoint D4 — restart reopens an ended session. The
+// projected state returns to `open` (mirroring `handleSessionCreated`
+// rather than inventing a third "reopened" state — a restarted session
+// is behaviorally live again, and downstream consumers already
+// understand open vs ended). The change-feed entry is `session-restarted`
+// (not `session-state-changed`) so anything that wants to distinguish a
+// reopen from a fresh creation can. The payload is empty (carries no
+// state beyond the reopen's occurrence), so the handler takes none.
+function handleSessionRestarted(projection: Projection, changes: ProjectionChange[]): void {
+  projection.setSessionState('open');
+  changes.push({ kind: 'session-restarted' });
+}
+
 // Per ADR 0028 — flips the projection's `currentMode` field to the
 // event's `new_mode`. The participant lobby's auto-navigation
 // `useEffect` reads the event off the per-session WS slice directly
@@ -1436,6 +1449,9 @@ export function applyEvent(projection: Projection, event: Event): ProjectionChan
         break;
       case 'session-ended':
         handleSessionEnded(projection, event.payload, changes);
+        break;
+      case 'session-restarted':
+        handleSessionRestarted(projection, changes);
         break;
       case 'participant-joined':
         handleParticipantJoined(projection, event.payload, changes);
