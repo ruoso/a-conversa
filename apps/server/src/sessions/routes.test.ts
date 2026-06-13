@@ -599,6 +599,115 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       return Promise.resolve({ rows: [{ max_seq: maxSeq }] as unknown as TRow[] });
     }
     if (
+      text.includes('FROM sessions s') &&
+      text.includes('session_participants') &&
+      !text.includes("privacy = 'public'") &&
+      (text.includes('COUNT(*)') || text.includes('NULLS FIRST'))
+    ) {
+      // The `GET /sessions/mine` membership query — covers BOTH the
+      // page query (`ORDER BY started_at DESC NULLS FIRST, created_at
+      // DESC LIMIT/OFFSET`, with the role CASE/subquery) and the
+      // total-count query. Distinguished from the `GET /sessions`
+      // branch below by the ABSENCE of the `privacy = 'public'`
+      // visibility gate (this endpoint has none) and the membership
+      // alias `sessions s`. The membership gate is host OR ANY (current
+      // or historical) participant row — `left_at` ignored (D1).
+      const callerId = p[0] as string;
+      let filtered = store.sessions.filter(
+        (s) =>
+          s.host_user_id === callerId ||
+          store.participants.some((sp) => sp.session_id === s.id && sp.user_id === callerId),
+      );
+      // Topic filter — `AND s.topic ILIKE $N`; the param is `%...%`.
+      const topicMatch = text.match(/s\.topic ILIKE \$(\d+)/);
+      if (topicMatch !== null) {
+        const idx = Number.parseInt(topicMatch[1] ?? '0', 10) - 1;
+        const needle = (p[idx] as string).replace(/^%/, '').replace(/%$/, '').toLowerCase();
+        filtered = filtered.filter((s) => s.topic.toLowerCase().includes(needle));
+      }
+      // Date bounds — `AND s.started_at >= $N` / `AND s.started_at <
+      // $N`. A NULL `started_at` (lobby) never satisfies a comparison,
+      // so either bound excludes lobby rows (D4).
+      const afterMatch = text.match(/s\.started_at >= \$(\d+)/);
+      if (afterMatch !== null) {
+        const idx = Number.parseInt(afterMatch[1] ?? '0', 10) - 1;
+        const bound = new Date(p[idx] as string).getTime();
+        filtered = filtered.filter((s) => s.started_at != null && s.started_at.getTime() >= bound);
+      }
+      const beforeMatch = text.match(/s\.started_at < \$(\d+)/);
+      if (beforeMatch !== null) {
+        const idx = Number.parseInt(beforeMatch[1] ?? '0', 10) - 1;
+        const bound = new Date(p[idx] as string).getTime();
+        filtered = filtered.filter((s) => s.started_at != null && s.started_at.getTime() < bound);
+      }
+      if (text.includes('COUNT(*)')) {
+        return Promise.resolve({ rows: [{ total: filtered.length }] as unknown as TRow[] });
+      }
+      // Resolve the per-row `role` mirroring the production CASE +
+      // correlated subquery (D7): `host` when the caller hosts the
+      // session; otherwise the caller's participant role, the active
+      // row preferred (`left_at IS NULL` DESC), most-recent
+      // (`joined_at` DESC) otherwise.
+      const resolveRole = (s: SessionRow): string | null => {
+        if (s.host_user_id === callerId) {
+          return 'host';
+        }
+        const rows = store.participants
+          .filter((sp) => sp.session_id === s.id && sp.user_id === callerId)
+          .sort((a, b) => {
+            const aActive = a.left_at === null || a.left_at === undefined ? 1 : 0;
+            const bActive = b.left_at === null || b.left_at === undefined ? 1 : 0;
+            if (aActive !== bActive) {
+              return bActive - aActive;
+            }
+            const aJoined = a.joined_at?.getTime() ?? 0;
+            const bJoined = b.joined_at?.getTime() ?? 0;
+            return bJoined - aJoined;
+          });
+        return rows[0]?.role ?? null;
+      };
+      // Page query: ORDER BY started_at DESC NULLS FIRST, created_at
+      // DESC, then slice by LIMIT/OFFSET (the last two params).
+      const sorted = [...filtered].sort((a, b) => {
+        const aNull = a.started_at == null;
+        const bNull = b.started_at == null;
+        if (aNull !== bNull) {
+          return aNull ? -1 : 1;
+        }
+        if (!aNull && !bNull) {
+          const diff = b.started_at!.getTime() - a.started_at!.getTime();
+          if (diff !== 0) {
+            return diff;
+          }
+        }
+        return b.created_at.getTime() - a.created_at.getTime();
+      });
+      const limitMatch = text.match(/LIMIT \$(\d+)/);
+      const offsetMatch = text.match(/OFFSET \$(\d+)/);
+      let pageStart = 0;
+      let pageEnd = sorted.length;
+      if (offsetMatch !== null) {
+        const idx = Number.parseInt(offsetMatch[1] ?? '0', 10) - 1;
+        pageStart = (p[idx] as number) ?? 0;
+      }
+      if (limitMatch !== null) {
+        const idx = Number.parseInt(limitMatch[1] ?? '0', 10) - 1;
+        const lim = (p[idx] as number) ?? sorted.length;
+        pageEnd = Math.min(sorted.length, pageStart + lim);
+      }
+      const page = sorted.slice(pageStart, pageEnd).map((s) => ({
+        id: s.id,
+        host_user_id: s.host_user_id,
+        privacy: s.privacy,
+        topic: s.topic,
+        created_at: s.created_at,
+        started_at: s.started_at ?? null,
+        ended_at: s.ended_at,
+        role: resolveRole(s),
+      }));
+      return Promise.resolve({ rows: page as unknown as TRow[] });
+    }
+    if (
       text.includes('FROM sessions') &&
       text.includes("privacy = 'public'") &&
       text.includes('host_user_id = $1') &&
@@ -5322,5 +5431,369 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('auth-required');
+  });
+});
+
+// ============================================================
+// GET /sessions/mine — the membership-scoped, role-annotated list.
+//
+// Refinement: tasks/refinements/session_discovery/sd_my_sessions_endpoint.md
+//
+// Covered here (Vitest against the memory pool):
+//   1. Maps rows to the camelCase `MySessionResponse` shape — including
+//      `startedAt` and the resolved `role` (no unhandled-query 500).
+//   2. Membership scope: host role; moderator / debater-A / debater-B
+//      participant roles; a non-member session (incl. a public one) is
+//      absent.
+//   3. Lobby-first ordering (`started_at DESC NULLS FIRST, created_at
+//      DESC`).
+//   4. Role precedence: host beats a participant row on the same
+//      session; the active participant row beats a historical one.
+//   5. Topic + date filtering; an over-cap/bad param → 400.
+//   6. Pagination + `total`.
+//   7. Auth: no cookie → 401; valid cookie → 200.
+// ============================================================
+describe('GET /sessions/mine — membership-scoped, role-annotated list', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+  const seededUsers: UserRow[] = [
+    { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+    { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+    { id: CAROL_ID, oauth_subject: 'authelia:carol', screen_name: 'carol', deleted_at: null },
+  ];
+
+  // Alice hosts a started session.
+  const S_HOST_STARTED: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Alice hosts a started talk',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    started_at: new Date('2026-05-10T10:00:00.000Z'),
+    ended_at: null,
+  };
+  // Alice hosts a lobby (unstarted) session.
+  const S_HOST_LOBBY: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0002',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'Alice hosts a lobby talk',
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    started_at: null,
+    ended_at: null,
+  };
+  // Ben hosts; Alice is a moderator. Started + ended.
+  const S_BEN_MOD: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0003',
+    host_user_id: BEN_ID,
+    privacy: 'public',
+    topic: 'Ben hosts, Alice moderates',
+    created_at: new Date('2026-05-09T12:00:00.000Z'),
+    started_at: new Date('2026-05-10T08:00:00.000Z'),
+    ended_at: new Date('2026-05-10T09:00:00.000Z'),
+  };
+  // Carol hosts a public session Alice is NOT in — must be absent.
+  const S_CAROL_OTHER: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0004',
+    host_user_id: CAROL_ID,
+    privacy: 'public',
+    topic: "Carol's session Alice is not in",
+    created_at: new Date('2026-05-09T13:00:00.000Z'),
+    started_at: new Date('2026-05-10T07:00:00.000Z'),
+    ended_at: null,
+  };
+
+  it('maps rows to the camelCase MySessionResponse shape including startedAt and role', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_HOST_STARTED] });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<{
+        id?: string;
+        hostUserId?: string;
+        privacy?: string;
+        topic?: string;
+        createdAt?: string;
+        startedAt?: string | null;
+        endedAt?: string | null;
+        role?: string;
+      }>;
+      total?: number;
+    }>();
+    expect(body.sessions).toHaveLength(1);
+    const row = body.sessions?.[0];
+    expect(row?.id).toBe(S_HOST_STARTED.id);
+    expect(row?.hostUserId).toBe(ALICE_ID);
+    expect(row?.privacy).toBe('public');
+    expect(row?.topic).toBe(S_HOST_STARTED.topic);
+    expect(row?.createdAt).toBe('2026-05-09T10:00:00.000Z');
+    expect(row?.startedAt).toBe('2026-05-10T10:00:00.000Z');
+    expect(row?.endedAt).toBeNull();
+    expect(row?.role).toBe('host');
+    expect(body.total).toBe(1);
+  });
+
+  it('annotates host / moderator / debater roles and hides non-member sessions', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_HOST_STARTED, S_BEN_MOD, S_CAROL_OTHER],
+      participants: [
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0001',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'moderator',
+          joined_at: new Date('2026-05-10T08:00:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<{ id?: string; role?: string }>;
+      total?: number;
+    }>();
+    const byId = new Map((body.sessions ?? []).map((s) => [s.id, s.role]));
+    expect(byId.get(S_HOST_STARTED.id)).toBe('host');
+    expect(byId.get(S_BEN_MOD.id)).toBe('moderator');
+    // Carol's public session — Alice is neither host nor participant.
+    expect(byId.has(S_CAROL_OTHER.id)).toBe(false);
+    expect(body.total).toBe(2);
+  });
+
+  it('returns the debater role for a debater-A / debater-B participant row', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_BEN_MOD, S_CAROL_OTHER],
+      participants: [
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0002',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'debater-A',
+          joined_at: new Date('2026-05-10T08:00:00.000Z'),
+          left_at: null,
+        },
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0003',
+          session_id: S_CAROL_OTHER.id,
+          user_id: ALICE_ID,
+          role: 'debater-B',
+          joined_at: new Date('2026-05-10T07:00:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string; role?: string }> }>();
+    const byId = new Map((body.sessions ?? []).map((s) => [s.id, s.role]));
+    expect(byId.get(S_BEN_MOD.id)).toBe('debater-A');
+    expect(byId.get(S_CAROL_OTHER.id)).toBe('debater-B');
+  });
+
+  it('sorts lobby (NULL started_at) sessions ahead of started ones, then by started_at DESC', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      // S_HOST_STARTED started 2026-05-10T10:00, S_BEN_MOD started
+      // 2026-05-10T08:00 (Alice moderates), S_HOST_LOBBY is lobby.
+      sessions: [S_HOST_STARTED, S_HOST_LOBBY, S_BEN_MOD],
+      participants: [
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0004',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'moderator',
+          joined_at: new Date('2026-05-10T08:00:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }> }>();
+    const ids = (body.sessions ?? []).map((s) => s.id);
+    // Lobby first, then most-recently-started (10:00 before 08:00).
+    expect(ids).toEqual([S_HOST_LOBBY.id, S_HOST_STARTED.id, S_BEN_MOD.id]);
+  });
+
+  it('resolves role precedence: host beats a participant row on the same session', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_HOST_STARTED],
+      participants: [
+        // Alice is ALSO a moderator participant on her own hosted
+        // session — host must still win.
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0005',
+          session_id: S_HOST_STARTED.id,
+          user_id: ALICE_ID,
+          role: 'moderator',
+          joined_at: new Date('2026-05-10T10:00:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    const body = response.json<{ sessions?: Array<{ role?: string }> }>();
+    expect(body.sessions?.[0]?.role).toBe('host');
+  });
+
+  it('prefers the active participant row over a historical one for the role', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_BEN_MOD],
+      participants: [
+        // Historical debater row (left), plus a current moderator row.
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0006',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'debater-A',
+          joined_at: new Date('2026-05-10T08:00:00.000Z'),
+          left_at: new Date('2026-05-10T08:30:00.000Z'),
+        },
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0007',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'moderator',
+          joined_at: new Date('2026-05-10T08:31:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    const body = response.json<{ sessions?: Array<{ role?: string }> }>();
+    expect(body.sessions?.[0]?.role).toBe('moderator');
+  });
+
+  it('?topic narrows by case-insensitive substring', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_HOST_STARTED, S_HOST_LOBBY] });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine?topic=LOBBY',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(S_HOST_LOBBY.id);
+    expect(body.total).toBe(1);
+  });
+
+  it('?startedAfter narrows by started_at and excludes lobby (NULL) rows', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_HOST_STARTED, S_HOST_LOBBY] });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine?startedAfter=2026-05-10T00:00:00.000Z',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    // Only the started session — the lobby (NULL started_at) drops out.
+    expect(body.sessions?.map((s) => s.id)).toEqual([S_HOST_STARTED.id]);
+    expect(body.total).toBe(1);
+  });
+
+  it('rejects an over-cap offset with 400 validation-failed before any DB round-trip', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_HOST_STARTED] });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine?offset=100001',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+  });
+
+  it('pages the ordered set with limit/offset and reports the full total', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_HOST_STARTED, S_HOST_LOBBY, S_BEN_MOD],
+      participants: [
+        {
+          id: '00000000-0000-4000-9000-bbbbbbbb0008',
+          session_id: S_BEN_MOD.id,
+          user_id: ALICE_ID,
+          role: 'moderator',
+          joined_at: new Date('2026-05-10T08:00:00.000Z'),
+          left_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/mine?limit=1&offset=1',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    // Full order is [lobby, host-started, ben-mod]; offset 1 limit 1 →
+    // the started host session.
+    expect(body.sessions?.map((s) => s.id)).toEqual([S_HOST_STARTED.id]);
+    expect(body.total).toBe(3);
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_HOST_STARTED] });
+    const response = await built.app.inject({ method: 'GET', url: '/api/sessions/mine' });
+    expect(response.statusCode).toBe(401);
+    expect(response.json<{ error?: { code?: string } }>().error?.code).toBe('auth-required');
   });
 });

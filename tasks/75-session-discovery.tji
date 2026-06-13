@@ -34,6 +34,7 @@ task session_discovery "Session discovery" {
     task sd_my_sessions_endpoint "GET /api/sessions/mine — authenticated, role-annotated" {
       effort 1d
       allocate team
+      complete 100
       depends !!sd_schema
       note "Sessions where the caller is host (sessions.host_user_id) or holds any session_participants row (moderator / debater-A / debater-B), each row annotated with the caller's role so the client can route 'join live' without a second request. Includes lobby-mode (unstarted) and ended sessions. Pagination + topic search + date filter, sorted by start time (lobby sessions with NULL started_at sort to the top — they're the ones you most likely want back into). Requires the session cookie; same auth surface as the existing /api/auth/* routes. Behavior tests per ADR 0007/0022 alongside."
     }

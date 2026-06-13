@@ -9,6 +9,7 @@
 //
 //   - POST /api/sessions — create a new debate session.
 //   - GET /api/sessions — list the visible debate sessions for the caller.
+//   - GET /api/sessions/mine — list the caller's own sessions (host OR participant), role-annotated.
 //   - GET /api/sessions/:id — fetch a single session's metadata.
 //   - POST /api/sessions/:id/end — moderator marks a session as ended.
 //   - PATCH /api/sessions/:id/privacy — host toggles the session privacy.
@@ -25,7 +26,8 @@
 //              tasks/refinements/backend/session_privacy_toggle.md,
 //              tasks/refinements/backend/participant_assignment.md,
 //              tasks/refinements/backend/list_session_participants_endpoint.md,
-//              tasks/refinements/backend/session_invite_self_claim_endpoint.md
+//              tasks/refinements/backend/session_invite_self_claim_endpoint.md,
+//              tasks/refinements/session_discovery/sd_my_sessions_endpoint.md
 // ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
@@ -428,6 +430,151 @@ export const sessionListResponseSchema = {
  */
 export const sessionListResponseRef = {
   $ref: `${SESSION_LIST_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
+ * Stable `$id` for the `MySessionResponse` schema — the per-row shape
+ * `GET /sessions/mine` returns. Distinct from the shared
+ * `SessionResponse` (consumed by four other endpoints) because it
+ * carries two extra fields those endpoints neither emit nor need:
+ * `startedAt` (the lobby/started marker + the sort key) and `role` (the
+ * caller's resolved role in the session, driving role-aware "join live"
+ * routing). Widening the shared shape would be scope creep and risk the
+ * other consumers — D2 in
+ * `tasks/refinements/session_discovery/sd_my_sessions_endpoint.md`.
+ */
+export const MY_SESSION_RESPONSE_SCHEMA_ID = 'MySessionResponse';
+
+/**
+ * The `GET /sessions/mine` per-row response shape. All fields camelCase
+ * per the platform's HTTP convention; the underlying `sessions` row is
+ * snake_case + DB-typed timestamps and gets translated at the response
+ * boundary by `mySessionRowToResponse`.
+ *
+ * `startedAt` is `string | null` — null while the session is in lobby
+ * (unstarted), populated with the ISO-8601 start time once the
+ * lobby→operate transition stamps `sessions.started_at` (sd_schema).
+ * `role` is the caller's single resolved role in the session, computed
+ * with precedence host > moderator > debater (D7): `host` when the
+ * caller hosts the session, otherwise the caller's participant role
+ * (the active row preferred over a historical one). It informs the
+ * client's routing only — it grants no access (D9).
+ */
+export const mySessionResponseSchema = {
+  $id: MY_SESSION_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['id', 'hostUserId', 'privacy', 'topic', 'createdAt', 'startedAt', 'endedAt', 'role'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Server-generated session id.',
+    },
+    hostUserId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The user who created the session (the host).',
+    },
+    privacy: {
+      type: 'string',
+      enum: ['public', 'private'],
+      description:
+        "Session privacy. `'public'` allows cross-session reference; `'private'` gates " +
+        'audience-page authentication and cross-session reference. The caller sees their ' +
+        'own sessions regardless of privacy — this endpoint applies no visibility gate.',
+    },
+    topic: {
+      type: 'string',
+      description: 'The debate topic, captured at session creation.',
+    },
+    createdAt: {
+      type: 'string',
+      format: 'date-time',
+      description: 'ISO-8601 timestamp the row was created.',
+    },
+    startedAt: {
+      type: ['string', 'null'],
+      format: 'date-time',
+      description:
+        'ISO-8601 timestamp the session left the lobby (the first ' +
+        '`session-mode-changed → operate`); null while the session is in lobby ' +
+        '(unstarted). Lobby (null) rows sort to the top of the list.',
+    },
+    endedAt: {
+      type: ['string', 'null'],
+      format: 'date-time',
+      description: 'ISO-8601 timestamp the session ended; null while the session is active.',
+    },
+    role: {
+      type: 'string',
+      enum: ['host', 'moderator', 'debater-A', 'debater-B'],
+      description:
+        "The caller's resolved role in this session, with precedence host > moderator > " +
+        "debater (the active participant row preferred over a historical one). `'host'` " +
+        "when the caller hosts the session; otherwise the caller's `session_participants` " +
+        'role. Drives role-aware "join live" routing (host/moderator → moderator surface, ' +
+        'debater → participant surface); it informs routing only and grants no access.',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` the `MySessionListResponse` wrapper uses to point at the
+ * per-row `MySessionResponse` shape.
+ */
+export const mySessionResponseRef = { $ref: `${MY_SESSION_RESPONSE_SCHEMA_ID}#` } as const;
+
+/**
+ * Stable `$id` for the `MySessionListResponse` wrapper — the
+ * `{ sessions: MySessionResponse[]; total: integer }` shape
+ * `GET /sessions/mine` returns. Mirrors `SessionListResponse`'s wrapper
+ * contract (`total` is the full match count BEFORE limit/offset) but
+ * points at `MySessionResponse` rather than the shared `SessionResponse`.
+ */
+export const MY_SESSION_LIST_RESPONSE_SCHEMA_ID = 'MySessionListResponse';
+
+/**
+ * The `GET /sessions/mine` response wrapper. `total` is the count of
+ * sessions matching the membership predicate AND every supplied filter
+ * (topic, date bounds) BEFORE `LIMIT`/`OFFSET` — the denominator a paged
+ * "My Sessions" UI uses for "showing 1-N of M".
+ */
+export const mySessionListResponseSchema = {
+  $id: MY_SESSION_LIST_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['sessions', 'total'],
+  additionalProperties: false,
+  properties: {
+    sessions: {
+      type: 'array',
+      description:
+        'The sessions the authenticated caller hosts OR holds (or held) a participant ' +
+        'row in — no visibility gate; the caller always sees their own sessions ' +
+        'regardless of privacy. Lobby (unstarted) and ended sessions are both included. ' +
+        'Ordered `started_at DESC NULLS FIRST, created_at DESC` — lobby rows first, then ' +
+        'most-recently-started. Sliced by `?limit` / `?offset` (defaults 50 / 0); the ' +
+        '`total` field carries the full-match count for pagination UI. Each row is ' +
+        "annotated with the caller's `role`.",
+      items: mySessionResponseRef,
+    },
+    total: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        "The count of the caller's sessions matching every supplied filter (topic, " +
+        'date bounds) BEFORE `LIMIT`/`OFFSET` are applied. Paged UIs use this as the ' +
+        'denominator; clients walking pages stop when `(offset + sessions.length) >= total`.',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` clients use to point at the `MySessionListResponse`
+ * wrapper.
+ */
+export const mySessionListResponseRef = {
+  $ref: `${MY_SESSION_LIST_RESPONSE_SCHEMA_ID}#`,
 } as const;
 
 /**
@@ -965,6 +1112,73 @@ const listSessionsQuerystringSchema = {
 } as const;
 
 /**
+ * Querystring schema for `GET /sessions/mine`. Same input-hardening
+ * posture as `listSessionsQuerystringSchema` (D3): `topic` bounded by
+ * `MIN/MAX_TOPIC_SEARCH_LENGTH`, `limit` default 50 / max 200, `offset`
+ * max `MAX_SESSION_LIST_OFFSET`, `additionalProperties: false` so an
+ * unknown key fails with 400 `validation-failed` before any DB
+ * round-trip. The membership endpoint has no `status` / `host` /
+ * `participant` / `privacy` filters (the result set is the caller's own
+ * sessions, no visibility gate); instead it adds two optional ISO-8601
+ * `started_at` date bounds (D4).
+ */
+const myListSessionsQuerystringSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    topic: {
+      type: 'string',
+      // Same `MIN/MAX_TOPIC_SEARCH_LENGTH` caps as `GET /sessions`
+      // (D3) — closes the same F-013 short-pattern review item. The
+      // value is passed as a parameterized `%...%` pattern to ILIKE.
+      minLength: MIN_TOPIC_SEARCH_LENGTH,
+      maxLength: MAX_TOPIC_SEARCH_LENGTH,
+      description:
+        'Optional case-insensitive substring match against `topic` (`topic ILIKE ' +
+        "'%<value>%'`). The value is passed as a parameterized pattern — no user input " +
+        'touches the SQL text. Length must be 3..64 characters.',
+    },
+    startedAfter: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'Optional lower bound on `started_at` (`started_at >= <value>`), ISO-8601 ' +
+        'date-time. When present, lobby (unstarted, NULL `started_at`) sessions fall out ' +
+        'of the comparison and are excluded — a date filter expresses "sessions that ran ' +
+        'in this window", and lobby sessions have not run (D4). The client supplies the ' +
+        "bound in the user's locale so the server stays timezone-agnostic.",
+    },
+    startedBefore: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'Optional upper bound on `started_at` (`started_at < <value>`), ISO-8601 ' +
+        'date-time. Half-open at the top. Like `startedAfter`, excludes lobby (NULL ' +
+        '`started_at`) sessions when present (D4).',
+    },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 200,
+      default: 50,
+      description:
+        'Page size. Defaults to 50 if omitted; capped at 200. The `total` field carries ' +
+        'the full match count for paging UIs.',
+    },
+    offset: {
+      type: 'integer',
+      minimum: 0,
+      maximum: MAX_SESSION_LIST_OFFSET,
+      default: 0,
+      description:
+        'Page offset. Defaults to 0. Combined with `limit` drives offset-based ' +
+        'pagination over the ordered (`started_at DESC NULLS FIRST, created_at DESC`) ' +
+        'result set. Capped at 100 000 (G-013).',
+    },
+  },
+} as const;
+
+/**
  * Normalize a DB-returned timestamp (which pglite hands back as a
  * `Date` and `pg` hands back as a `Date` when the parser is the
  * default, or as a string under custom parsers) into an ISO-8601
@@ -1102,6 +1316,54 @@ export function sessionRowToResponse(row: SessionsInsertRow): {
 }
 
 /**
+ * Per-row shape returned from the `GET /sessions/mine` page query.
+ * Extends the session columns with `started_at` (the lobby/started
+ * marker + sort key, sd_schema) and `role` (the caller's
+ * precedence-resolved role, computed in the SELECT — `'host'` for a
+ * hosted session, otherwise the participant role from the correlated
+ * subquery; D7). The DB returns snake_case; camelCase translation
+ * happens at the response boundary.
+ */
+interface MySessionRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly host_user_id: string;
+  readonly privacy: string;
+  readonly topic: string;
+  readonly created_at: Date | string;
+  readonly started_at: Date | string | null;
+  readonly ended_at: Date | string | null;
+  readonly role: string;
+}
+
+/**
+ * Map a `GET /sessions/mine` row to the camelCase `MySessionResponse`
+ * shape with ISO-8601 string timestamps. Unlike `sessionRowToResponse`
+ * this emits `startedAt` and `role` — the two fields the role-aware
+ * "My Sessions" surface needs (D2).
+ */
+export function mySessionRowToResponse(row: MySessionRow): {
+  id: string;
+  hostUserId: string;
+  privacy: string;
+  topic: string;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  role: string;
+} {
+  return {
+    id: row.id,
+    hostUserId: row.host_user_id,
+    privacy: row.privacy,
+    topic: row.topic,
+    createdAt: toIsoString(row.created_at),
+    startedAt: row.started_at === null ? null : toIsoString(row.started_at),
+    endedAt: row.ended_at === null ? null : toIsoString(row.ended_at),
+    role: row.role,
+  };
+}
+
+/**
  * Per-row shape returned from `session_participants` queries. Narrowed
  * at the call site so the mapper doesn't need to know the full
  * participants-table schema. The DB returns snake_case; camelCase
@@ -1195,6 +1457,20 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   // `sessionListResponseRef` rather than redeclaring the wrapper.
   if (app.getSchema(SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionListResponseSchema);
+  }
+
+  // Register the `MySessionResponse` per-row schema + its
+  // `MySessionListResponse` wrapper once per Fastify instance — same
+  // idempotence pattern. `GET /sessions/mine` references the wrapper
+  // via `mySessionListResponseRef`; OpenAPI carries single
+  // `components.schemas.MySessionResponse` / `.MySessionListResponse`
+  // entries. Refinement:
+  // tasks/refinements/session_discovery/sd_my_sessions_endpoint.md.
+  if (app.getSchema(MY_SESSION_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(mySessionResponseSchema);
+  }
+  if (app.getSchema(MY_SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(mySessionListResponseSchema);
   }
 
   // Register the `SessionParticipantResponse` schema once per Fastify
@@ -1647,6 +1923,173 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
       // `SessionListResponse` contract.
       return reply.code(200).send({
         sessions: pageResult.rows.map(sessionRowToResponse),
+        total,
+      });
+    },
+  );
+
+  app.get(
+    '/api/sessions/mine',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: "List the authenticated caller's own sessions (role-annotated)",
+        description:
+          'Returns the sessions the caller is involved in — sessions they host ' +
+          '(`host_user_id = caller`) OR in which they hold (or held) a ' +
+          '`session_participants` row (moderator / debater-A / debater-B). This is the ' +
+          '"My Sessions" surface: it applies NO public-visibility gate (the caller ' +
+          'always sees their own sessions regardless of privacy) and includes both ' +
+          'lobby (unstarted, `started_at IS NULL`) and ended sessions.\n\n' +
+          "Each row is annotated with the caller's resolved `role` (precedence " +
+          'host > moderator > debater, active participant row preferred) so the client ' +
+          'can route "join live" without a second request.\n\n' +
+          'Ordered `started_at DESC NULLS FIRST, created_at DESC` — lobby sessions sort ' +
+          'to the top (the ones a returning user most likely wants back into), then ' +
+          'most-recently-started; `created_at DESC` is the deterministic tiebreak for ' +
+          'stable pagination.\n\n' +
+          'Filters (all optional):\n' +
+          '  • `?topic=<substring>` — case-insensitive substring match (ILIKE).\n' +
+          '  • `?startedAfter=<iso>` / `?startedBefore=<iso>` — narrow by `started_at` ' +
+          'range; either bound present excludes lobby (NULL `started_at`) sessions.\n' +
+          '  • `?limit=<n>` (default 50, max 200) and `?offset=<n>` (default 0) drive ' +
+          'offset-based pagination.\n\n' +
+          'The response is `{ sessions: MySessionResponse[]; total: integer }` — ' +
+          '`total` is the count of matches AFTER filters but BEFORE limit/offset.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the query string is malformed (a bad ' +
+          'date-time, out-of-range `limit`/`offset`, over/under-cap `topic`, or an ' +
+          'unknown query key).',
+        security: [{ cookieAuth: [] }],
+        querystring: myListSessionsQuerystringSchema,
+        response: {
+          200: mySessionListResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Same defensive-but-static-analysis-necessary check as the other
+      // authenticated handlers — the middleware guarantees `authUser`
+      // is set for any request that reaches this point.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const query = request.query as {
+        topic?: string;
+        startedAfter?: string;
+        startedBefore?: string;
+        limit?: number;
+        offset?: number;
+      };
+      const limit = query.limit ?? 50;
+      const offset = query.offset ?? 0;
+
+      // Build the composed WHERE + parameter array incrementally. The
+      // membership predicate is always present and uses `$1` (the
+      // caller's id, also consumed by the role subquery). Each filter
+      // appends a fragment AND a value via the positional `$N` counter
+      // `p`. ALL user-controlled values flow through placeholders — the
+      // topic substring is wrapped in `%...%` and passed as a value, so
+      // ILIKE's wildcards stay wildcards while the captured substring
+      // stays a value, not SQL.
+      //
+      // The membership gate uses `EXISTS` (not a JOIN) so a participant
+      // with multiple (leave-and-rejoin) rows doesn't duplicate the
+      // parent session row; `left_at` is ignored in the gate, so a past
+      // participant (and an ended session) still appears — these are
+      // still *your* sessions (D1).
+      const params: unknown[] = [userId];
+      let p = 1;
+      let where =
+        `(s.host_user_id = $1 OR EXISTS (` +
+        `SELECT 1 FROM session_participants sp` +
+        ` WHERE sp.session_id = s.id AND sp.user_id = $1))`;
+
+      if (query.topic !== undefined) {
+        p += 1;
+        params.push(`%${query.topic}%`);
+        where += ` AND s.topic ILIKE $${String(p)}`;
+      }
+
+      // Date bounds key on `started_at`. A NULL `started_at` (lobby)
+      // never satisfies a comparison, so either bound being present
+      // excludes lobby sessions — "sessions that ran in this window",
+      // and lobby sessions have not run (D4).
+      if (query.startedAfter !== undefined) {
+        p += 1;
+        params.push(query.startedAfter);
+        where += ` AND s.started_at >= $${String(p)}`;
+      }
+      if (query.startedBefore !== undefined) {
+        p += 1;
+        params.push(query.startedBefore);
+        where += ` AND s.started_at < $${String(p)}`;
+      }
+
+      // Snapshot the params for the COUNT query BEFORE appending the
+      // pagination placeholders (D5 — same two-query shape as
+      // `GET /sessions`).
+      const countParams = params.slice();
+
+      p += 1;
+      params.push(limit);
+      const limitPlaceholder = p;
+      p += 1;
+      params.push(offset);
+      const offsetPlaceholder = p;
+
+      const pool = ensurePool();
+
+      // The page query. `role` is resolved in the SELECT: `'host'` when
+      // the caller hosts the session, otherwise the caller's
+      // participant role from a correlated subquery ordered
+      // `(left_at IS NULL) DESC, joined_at DESC LIMIT 1` — the active
+      // row preferred, most-recent historical otherwise (D7). The
+      // `started_at DESC NULLS FIRST` clause floats lobby rows to the
+      // top; `created_at DESC` is the deterministic tiebreak (D8).
+      const pageResult = await pool.query<MySessionRow>(
+        `SELECT s.id, s.host_user_id, s.privacy, s.topic, s.created_at, s.started_at, s.ended_at,
+                CASE
+                  WHEN s.host_user_id = $1 THEN 'host'
+                  ELSE (
+                    SELECT sp.role FROM session_participants sp
+                    WHERE sp.session_id = s.id AND sp.user_id = $1
+                    ORDER BY (sp.left_at IS NULL) DESC, sp.joined_at DESC
+                    LIMIT 1
+                  )
+                END AS role
+         FROM sessions s
+         WHERE ${where}
+         ORDER BY s.started_at DESC NULLS FIRST, s.created_at DESC
+         LIMIT $${String(limitPlaceholder)} OFFSET $${String(offsetPlaceholder)}`,
+        params,
+      );
+
+      const countResult = await pool.query<{ total: number | string }>(
+        `SELECT COUNT(*)::int AS total
+         FROM sessions s
+         WHERE ${where}`,
+        countParams,
+      );
+
+      // `COUNT(*)::int` returns an integer; coerce defensively (a
+      // string-typed bigint would surface here if the cast were
+      // removed) — same defensive pattern as `GET /sessions`.
+      const rawTotal = countResult.rows[0]?.total ?? 0;
+      const total = typeof rawTotal === 'string' ? Number.parseInt(rawTotal, 10) : rawTotal;
+
+      return reply.code(200).send({
+        sessions: pageResult.rows.map(mySessionRowToResponse),
         total,
       });
     },
