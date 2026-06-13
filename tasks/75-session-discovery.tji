@@ -51,6 +51,7 @@ task session_discovery "Session discovery" {
     task sd_session_list_component "Shared paginated session-list component" {
       effort 2d
       allocate team
+      complete 100
       depends !!sd_api
       note "One component for both lists (they differ in data source and link affordances, not shape): search bar over topic, date filter, pagination, sorted by start time; per-row 'join live' and 'see replay' affordances supplied by the page. Lives in the root app's surface (ADR 0026 micro-frontend layout) or a shared package if the audience surface later wants it — refinement decides placement. Localized in en-US/pt-BR/es-419 (ADR 0024); axe checks per ADR 0040."
     }

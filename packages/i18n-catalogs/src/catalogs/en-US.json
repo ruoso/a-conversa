@@ -1,4 +1,43 @@
 {
+  "discovery": {
+    "search": {
+      "label": "Search by topic",
+      "placeholder": "Search sessions…",
+      "minLengthHint": "Type at least {min} characters to search"
+    },
+    "dateFilter": {
+      "fromLabel": "Started after",
+      "toLabel": "Started before",
+      "lobbyExclusionNote": "Sessions that haven’t started yet are hidden while a date filter is active."
+    },
+    "status": {
+      "lobby": "Lobby",
+      "live": "Live",
+      "ended": "Ended"
+    },
+    "columns": {
+      "topic": "Topic",
+      "status": "Status",
+      "startedAt": "Started",
+      "endedAt": "Ended",
+      "actions": "Actions"
+    },
+    "list": {
+      "label": "Sessions"
+    },
+    "pagination": {
+      "summary": "Showing {start}–{end} of {total, plural, one {# session} other {# sessions}}",
+      "previous": "Previous page",
+      "next": "Next page"
+    },
+    "loading": "Loading sessions…",
+    "empty": "No sessions match your search.",
+    "error": {
+      "message": "Something went wrong loading sessions.",
+      "retry": "Try again"
+    },
+    "notStarted": "—"
+  },
   "chrome": {
     "hello": "hello, world"
   },

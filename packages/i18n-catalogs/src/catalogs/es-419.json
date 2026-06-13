@@ -1,4 +1,43 @@
 {
+  "discovery": {
+    "search": {
+      "label": "Buscar por tema",
+      "placeholder": "Buscar sesiones…",
+      "minLengthHint": "Escribe al menos {min} caracteres para buscar"
+    },
+    "dateFilter": {
+      "fromLabel": "Iniciadas después de",
+      "toLabel": "Iniciadas antes de",
+      "lobbyExclusionNote": "Las sesiones que aún no han comenzado se ocultan mientras un filtro de fecha está activo."
+    },
+    "status": {
+      "lobby": "Sala de espera",
+      "live": "En vivo",
+      "ended": "Finalizada"
+    },
+    "columns": {
+      "topic": "Tema",
+      "status": "Estado",
+      "startedAt": "Inicio",
+      "endedAt": "Fin",
+      "actions": "Acciones"
+    },
+    "list": {
+      "label": "Sesiones"
+    },
+    "pagination": {
+      "summary": "Mostrando {start}–{end} de {total, plural, one {# sesión} other {# sesiones}}",
+      "previous": "Página anterior",
+      "next": "Página siguiente"
+    },
+    "loading": "Cargando sesiones…",
+    "empty": "Ninguna sesión coincide con tu búsqueda.",
+    "error": {
+      "message": "Ocurrió un error al cargar las sesiones.",
+      "retry": "Intentar de nuevo"
+    },
+    "notStarted": "—"
+  },
   "chrome": {
     "hello": "hola, mundo"
   },
