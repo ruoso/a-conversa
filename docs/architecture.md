@@ -40,6 +40,30 @@ Sessions are **public by default**; the host may mark a session **private**. Ref
 
 This aligns with the YouTube-show context (shows are public by their nature) while preserving the option for private debates that aren't meant to be cited externally.
 
+### Session lifecycle markers
+
+A session row carries two nullable timestamps that mark its position in the lifecycle:
+
+- **`started_at`** (`TIMESTAMPTZ NULL`) — `NULL` ⟺ the session is still in its **lobby** (gathered, not yet begun); non-`NULL` ⟺ it has **started**. Added by migration [`0018_sessions_started_at.sql`](../apps/server/migrations/0018_sessions_started_at.sql), which also backfills existing rows and creates a partial index for the public list (`WHERE privacy = 'public' AND started_at IS NOT NULL`).
+- **`ended_at`** (`TIMESTAMPTZ NULL`) — `NULL` ⟺ the session is **live**; non-`NULL` ⟺ it has **ended**.
+
+The two markers together place a session in one of three states: lobby (`started_at IS NULL`), live (`started_at IS NOT NULL AND ended_at IS NULL`), or ended (`ended_at IS NOT NULL`).
+
+### Session discovery
+
+Two HTTP listing endpoints let users find sessions rather than navigating by direct URL:
+
+- **`GET /api/sessions/mine`** — authenticated ([`apps/server/src/sessions/routes.ts:2169`](../apps/server/src/sessions/routes.ts)). Returns the caller's own sessions, each row annotated with the caller's role in that session (`host` | `moderator` | `debater-A` | `debater-B`). It applies **no** public-visibility gate: the caller's lobby and ended sessions are both included, since the point is to let a participant resume or revisit their own work. It requires a valid session cookie — the standard authenticated HTTP posture is unchanged here.
+- **`GET /api/sessions/public`** — **anonymous** ([`routes.ts:2336`](../apps/server/src/sessions/routes.ts)); any session cookie is ignored. Its visibility gate is the load-bearing lobby-secrecy rule, quoted verbatim from the handler ([`routes.ts:2406`](../apps/server/src/sessions/routes.ts)):
+
+  ```sql
+  privacy = 'public' AND started_at IS NOT NULL
+  ```
+
+  Public **and started**. Unstarted (lobby) public sessions and all private sessions are absent — a not-yet-started session is indistinguishable from a nonexistent one to an anonymous caller. The gate lives **server-side in the endpoint**; the listing UI pins the same predicate as defence in depth, but the server is the boundary. The response carries **listing fields only** (id, topic, lifecycle timestamps) — no host identity, no participant data.
+
+  Note the deliberate divergence from the anonymous **WS** subscribe gate (ADR 0029), which additionally requires `ended_at IS NULL`. The listing gate is `started_at`-only, so an **ended** public session still appears in the public list — that is the discovery path to its replay (`/a/replay/:id`). Whether an anonymous viewer may then see the replay *content* is the separate concern decided in [ADR 0045](adr/0045-audience-replay-surface-visibility-gating.md); the listing gate only decides what is *discoverable*.
+
 ## State model: event-sourced
 
 The data model treats the change history as canonical and the current graph as a projection of it. The implementation follows directly:
@@ -82,6 +106,24 @@ V1 ships four distinct surfaces, sharing a TypeScript codebase and connecting to
 - **Debaters (×2)** — agreement controls (agree / dispute / withdraw) on each pending facet, plus a read-only graph view. Voting is per-facet, not per-bundle. Designed for a tablet held in the debater's hand or placed nearby. Detailed flow design in [participant-ui.md](participant-ui.md).
 - **Audience / broadcast** — read-only, designed for video. Animated reveals on commit, clean typography, distinct visual states for `proposed` / `agreed` / `disputed` / `meta-disagreement`. This is the show. Served at a stable URL that **mirrors session privacy** — public sessions have a public viewer URL (anyone can load); private sessions require auth.
 - **Producer / director** — change-history scrubbing, segment-snapshot triggers, possibly OBS scene-switching cues. Useful for a polished broadcast; cuttable from v1 if the moderator surface plus OBS suffice.
+
+### Discovery surface
+
+The four surfaces above are reached from two **discovery routes** in the root app (they list and dispatch into the surfaces; they are not new surfaces of their own — see [ADR 0026](adr/0026-micro-frontend-root-app.md)):
+
+- **`/sessions`** — the anonymous public list ([`apps/root/src/routes/PublicSessionsRoute.tsx`](../apps/root/src/routes/PublicSessionsRoute.tsx)), backed by `GET /api/sessions/public`.
+- **`/sessions/mine`** — the authenticated, role-annotated list ([`apps/root/src/routes/MySessionsRoute.tsx`](../apps/root/src/routes/MySessionsRoute.tsx)), backed by `GET /api/sessions/mine`; an unauthenticated visit bounces to login.
+
+Both render a shared list component ([`apps/root/src/discovery/SessionList.tsx`](../apps/root/src/discovery/SessionList.tsx) — search, date filter, pagination, status column) with a per-row actions slot. A row dispatches into the right surface by **role and lifecycle**, computed by [`joinLiveHref.ts`](../apps/root/src/discovery/joinLiveHref.ts) and [`seeReplayHref.ts`](../apps/root/src/discovery/seeReplayHref.ts):
+
+| Role | Lobby | Live | Ended |
+| --- | --- | --- | --- |
+| host / moderator | `/m/sessions/:id/lobby` | `/m/sessions/:id/operate` | — |
+| debater-A / debater-B | `/p/sessions/:id/lobby` | `/p/sessions/:id` | — |
+| anonymous (public list) | (hidden — not started) | `/a/sessions/:id` | — |
+| any (ended) | — | — | `/a/replay/:id` |
+
+An ended row offers no live-join link — its only affordance is "see replay" into `/a/replay/:id`. The lobby/live split is driven by `started_at` and the ended state by `ended_at`, the same lifecycle markers the listing endpoints use.
 
 ### Localization
 

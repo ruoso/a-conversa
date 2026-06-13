@@ -96,6 +96,7 @@ task session_discovery "Session discovery" {
   task sd_docs "DESIGN.md + docs update" {
     effort 0.5d
     allocate team
+    complete 100
     depends !sd_e2e
     note "Fold session discovery into DESIGN.md and docs/architecture.md (the surfaces, the lobby-secrecy rule for the public list, the role-aware entry points); amendment pass over any ADR whose text this touches (likely ADR 0029's anonymous-access scope)."
   }

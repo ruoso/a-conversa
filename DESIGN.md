@@ -31,6 +31,17 @@ The platform will be open source. The YouTube show is the proof of concept; if i
 
 Every node carries a **statement kind** (fact / predictive / value / normative / definitional). Every edge carries an **argument role** (supports / rebuts / qualifies / bridges-from / bridges-to / defines / contradicts) drawn from Toulmin. The two dimensions are independent; both matter for surfacing where debaters talk past each other. See [docs/data-model.md](docs/data-model.md).
 
+## Finding and entering sessions
+
+Sessions are not only reached by a direct URL. The platform offers two listing surfaces so people can discover the debates relevant to them:
+
+- **My sessions** — a returning, signed-in user finds the sessions they take part in: the ones they host, moderate, or debate in, including sessions still in the lobby (not yet started) and sessions that have already ended. Each row knows the user's role, and that role decides where the row sends them.
+- **Public sessions** — an anonymous visitor, with no account, browses the public debates. This list deliberately shows **only public sessions that have already started**. A public session still sitting in its lobby is hidden, and every private session is hidden — the *lobby-secrecy promise*: a session that has not begun is indistinguishable from one that does not exist, so a planned-but-unannounced debate cannot be discovered before it goes live. The promise is enforced on the server, not merely in the listing UI.
+
+A list row is an entry point, not a new surface: clicking it routes the visitor into the existing moderator (`/m`), participant (`/p`), or audience (`/a`) surface that matches their role and the session's lifecycle. A host or moderator lands on their operator view, a debater on their tablet view, an anonymous visitor on the public audience view; an ended session routes to its replay instead of a live join. The public list spans live *and* ended public sessions precisely so an ended debate stays discoverable as the path to its replay.
+
+The engineering shape — the two listing endpoints, the `started_at` lifecycle marker that draws the lobby/started line, the server-side secrecy gate, and the role-aware routing — is in [docs/architecture.md](docs/architecture.md).
+
 ## Document index
 
 - [docs/data-model.md](docs/data-model.md) — nodes, edges, ownership, graph properties, structural diagnostics, visibility and history, event types.
