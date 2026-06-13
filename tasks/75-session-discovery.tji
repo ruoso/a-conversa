@@ -64,6 +64,7 @@ task session_discovery "Session discovery" {
     task sd_public_sessions_page "Public Sessions page (anonymous)" {
       effort 1d
       allocate team
+      complete 100
       depends !sd_session_list_component
       note "Public route in the root app, linked from the landing page. No auth required (the endpoint is anonymous)."
     }

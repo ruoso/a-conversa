@@ -634,5 +634,30 @@ export default defineConfig({
         storageState: localeStorageState('en-US'),
       },
     },
+    // Public Sessions page e2e
+    // (session_discovery.sd_frontend.sd_public_sessions_page, refinement
+    // `tasks/refinements/session_discovery/sd_public_sessions_page.md`).
+    // Pays down the shared list component's deferred public-list axe +
+    // Playwright debt (D8): page reachability from the landing CTA, the
+    // started-only public list render, the load-bearing lobby-secrecy UI
+    // pin, search/empty/pagination, and a WCAG-AA axe scan. The browse runs
+    // anonymous (the route is auth-free, ADR 0029) — each spec allocates its
+    // own `browser.newContext()` — but the SEEDING calls the same-origin API
+    // as the host (alice) to create + start a public session, so the project
+    // carries the `setup-auth` dependency to load alice's bootstrap jar via
+    // `authedContext`. Single locale en-US (cross-locale catalog text is
+    // pinned at the parity layer); `ignoreHTTPSErrors` for the OIDC
+    // self-signed cert crossed during the setup dance.
+    {
+      name: 'chromium-public-sessions',
+      testMatch: /public-sessions-page\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
   ],
 });

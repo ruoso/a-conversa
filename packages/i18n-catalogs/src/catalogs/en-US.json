@@ -36,7 +36,11 @@
       "message": "Something went wrong loading sessions.",
       "retry": "Try again"
     },
-    "notStarted": "—"
+    "notStarted": "—",
+    "publicSessions": {
+      "title": "Public sessions",
+      "subtitle": "Browse public debates that have already started."
+    }
   },
   "chrome": {
     "hello": "hello, world"
@@ -248,7 +252,8 @@
     },
     "cta": {
       "title": "Start a debate",
-      "body": "Spin up a session and put a real disagreement on the map — or sign in to pick up where you left off."
+      "body": "Spin up a session and put a real disagreement on the map — or sign in to pick up where you left off.",
+      "browsePublicSessions": "Browse public sessions"
     },
     "footer": {
       "tagline": "a-conversa — structured debate you can see.",

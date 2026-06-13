@@ -57,6 +57,13 @@ export function CallToActionSection(): ReactElement {
         >
           {t('moderator.createSession.title')}
         </Link>
+        <Link
+          to="/sessions"
+          data-testid="root-browse-public-sessions"
+          className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+        >
+          {t('landing.cta.browsePublicSessions')}
+        </Link>
         {isAuthenticated ? (
           <Link
             to="/logout"

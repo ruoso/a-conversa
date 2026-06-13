@@ -36,7 +36,11 @@
       "message": "Ocurrió un error al cargar las sesiones.",
       "retry": "Intentar de nuevo"
     },
-    "notStarted": "—"
+    "notStarted": "—",
+    "publicSessions": {
+      "title": "Sesiones públicas",
+      "subtitle": "Explora debates públicos que ya comenzaron."
+    }
   },
   "chrome": {
     "hello": "hola, mundo"
@@ -248,7 +252,8 @@
     },
     "cta": {
       "title": "Inicia un debate",
-      "body": "Crea una sesión y pon un desacuerdo real en el mapa, o inicia sesión para retomar donde lo dejaste."
+      "body": "Crea una sesión y pon un desacuerdo real en el mapa, o inicia sesión para retomar donde lo dejaste.",
+      "browsePublicSessions": "Ver sesiones públicas"
     },
     "footer": {
       "tagline": "a-conversa — debate estructurado que puedes ver.",

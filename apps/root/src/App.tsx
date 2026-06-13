@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SurfaceHost } from './surfaces/SurfaceHost';
 import { LandingRoute } from './routes/LandingRoute';
+import { PublicSessionsRoute } from './routes/PublicSessionsRoute';
 import { LoginRoute } from './routes/LoginRoute';
 import { ScreenNameRoute } from './routes/ScreenNameRoute';
 import { AuthCallbackRoute } from './routes/AuthCallbackRoute';
@@ -41,6 +42,7 @@ export default function App(): ReactElement {
   return (
     <Routes>
       <Route path="/" element={<LandingRoute />} />
+      <Route path="/sessions" element={<PublicSessionsRoute />} />
       <Route path="/login" element={<LoginRoute />} />
       <Route path="/screen-name" element={<ScreenNameRoute />} />
       <Route path="/logout" element={<LogoutRoute />} />
