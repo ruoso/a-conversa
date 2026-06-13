@@ -416,6 +416,7 @@ function main(): void {
 
   const gatingMemo = new Map<string, string[]>();
   const lines: string[] = [];
+  let omittedComplete = 0;
 
   for (const msId of declared) {
     if (filterId !== undefined && msId !== filterId) continue;
@@ -423,7 +424,13 @@ function main(): void {
     if (ms === undefined) continue;
     if (!milestoneIds.has(msId)) continue;
     if (ms.completePct >= 100) {
-      // Don't clutter the report with finished milestones.
+      if (filterId === undefined) {
+        // Omit finished milestones from the full report; a trailing note
+        // records how many were hidden.
+        omittedComplete++;
+        continue;
+      }
+      // An explicit single-milestone query still shows it, even when complete.
       lines.push(`${msId.replace(/^milestones\./, '')}: ${ms.name}`);
       lines.push(`  COMPLETE — milestone already 100%`);
       lines.push('');
@@ -465,6 +472,15 @@ function main(): void {
       lines.push(`  COMPLETE: ${String(complete.length)} / ${String(gating.length)} leaves`);
     }
     lines.push('');
+  }
+
+  // Lead with a note when finished milestones were hidden, so the report
+  // doesn't read as if the omitted milestones simply don't exist.
+  if (omittedComplete > 0) {
+    lines.unshift('');
+    lines.unshift(
+      `(${String(omittedComplete)} completed milestone${omittedComplete === 1 ? '' : 's'} omitted)`,
+    );
   }
 
   // Global orphan audit — only in the full (unfiltered) report, since it is
