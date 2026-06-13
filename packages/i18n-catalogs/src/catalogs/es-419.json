@@ -50,6 +50,10 @@
         "debater": "Debatiente",
         "ariaLabel": "Tu rol: {role}"
       }
+    },
+    "joinLive": {
+      "label": "Unirse en vivo",
+      "ariaLabel": "Unirse en vivo: {topic}"
     }
   },
   "chrome": {

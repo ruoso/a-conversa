@@ -72,6 +72,7 @@ task session_discovery "Session discovery" {
     task sd_join_live_link "Role-aware 'join live' routing" {
       effort 1d
       allocate team
+      complete 100
       depends !sd_session_list_component
       note "Routes from the list row to /m/* when the caller hosts/moderates, /p/* when they hold a debater slot (role comes annotated from /api/sessions/mine), /a/* otherwise — including every row of the public list for signed-out users. Lobby-mode sessions route the moderator/participant into their lobby flow; the audience link only applies to started sessions."
     }

@@ -9,20 +9,22 @@
 //             0029 (anonymous public-session access), 0040 (axe).
 //
 // The page is pure wiring: it owns only its chrome (heading + intro) and the
-// two `SessionList` props that distinguish the public list. Lobby-secrecy is
+// `SessionList` props that distinguish the public list. Lobby-secrecy is
 // preserved by construction — the endpoint gates on
 // `started_at IS NOT NULL`, and this page adds no client-side fetch of its own
-// (Constraint 2). Per-row "join live" / "see replay" affordances are out of
-// scope here (D4): the list mounts WITHOUT `renderRowActions`; the dedicated
-// link tasks (`sd_join_live_link`, `sd_see_replay_link`) wire that slot in
-// later. `lobbyRowsPossible={false}` (D5) suppresses the date-filter
-// lobby-exclusion note, which is meaningless for a started-only list.
+// (Constraint 2). The actions cell now carries the anonymous "join live" link
+// (`sd_join_live_link`): public rows have no role, so `JoinLiveLink` routes
+// started rows to the audience surface (`/a/sessions/:id`). The "see replay"
+// affordance (`sd_see_replay_link`) shares this slot later (D4).
+// `lobbyRowsPossible={false}` (D5) suppresses the date-filter lobby-exclusion
+// note, which is meaningless for a started-only list.
 
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SessionList } from '../discovery/SessionList';
 import { fetchPublicSessions } from '../discovery/publicSessionsFetcher';
+import { JoinLiveLink } from '../discovery/JoinLiveLink';
 
 /** Stable id linking the `<main>` landmark to its heading for `aria-labelledby`. */
 const TITLE_ID = 'public-sessions-title';
@@ -46,7 +48,11 @@ export function PublicSessionsRoute(): ReactElement {
           stable across renders — the component's `fetchPage` referential-
           stability contract holds without a `useCallback` wrapper.
         */}
-        <SessionList fetchPage={fetchPublicSessions} lobbyRowsPossible={false} />
+        <SessionList
+          fetchPage={fetchPublicSessions}
+          lobbyRowsPossible={false}
+          renderRowActions={(row) => <JoinLiveLink row={row} />}
+        />
       </div>
     </main>
   );

@@ -50,6 +50,10 @@
         "debater": "Debater",
         "ariaLabel": "Your role: {role}"
       }
+    },
+    "joinLive": {
+      "label": "Join live",
+      "ariaLabel": "Join live: {topic}"
     }
   },
   "chrome": {

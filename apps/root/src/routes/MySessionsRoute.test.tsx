@@ -174,6 +174,21 @@ describe('MySessionsRoute role badges and lobby rows', () => {
     expect(labels).toEqual(['Host', 'Moderator', 'Debater']);
   });
 
+  it('renders a join-live link beside the role badge with the role-correct href', async () => {
+    // The default stub row is host + started (live) → moderator operate surface.
+    renderRoute(AUTHENTICATED);
+
+    await waitFor(() => {
+      expect(screen.getByText('Climate policy')).toBeTruthy();
+    });
+
+    // Both affordances share the one actions cell (D4).
+    expect(screen.getByTestId('session-role-badge').textContent).toBe('Host');
+    const link = screen.getByTestId('session-join-live-link');
+    expect(link.getAttribute('href')).toBe('/m/sessions/a1/operate');
+    expect(link.textContent).toBe('Join live');
+  });
+
   it('surfaces lobby rows and shows the lobby-exclusion note when a date filter is active', async () => {
     stubMySessions([
       {

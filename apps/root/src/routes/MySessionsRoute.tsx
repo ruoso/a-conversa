@@ -33,6 +33,7 @@ import { useAuth } from '@a-conversa/shell';
 import { SessionList, type SessionListPage, type SessionListQuery } from '../discovery/SessionList';
 import { fetchMySessions, type MySessionRole } from '../discovery/mySessionsFetcher';
 import { SessionRoleBadge } from '../discovery/SessionRoleBadge';
+import { JoinLiveLink } from '../discovery/JoinLiveLink';
 import { rememberReturnTo } from '../surfaces/SurfaceHost';
 
 /** Stable id linking the `<main>` landmark to its heading for `aria-labelledby`. */
@@ -99,7 +100,17 @@ export function MySessionsRoute(): ReactElement {
       <div className="mt-6">
         <SessionList
           fetchPage={fetchPage}
-          renderRowActions={(row) => <SessionRoleBadge role={roleById.current.get(row.id)} />}
+          renderRowActions={(row) => {
+            // The role badge and the join-live link share the one actions cell
+            // (D4); both read the same accumulated role for this id.
+            const role = roleById.current.get(row.id);
+            return (
+              <div className="flex items-center gap-2">
+                <SessionRoleBadge role={role} />
+                <JoinLiveLink row={row} role={role} />
+              </div>
+            );
+          }}
         />
       </div>
     </main>

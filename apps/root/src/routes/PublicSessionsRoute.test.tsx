@@ -68,6 +68,19 @@ describe('PublicSessionsRoute', () => {
     expect(init?.credentials).toBeUndefined();
   });
 
+  it('renders a join-live link routing a started public row into the audience surface', async () => {
+    renderWithProviders(<PublicSessionsRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Climate policy')).toBeTruthy();
+    });
+
+    // Public rows carry no role, so the anonymous matrix cell routes to /a.
+    const link = screen.getByTestId('session-join-live-link');
+    expect(link.getAttribute('href')).toBe('/a/sessions/a1');
+    expect(link.textContent).toBe('Join live');
+  });
+
   it('passes lobbyRowsPossible={false}: no lobby-exclusion note when a date filter is active', async () => {
     renderWithProviders(<PublicSessionsRoute />);
 
