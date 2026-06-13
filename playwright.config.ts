@@ -683,5 +683,30 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Discovery cross-surface flows e2e
+    // (session_discovery.sd_e2e, refinement
+    // `tasks/refinements/session_discovery/sd_e2e.md`). The terminal discovery
+    // task: the assembled feature driven against the compose stack across
+    // MULTIPLE authenticated contexts (`alice` + `ben`) plus anonymous ones —
+    // the role matrix (host→`/m`, debater→`/p`), the anon join-live→`/a` and
+    // see-replay→`/a/replay` legs, the private-session absence from the public
+    // list, and the functional date-filter + pagination walk. Mirrors the
+    // `chromium-cross-surface` profile (D1): single locale en-US (the routing
+    // assertions key on locale-agnostic test ids; localized affordance strings
+    // are pinned at the catalog-parity + RTL + page-axe layers),
+    // `ignoreHTTPSErrors` for the OIDC self-signed cert, and the bootstrap
+    // `alice` jar via `setup-auth` as the default `page`'s storage state (each
+    // anonymous leg opens its own cookie-free context).
+    {
+      name: 'chromium-discovery-flows',
+      testMatch: /discovery-flows\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
   ],
 });

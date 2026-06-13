@@ -88,6 +88,7 @@ task session_discovery "Session discovery" {
   task sd_e2e "Playwright e2e: discovery flows" {
     effort 2d
     allocate team
+    complete 100
     depends !sd_frontend
     note "Against the compose stack with the seeded user pool: My Sessions shows host + participant sessions with correct role badges and routes join-live to /m, /p respectively; Public Sessions lists a started public session, never an unstarted one (the lobby-secrecy pin at the UI layer), never a private one; search by topic and date filter narrow both lists; pagination walks; see-replay lands in the audience replay surface; signed-out join-live on a public row lands in /a. Per-locale projects + axe per the established e2e conventions."
   }
