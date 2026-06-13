@@ -1,0 +1,107 @@
+# 77 — Session lifecycle controls
+#
+# Operator control over a debate's run state, plus live<->replay
+# cross-navigation. Three product asks, registered by the operator
+# 2026-06-13; gates milestone m_session_lifecycle (M12) in
+# tasks/99-milestones.tji:
+#
+#   1. End AND restart a debate from the UI. The end endpoint
+#      (backend.session_management.end_session_endpoint) shipped in the
+#      M3 backend but never got an operator control — its own refinement
+#      flags the missing "End session" button as its client contract.
+#      Restart is new: a `session-restarted` event reopens an ended
+#      session (clears ended_at), and the moderator surface gets both
+#      buttons.
+#   2. A replay link on LIVE sessions, on all three live surfaces
+#      (moderator /m, participant /p, audience /a) — today replay is only
+#      reached from the discovery list's ended rows.
+#   3. The session list always offers "see replay" (every started
+#      session, live or ended — not ended-only as today), and the replay
+#      surface offers a "go live" return link to the audience panel while
+#      the session is still live.
+#
+# Product constraints fixed at registration (operator, 2026-06-13):
+#   * Restart applies only to an ended session; it clears ended_at back
+#     to NULL and returns the row to 'live' (started_at is untouched).
+#     End/restart are moderator-only and share the end endpoint's
+#     authority + visibility contract (403 non-host, 404 invisible).
+#   * Replay stays visibility-gated per ADR 0045 wherever it is reached
+#     from (public-session replay anonymous; private replay auth-gated) —
+#     adding live-surface entry points does not widen who may replay.
+#   * Showing "see replay" on live rows intentionally relaxes the
+#     session_discovery D6 invariant ("a row shows exactly one of
+#     join-live / see-replay"): a live row now shows BOTH. Lobby rows
+#     (no log yet) still show no replay link.
+
+task session_lifecycle "Session lifecycle controls" {
+
+  task sl_restart_endpoint "POST /api/sessions/:id/restart — reopen an ended session" {
+    effort 1d
+    allocate team
+    depends backend.session_management.end_session_endpoint, data_and_methodology.event_types.session_lifecycle_events
+    note "Mirror of the end endpoint (backend.session_management.end_session_endpoint): moderator-only, clears sessions.ended_at back to NULL and emits a new `session-restarted` event at the next sequence, atomically in one transaction; the row returns to 'live' (started_at stays set). Register the `session-restarted` event kind in the event-type registry (alongside session_lifecycle_events) and make the projection + replay loader tolerate it — it records the reopen for the change history and carries no state beyond that. 409 if the session is not currently ended (only an ended session can restart); 403 not-a-moderator for non-hosts; 404 for invisible sessions — same authority/visibility contract as end. Behavior tests per ADR 0007/0022."
+  }
+
+  task sl_mod_lifecycle_actions "Moderator end / restart controls" {
+    task sl_mod_end_action "Moderator 'End session' button" {
+      effort 0.5d
+      allocate team
+      depends backend.session_management.end_session_endpoint
+      note "The missing operator control for the already-shipped end endpoint (its refinement, tasks/refinements/backend/end_session_endpoint.md, names this UI as its client contract). Add an 'End session' action to the moderator session surface, modeled on the existing snapshot action button; confirm-before-end (ending is a visible state change) and surface the 409 already-ended case. Localized en-US/pt-BR/es-419 (ADR 0024); axe per ADR 0040."
+    }
+    task sl_mod_restart_action "Moderator 'Restart session' button" {
+      effort 0.5d
+      allocate team
+      depends !!sl_restart_endpoint, !sl_mod_end_action
+      note "Companion to the end action: shown only for an ended session, calls POST /api/sessions/:id/restart and returns the operator to the live operate view. Confirm-before-restart; surfaces the 409 not-ended case. Same localization + axe requirements as the end action."
+    }
+  }
+
+  task sl_live_replay_link "Replay link on the live surfaces" {
+    depends replay_test.replay_ui.replay_mode_audience_surface
+    task sl_replay_link_moderator "Replay link on the moderator surface" {
+      effort 0.5d
+      allocate team
+      note "Add a 'replay' affordance to the live moderator surface that opens the session's replay (ADR 0043 client-side position navigation; ADR 0045 visibility gating). Available while the session is live so the operator can scrub the log-so-far — opens the replay as a separate surface/tab, it does not replace the running operate view."
+    }
+    task sl_replay_link_participant "Replay link on the participant surface" {
+      effort 0.5d
+      allocate team
+      note "Same replay affordance on the debater tablet surface; authenticated-debater visibility per ADR 0045. Opens the replay without leaving the live session."
+    }
+    task sl_replay_link_audience "Replay link on the audience surface" {
+      effort 0.5d
+      allocate team
+      note "Same replay affordance on the audience surface; anonymous on public sessions, auth-gated on private ones per ADR 0045. Pairs with the 'go live' return link (sl_replay_go_live) for a round trip between the live feed and its replay."
+    }
+  }
+
+  task sl_replay_navigation "Session-list + replay cross-links" {
+    task sl_session_list_replay_always "Always show 'see replay' in the session list" {
+      effort 0.5d
+      allocate team
+      depends session_discovery.sd_frontend.sd_see_replay_link
+      note "Drop the ended-only gate on the discovery 'see replay' affordance (today seeReplayHref returns null unless the row's status is 'ended'): show it for every STARTED session (any row whose started_at is set) — live and ended alike. A live row therefore now shows BOTH 'join live' and 'see replay', intentionally relaxing the D6 'exactly one' invariant recorded in the sd_see_replay_link / sd_join_live_link refinements (amend those + note in sl_docs). Lobby rows (no log yet) still show no replay link; refinement settles the disabled-vs-absent treatment for them."
+    }
+    task sl_replay_go_live "'Go live' from replay → audience when the session is live" {
+      effort 0.5d
+      allocate team
+      depends !!sl_live_replay_link, audience.aud_url_routing
+      note "In the replay surface, when the underlying session is still live (its ended_at is unset), present a 'go live' link that returns the viewer to the audience panel (/a/sessions/:id) — the inverse of the audience→replay link. Hidden once the session has ended (there is no live feed to return to). Role-aware routing is out of scope: the return link lands the audience surface; moderators/debaters reach their own live surfaces from the session list."
+    }
+  }
+
+  task sl_e2e "Playwright e2e: lifecycle flows" {
+    effort 1.5d
+    allocate team
+    depends !sl_mod_lifecycle_actions, !sl_live_replay_link, !sl_replay_navigation
+    note "Against the compose stack with the seeded user pool: a moderator ends a live session (row flips to ended, see-replay present, audience join-live gone); a moderator restarts an ended session (row returns to live, both join-live and see-replay present); the replay link on each live surface (moderator/participant/audience) opens the replay; the 'go live' link returns from replay to the audience panel while live and is absent once ended. Per-locale projects + axe per the established e2e conventions."
+  }
+
+  task sl_docs "DESIGN.md + docs + ADR/refinement amendment pass" {
+    effort 0.5d
+    allocate team
+    depends !sl_e2e
+    note "Fold the end/restart lifecycle and the live↔replay cross-links into DESIGN.md and docs/architecture.md; document the moderator end/restart controls in docs/moderator-ui.md. Amendment pass over what this touches: the `session-restarted` event kind (alongside the session lifecycle events / ADR 0021 envelope), the relaxed D6 'exactly one' invariant in the session_discovery refinements, and ADR 0045 replay-visibility scope now that replay is reachable from the live surfaces."
+  }
+}
