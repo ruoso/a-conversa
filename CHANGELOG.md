@@ -25,6 +25,16 @@ lives in the git log and the project WBS (`tasks/`).
 
 ## Unreleased
 
+## 2026.06.13.1
+
+Rate-limit hardening for the session-discovery endpoints.
+
+- **Per-route rate limits on the discovery listings**: `GET
+  /api/sessions/mine` and `GET /api/sessions/public` now carry an
+  explicit `config.rateLimit` (100 requests / minute) layered on top of
+  the global per-IP limiter from `createServer`. Closes CodeQL
+  `js/missing-rate-limiting` alerts #11 and #12 (637e3ba8).
+
 ## 2026.06.13
 
 Session discovery — viewers can now find sessions instead of needing a

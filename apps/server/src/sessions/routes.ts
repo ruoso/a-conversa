@@ -219,7 +219,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 
 import { ApiError } from '../errors.js';
@@ -2165,33 +2165,24 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
     },
   );
 
-  const mineSessionsRateLimitStore = new Map<string, { count: number; resetAt: number }>();
-  const mineSessionsRateLimitWindowMs = 60_000;
-  const mineSessionsRateLimitMax = 60;
-  const rateLimitMineSessions = async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
-    const now = Date.now();
-    const key = request.authUser?.id ?? request.ip;
-    const current = mineSessionsRateLimitStore.get(key);
-
-    if (current === undefined || now >= current.resetAt) {
-      mineSessionsRateLimitStore.set(key, {
-        count: 1,
-        resetAt: now + mineSessionsRateLimitWindowMs,
-      });
-      return;
-    }
-
-    if (current.count >= mineSessionsRateLimitMax) {
-      throw new ApiError(429, 'too-many-requests', 'Too many requests');
-    }
-
-    current.count += 1;
-  };
-
   app.get(
     '/api/sessions/mine',
     {
-      preHandler: [app.authenticate, rateLimitMineSessions],
+      preHandler: app.authenticate,
+      // Per-route tighter override on top of the global per-IP limiter
+      // registered in `createServer` (see `server.ts`). The global
+      // ceiling already satisfies CodeQL `js/missing-rate-limiting` for
+      // every handler; this additive `config.rateLimit` caps the
+      // authenticated "My Sessions" listing more aggressively than the
+      // generous global default. `@fastify/rate-limit` reads this block
+      // off the route's `config` and the existing `errorResponseBuilder`
+      // renders the canonical `rate-limited` 429 envelope.
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         tags: ['sessions'],
         summary: "List the authenticated caller's own sessions (role-annotated)",
@@ -2364,6 +2355,19 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
       // extended here from WS subscribe to an HTTP listing (D7). Any
       // session cookie is ignored entirely: a signed-in caller gets the
       // same result as a signed-out one.
+      //
+      // Per-route tighter override on top of the global per-IP limiter
+      // (see `server.ts`). The global ceiling already satisfies CodeQL
+      // `js/missing-rate-limiting`; this additive `config.rateLimit`
+      // caps the anonymous discovery surface — keyed by `request.ip`,
+      // since the route ignores any session cookie — more aggressively
+      // than the generous global default.
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         tags: ['sessions'],
         summary: 'List public, already-started sessions (anonymous discovery surface)',
