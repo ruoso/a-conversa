@@ -34,6 +34,7 @@ import { SessionList, type SessionListPage, type SessionListQuery } from '../dis
 import { fetchMySessions, type MySessionRole } from '../discovery/mySessionsFetcher';
 import { SessionRoleBadge } from '../discovery/SessionRoleBadge';
 import { JoinLiveLink } from '../discovery/JoinLiveLink';
+import { SeeReplayLink } from '../discovery/SeeReplayLink';
 import { rememberReturnTo } from '../surfaces/SurfaceHost';
 
 /** Stable id linking the `<main>` landmark to its heading for `aria-labelledby`. */
@@ -101,13 +102,16 @@ export function MySessionsRoute(): ReactElement {
         <SessionList
           fetchPage={fetchPage}
           renderRowActions={(row) => {
-            // The role badge and the join-live link share the one actions cell
-            // (D4); both read the same accumulated role for this id.
+            // The role badge, the join-live link, and the see-replay link share
+            // the one actions cell (D6); join-live (lobby/live) and see-replay
+            // (ended) are non-null for disjoint lifecycle states, so a row shows
+            // exactly one of them. All read the same accumulated role for this id.
             const role = roleById.current.get(row.id);
             return (
               <div className="flex items-center gap-2">
                 <SessionRoleBadge role={role} />
                 <JoinLiveLink row={row} role={role} />
+                <SeeReplayLink row={row} />
               </div>
             );
           }}

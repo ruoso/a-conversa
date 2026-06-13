@@ -187,6 +187,37 @@ describe('MySessionsRoute role badges and lobby rows', () => {
     const link = screen.getByTestId('session-join-live-link');
     expect(link.getAttribute('href')).toBe('/m/sessions/a1/operate');
     expect(link.textContent).toBe('Join live');
+    // The row is live, not ended, so no see-replay link shares the cell.
+    expect(screen.queryByTestId('session-see-replay-link')).toBeNull();
+  });
+
+  it('renders a see-replay link beside the role badge for an ended row, with no join-live', async () => {
+    stubMySessions([
+      {
+        id: 'e1',
+        hostUserId: 'u1',
+        privacy: 'public',
+        topic: 'Finished debate',
+        createdAt: '2026-05-01T09:00:00.000Z',
+        startedAt: '2026-05-01T10:00:00.000Z',
+        endedAt: '2026-05-01T11:00:00.000Z',
+        role: 'host',
+      },
+    ]);
+
+    renderRoute(AUTHENTICATED);
+
+    await waitFor(() => {
+      expect(screen.getByText('Finished debate')).toBeTruthy();
+    });
+
+    // See-replay shares the cell with the role badge; join-live (lobby/live)
+    // yields nothing for an ended row (D6).
+    expect(screen.getByTestId('session-role-badge').textContent).toBe('Host');
+    const link = screen.getByTestId('session-see-replay-link');
+    expect(link.getAttribute('href')).toBe('/a/replay/e1');
+    expect(link.textContent).toBe('See replay');
+    expect(screen.queryByTestId('session-join-live-link')).toBeNull();
   });
 
   it('surfaces lobby rows and shows the lobby-exclusion note when a date filter is active', async () => {

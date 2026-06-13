@@ -54,6 +54,10 @@
     "joinLive": {
       "label": "Entrar ao vivo",
       "ariaLabel": "Entrar ao vivo: {topic}"
+    },
+    "seeReplay": {
+      "label": "Ver replay",
+      "ariaLabel": "Ver replay: {topic}"
     }
   },
   "chrome": {

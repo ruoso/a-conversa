@@ -54,6 +54,10 @@
     "joinLive": {
       "label": "Unirse en vivo",
       "ariaLabel": "Unirse en vivo: {topic}"
+    },
+    "seeReplay": {
+      "label": "Ver repetición",
+      "ariaLabel": "Ver repetición: {topic}"
     }
   },
   "chrome": {

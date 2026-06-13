@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { SessionList } from '../discovery/SessionList';
 import { fetchPublicSessions } from '../discovery/publicSessionsFetcher';
 import { JoinLiveLink } from '../discovery/JoinLiveLink';
+import { SeeReplayLink } from '../discovery/SeeReplayLink';
 
 /** Stable id linking the `<main>` landmark to its heading for `aria-labelledby`. */
 const TITLE_ID = 'public-sessions-title';
@@ -51,7 +52,14 @@ export function PublicSessionsRoute(): ReactElement {
         <SessionList
           fetchPage={fetchPublicSessions}
           lobbyRowsPossible={false}
-          renderRowActions={(row) => <JoinLiveLink row={row} />}
+          renderRowActions={(row) => (
+            // join-live (started) and see-replay (ended) cover disjoint
+            // lifecycle states, so a public row shows exactly one of them (D6).
+            <div className="flex items-center gap-2">
+              <JoinLiveLink row={row} />
+              <SeeReplayLink row={row} />
+            </div>
+          )}
         />
       </div>
     </main>

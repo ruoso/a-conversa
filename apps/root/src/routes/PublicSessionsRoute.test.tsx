@@ -79,6 +79,31 @@ describe('PublicSessionsRoute', () => {
     const link = screen.getByTestId('session-join-live-link');
     expect(link.getAttribute('href')).toBe('/a/sessions/a1');
     expect(link.textContent).toBe('Join live');
+    // A started (live) row is not ended, so no see-replay link shares the cell.
+    expect(screen.queryByTestId('session-see-replay-link')).toBeNull();
+  });
+
+  it('renders a see-replay link routing an ended public row into the audience replay surface', async () => {
+    stubPublicSessions([
+      {
+        id: 'e1',
+        topic: 'Finished debate',
+        startedAt: '2026-05-01T10:00:00.000Z',
+        endedAt: '2026-05-01T11:00:00.000Z',
+      },
+    ]);
+
+    renderWithProviders(<PublicSessionsRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Finished debate')).toBeTruthy();
+    });
+
+    // Ended rows get see-replay; join-live (lobby/live) yields nothing (D6).
+    const link = screen.getByTestId('session-see-replay-link');
+    expect(link.getAttribute('href')).toBe('/a/replay/e1');
+    expect(link.textContent).toBe('See replay');
+    expect(screen.queryByTestId('session-join-live-link')).toBeNull();
   });
 
   it('passes lobbyRowsPossible={false}: no lobby-exclusion note when a date filter is active', async () => {

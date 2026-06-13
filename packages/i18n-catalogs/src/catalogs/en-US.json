@@ -54,6 +54,10 @@
     "joinLive": {
       "label": "Join live",
       "ariaLabel": "Join live: {topic}"
+    },
+    "seeReplay": {
+      "label": "See replay",
+      "ariaLabel": "See replay: {topic}"
     }
   },
   "chrome": {

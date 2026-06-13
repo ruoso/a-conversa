@@ -79,6 +79,7 @@ task session_discovery "Session discovery" {
     task sd_see_replay_link "'See replay' → audience replay mode" {
       effort 0.5d
       allocate team
+      complete 100
       depends !sd_session_list_component
       note "Launches the audience surface's replay navigation (client-side position navigation per ADR 0043) for the row's session; visibility gating per ADR 0045 (public-session replay is anonymous; private replay requires the same auth as the live surface). Refinement decides availability (started vs. ended sessions) against what ADR 0045 already gates."
     }
