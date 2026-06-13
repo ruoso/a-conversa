@@ -41,6 +41,7 @@ task session_discovery "Session discovery" {
     task sd_public_sessions_endpoint "GET /api/sessions/public — anonymous, started-only" {
       effort 1d
       allocate team
+      complete 100
       depends !!sd_schema
       note "Anonymous endpoint (same trust level as the public-session audience surface, ADR 0029). Returns ONLY privacy='public' AND started_at IS NOT NULL — the lobby-secrecy constraint in this file's header is the load-bearing requirement; a behavior test must pin that an unstarted public session is absent from the list. Pagination + topic search + date filter, sorted started_at DESC. Response carries only listing fields (id, topic, started_at, ended_at) — no participant data."
     }

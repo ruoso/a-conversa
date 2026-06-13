@@ -600,6 +600,81 @@ function makeMemoryPool(initialUsers: UserRow[]): {
     }
     if (
       text.includes('FROM sessions s') &&
+      text.includes("s.privacy = 'public'") &&
+      text.includes('s.started_at IS NOT NULL') &&
+      !text.includes('session_participants') &&
+      (text.includes('COUNT(*)') || text.includes('ORDER BY s.started_at DESC'))
+    ) {
+      // The anonymous `GET /sessions/public` query — covers BOTH the
+      // page query (`ORDER BY s.started_at DESC, s.created_at DESC
+      // LIMIT/OFFSET`, selecting only the listing columns) and the
+      // total-count query. Distinguished from the `GET /sessions/mine`
+      // branch (no `privacy = 'public'` gate, has `session_participants`)
+      // and the `GET /sessions` branch (has `host_user_id = $1` +
+      // `session_participants`) by the fixed public-gate with no
+      // membership predicate. The gate is the partial index's predicate:
+      // `privacy = 'public' AND started_at IS NOT NULL` — lobby and
+      // private sessions are excluded here, before any filter.
+      let filtered = store.sessions.filter((s) => s.privacy === 'public' && s.started_at != null);
+      // Topic filter — `AND s.topic ILIKE $N`; the param is `%...%`.
+      const topicMatch = text.match(/s\.topic ILIKE \$(\d+)/);
+      if (topicMatch !== null) {
+        const idx = Number.parseInt(topicMatch[1] ?? '0', 10) - 1;
+        const needle = (p[idx] as string).replace(/^%/, '').replace(/%$/, '').toLowerCase();
+        filtered = filtered.filter((s) => s.topic.toLowerCase().includes(needle));
+      }
+      // Date bounds — `AND s.started_at >= $N` / `AND s.started_at < $N`.
+      const afterMatch = text.match(/s\.started_at >= \$(\d+)/);
+      if (afterMatch !== null) {
+        const idx = Number.parseInt(afterMatch[1] ?? '0', 10) - 1;
+        const bound = new Date(p[idx] as string).getTime();
+        filtered = filtered.filter((s) => s.started_at != null && s.started_at.getTime() >= bound);
+      }
+      const beforeMatch = text.match(/s\.started_at < \$(\d+)/);
+      if (beforeMatch !== null) {
+        const idx = Number.parseInt(beforeMatch[1] ?? '0', 10) - 1;
+        const bound = new Date(p[idx] as string).getTime();
+        filtered = filtered.filter((s) => s.started_at != null && s.started_at.getTime() < bound);
+      }
+      if (text.includes('COUNT(*)')) {
+        return Promise.resolve({ rows: [{ total: filtered.length }] as unknown as TRow[] });
+      }
+      // Page query: ORDER BY started_at DESC, created_at DESC, then
+      // slice by LIMIT/OFFSET (the last two params). No NULLS handling —
+      // the gate guarantees a non-null `started_at`.
+      const sorted = [...filtered].sort((a, b) => {
+        const diff = (b.started_at?.getTime() ?? 0) - (a.started_at?.getTime() ?? 0);
+        if (diff !== 0) {
+          return diff;
+        }
+        return b.created_at.getTime() - a.created_at.getTime();
+      });
+      const limitMatch = text.match(/LIMIT \$(\d+)/);
+      const offsetMatch = text.match(/OFFSET \$(\d+)/);
+      let pageStart = 0;
+      let pageEnd = sorted.length;
+      if (offsetMatch !== null) {
+        const idx = Number.parseInt(offsetMatch[1] ?? '0', 10) - 1;
+        pageStart = (p[idx] as number) ?? 0;
+      }
+      if (limitMatch !== null) {
+        const idx = Number.parseInt(limitMatch[1] ?? '0', 10) - 1;
+        const lim = (p[idx] as number) ?? sorted.length;
+        pageEnd = Math.min(sorted.length, pageStart + lim);
+      }
+      // Select only the listing columns — no host identity, no privacy,
+      // no role (matches the production SELECT and the anonymous
+      // disclosure posture).
+      const page = sorted.slice(pageStart, pageEnd).map((s) => ({
+        id: s.id,
+        topic: s.topic,
+        started_at: s.started_at ?? null,
+        ended_at: s.ended_at,
+      }));
+      return Promise.resolve({ rows: page as unknown as TRow[] });
+    }
+    if (
+      text.includes('FROM sessions s') &&
       text.includes('session_participants') &&
       !text.includes("privacy = 'public'") &&
       (text.includes('COUNT(*)') || text.includes('NULLS FIRST'))
@@ -5795,5 +5870,132 @@ describe('GET /sessions/mine — membership-scoped, role-annotated list', () => 
     const response = await built.app.inject({ method: 'GET', url: '/api/sessions/mine' });
     expect(response.statusCode).toBe(401);
     expect(response.json<{ error?: { code?: string } }>().error?.code).toBe('auth-required');
+  });
+});
+
+describe('GET /sessions/public — anonymous, started-only public list', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const seededUsers: UserRow[] = [
+    { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+  ];
+
+  // A live, started public session — the "join live" target.
+  const S_PUBLIC_LIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-cccccccc0001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Public live debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    started_at: new Date('2026-05-10T10:00:00.000Z'),
+    ended_at: null,
+  };
+  // An ended public session — the "see replay" target.
+  const S_PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-cccccccc0002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Public ended debate',
+    created_at: new Date('2026-05-09T09:00:00.000Z'),
+    started_at: new Date('2026-05-10T08:00:00.000Z'),
+    ended_at: new Date('2026-05-10T09:00:00.000Z'),
+  };
+  // A lobby (unstarted) public session — id is still the join secret;
+  // must NEVER appear.
+  const S_PUBLIC_LOBBY: SessionRow = {
+    id: '00000000-0000-4000-8000-cccccccc0003',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Public lobby debate',
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    started_at: null,
+    ended_at: null,
+  };
+  // A started private session — must NEVER appear.
+  const S_PRIVATE_STARTED: SessionRow = {
+    id: '00000000-0000-4000-8000-cccccccc0004',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'Private started debate',
+    created_at: new Date('2026-05-09T12:00:00.000Z'),
+    started_at: new Date('2026-05-10T11:00:00.000Z'),
+    ended_at: null,
+  };
+
+  it('maps rows to the camelCase PublicSessionResponse shape (listing fields only)', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_PUBLIC_LIVE] });
+    const response = await built.app.inject({ method: 'GET', url: '/api/sessions/public' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<Record<string, unknown>>;
+      total?: number;
+    }>();
+    expect(body.sessions).toHaveLength(1);
+    const row = body.sessions?.[0];
+    expect(row?.id).toBe(S_PUBLIC_LIVE.id);
+    expect(row?.topic).toBe(S_PUBLIC_LIVE.topic);
+    expect(row?.startedAt).toBe('2026-05-10T10:00:00.000Z');
+    expect(row?.endedAt).toBeNull();
+    // No host identity / privacy / role / participant fields leak.
+    expect(row).not.toHaveProperty('hostUserId');
+    expect(row).not.toHaveProperty('privacy');
+    expect(row).not.toHaveProperty('role');
+    expect(row).not.toHaveProperty('createdAt');
+    expect(body.total).toBe(1);
+  });
+
+  it('gates to started public sessions — lobby and private are absent', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [S_PUBLIC_LIVE, S_PUBLIC_ENDED, S_PUBLIC_LOBBY, S_PRIVATE_STARTED],
+    });
+    const response = await built.app.inject({ method: 'GET', url: '/api/sessions/public' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    const ids = body.sessions?.map((s) => s.id);
+    expect(ids).toContain(S_PUBLIC_LIVE.id);
+    expect(ids).toContain(S_PUBLIC_ENDED.id);
+    expect(ids).not.toContain(S_PUBLIC_LOBBY.id);
+    expect(ids).not.toContain(S_PRIVATE_STARTED.id);
+    expect(body.total).toBe(2);
+  });
+
+  it('ignores any session cookie — anonymous and signed-in get the same list', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_PUBLIC_LIVE] });
+    const anon = await built.app.inject({ method: 'GET', url: '/api/sessions/public' });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const authed = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/public',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(anon.statusCode).toBe(200);
+    expect(authed.statusCode).toBe(200);
+    expect(authed.json()).toEqual(anon.json());
+  });
+
+  it('rejects an over-cap offset with 400 validation-failed before any DB round-trip', async () => {
+    built = await buildWithSeed({ users: seededUsers, sessions: [S_PUBLIC_LIVE] });
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/public?offset=100001',
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
   });
 });

@@ -578,6 +578,128 @@ export const mySessionListResponseRef = {
 } as const;
 
 /**
+ * Stable `$id` for the `PublicSessionResponse` schema — the anonymous
+ * `GET /sessions/public` per-row shape. Deliberately the narrowest
+ * session response in the codebase: exactly the four **listing fields**
+ * `{ id, topic, startedAt, endedAt }`, with NO `hostUserId`, `privacy`,
+ * or `role`. Neither `SessionResponse` (carries `hostUserId`/`privacy`)
+ * nor `MySessionResponse` (carries `role`) fits — both disclose more
+ * than an anonymous caller should see, and both are consumed by other
+ * endpoints, so reusing or widening them is wrong (D2 in
+ * `tasks/refinements/session_discovery/sd_public_sessions_endpoint.md`).
+ */
+export const PUBLIC_SESSION_RESPONSE_SCHEMA_ID = 'PublicSessionResponse';
+
+/**
+ * The `GET /sessions/public` per-row response shape. All fields
+ * camelCase per the platform's HTTP convention; the underlying
+ * `sessions` row is snake_case + DB-typed timestamps and gets
+ * translated at the response boundary by `publicSessionRowToResponse`.
+ *
+ * `privacy` is omitted because every row in this list is public by
+ * construction (the `WHERE` gate is `privacy = 'public'`). `startedAt`
+ * is a plain `string` (never null) — the gate also requires
+ * `started_at IS NOT NULL`, so the result set has no lobby rows.
+ * `endedAt` is `string | null`: null ⟺ a live started session (the
+ * "join live" affordance), set ⟺ an ended session (the "see replay"
+ * affordance) — the client keys the per-row affordance on it (D6).
+ */
+export const publicSessionResponseSchema = {
+  $id: PUBLIC_SESSION_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['id', 'topic', 'startedAt', 'endedAt'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Server-generated session id.',
+    },
+    topic: {
+      type: 'string',
+      description: 'The debate topic, captured at session creation.',
+    },
+    startedAt: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'ISO-8601 timestamp the session left the lobby (the first ' +
+        '`session-mode-changed → operate`). Never null in this list — the result set ' +
+        'is gated on `started_at IS NOT NULL`, so lobby (unstarted) public sessions, ' +
+        'whose id is still the join secret, are excluded.',
+    },
+    endedAt: {
+      type: ['string', 'null'],
+      format: 'date-time',
+      description:
+        'ISO-8601 timestamp the session ended; null while the session is live. The ' +
+        'client uses this to choose the per-row affordance: null ⟹ "join live", ' +
+        'non-null ⟹ "see replay".',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` the `PublicSessionListResponse` wrapper uses to point at
+ * the per-row `PublicSessionResponse` shape.
+ */
+export const publicSessionResponseRef = {
+  $ref: `${PUBLIC_SESSION_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
+ * Stable `$id` for the `PublicSessionListResponse` wrapper — the
+ * `{ sessions: PublicSessionResponse[]; total: integer }` shape
+ * `GET /sessions/public` returns. Mirrors the sibling wrappers' contract
+ * (`total` is the full match count BEFORE limit/offset) but points at
+ * `PublicSessionResponse`.
+ */
+export const PUBLIC_SESSION_LIST_RESPONSE_SCHEMA_ID = 'PublicSessionListResponse';
+
+/**
+ * The `GET /sessions/public` response wrapper. `total` is the count of
+ * public, already-started sessions matching every supplied filter
+ * (topic, date bounds) BEFORE `LIMIT`/`OFFSET` — the denominator a paged
+ * "Public Sessions" UI uses for "showing 1-N of M".
+ */
+export const publicSessionListResponseSchema = {
+  $id: PUBLIC_SESSION_LIST_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['sessions', 'total'],
+  additionalProperties: false,
+  properties: {
+    sessions: {
+      type: 'array',
+      description:
+        "The public, already-started sessions (`privacy = 'public' AND started_at IS " +
+        'NOT NULL`) — the anonymous discovery surface. Includes both live started ' +
+        'sessions (`endedAt = null`, join-live targets) and ended ones (`endedAt` set, ' +
+        'replay targets); excludes lobby (unstarted) public sessions and all private ' +
+        'sessions. Ordered `started_at DESC, created_at DESC` — most-recently-started ' +
+        'first. Sliced by `?limit` / `?offset` (defaults 50 / 0); the `total` field ' +
+        'carries the full-match count for pagination UI.',
+      items: publicSessionResponseRef,
+    },
+    total: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        'The count of public, started sessions matching every supplied filter (topic, ' +
+        'date bounds) BEFORE `LIMIT`/`OFFSET` are applied. Paged UIs use this as the ' +
+        'denominator; clients walking pages stop when `(offset + sessions.length) >= total`.',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` clients use to point at the `PublicSessionListResponse`
+ * wrapper.
+ */
+export const publicSessionListResponseRef = {
+  $ref: `${PUBLIC_SESSION_LIST_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Stable `$id` for the shared `SessionParticipantResponse` schema. The
  * participant-assignment endpoints (`POST /sessions/:id/participants`
  * and `DELETE /sessions/:id/participants/:userId`) reference this exact
@@ -1179,6 +1301,71 @@ const myListSessionsQuerystringSchema = {
 } as const;
 
 /**
+ * Querystring schema for the anonymous `GET /sessions/public` endpoint.
+ * Identical param shape to `myListSessionsQuerystringSchema` (same caps,
+ * same `additionalProperties: false`) — the shared
+ * `sd_session_list_component` benefits from the two list endpoints'
+ * params staying identical (D3, D4). The only behavioural difference is
+ * on the server side (the fixed public-gate vs. the membership gate);
+ * the wire-level param contract is the same. The lobby-NULL-exclusion
+ * subtlety the sibling's date filter carries is moot here — this result
+ * set has no NULL `started_at` rows.
+ */
+const publicListSessionsQuerystringSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    topic: {
+      type: 'string',
+      // Same `MIN/MAX_TOPIC_SEARCH_LENGTH` caps as the sibling
+      // endpoints (D3). The value is passed as a parameterized `%...%`
+      // pattern to ILIKE — no user input touches the SQL text.
+      minLength: MIN_TOPIC_SEARCH_LENGTH,
+      maxLength: MAX_TOPIC_SEARCH_LENGTH,
+      description:
+        'Optional case-insensitive substring match against `topic` (`topic ILIKE ' +
+        "'%<value>%'`). The value is passed as a parameterized pattern — no user input " +
+        'touches the SQL text. Length must be 3..64 characters.',
+    },
+    startedAfter: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'Optional lower bound on `started_at` (`started_at >= <value>`), ISO-8601 ' +
+        "date-time. The client supplies the bound in the user's locale so the server " +
+        'stays timezone-agnostic (D4).',
+    },
+    startedBefore: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'Optional upper bound on `started_at` (`started_at < <value>`), ISO-8601 ' +
+        'date-time. Half-open at the top (D4).',
+    },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 200,
+      default: 50,
+      description:
+        'Page size. Defaults to 50 if omitted; capped at 200. The `total` field carries ' +
+        'the full match count for paging UIs.',
+    },
+    offset: {
+      type: 'integer',
+      minimum: 0,
+      maximum: MAX_SESSION_LIST_OFFSET,
+      default: 0,
+      description:
+        'Page offset. Defaults to 0. Combined with `limit` drives offset-based ' +
+        'pagination over the ordered (`started_at DESC, created_at DESC`) result set. ' +
+        'Capped at 100 000 — also the (modest) anti-enumeration-cost backstop for this ' +
+        'anonymous endpoint (D8).',
+    },
+  },
+} as const;
+
+/**
  * Normalize a DB-returned timestamp (which pglite hands back as a
  * `Date` and `pg` hands back as a `Date` when the parser is the
  * default, or as a string under custom parsers) into an ISO-8601
@@ -1364,6 +1551,42 @@ export function mySessionRowToResponse(row: MySessionRow): {
 }
 
 /**
+ * Per-row shape returned from the `GET /sessions/public` page query.
+ * Narrowed to exactly the listing columns the anonymous endpoint
+ * selects — no `host_user_id`, no `privacy`, no `role`. `started_at` is
+ * non-null by construction (the gate is `started_at IS NOT NULL`), but
+ * typed `Date | string` to match the DB driver's timestamp surface.
+ */
+interface PublicSessionRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly topic: string;
+  readonly started_at: Date | string;
+  readonly ended_at: Date | string | null;
+}
+
+/**
+ * Map a `GET /sessions/public` row to the camelCase
+ * `PublicSessionResponse` shape with ISO-8601 string timestamps. Emits
+ * only the four listing fields — the narrowest anonymous-disclosure
+ * posture (D2). `startedAt` is always a string (the result set has no
+ * lobby rows); `endedAt` is `null` for a live session and a string for
+ * an ended one.
+ */
+export function publicSessionRowToResponse(row: PublicSessionRow): {
+  id: string;
+  topic: string;
+  startedAt: string;
+  endedAt: string | null;
+} {
+  return {
+    id: row.id,
+    topic: row.topic,
+    startedAt: toIsoString(row.started_at),
+    endedAt: row.ended_at === null ? null : toIsoString(row.ended_at),
+  };
+}
+
+/**
  * Per-row shape returned from `session_participants` queries. Narrowed
  * at the call site so the mapper doesn't need to know the full
  * participants-table schema. The DB returns snake_case; camelCase
@@ -1471,6 +1694,20 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   }
   if (app.getSchema(MY_SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(mySessionListResponseSchema);
+  }
+
+  // Register the `PublicSessionResponse` per-row schema + its
+  // `PublicSessionListResponse` wrapper once per Fastify instance — same
+  // idempotence pattern. The anonymous `GET /sessions/public` references
+  // the wrapper via `publicSessionListResponseRef`; OpenAPI carries
+  // single `components.schemas.PublicSessionResponse` /
+  // `.PublicSessionListResponse` entries. Refinement:
+  // tasks/refinements/session_discovery/sd_public_sessions_endpoint.md.
+  if (app.getSchema(PUBLIC_SESSION_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(publicSessionResponseSchema);
+  }
+  if (app.getSchema(PUBLIC_SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(publicSessionListResponseSchema);
   }
 
   // Register the `SessionParticipantResponse` schema once per Fastify
@@ -2090,6 +2327,145 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
 
       return reply.code(200).send({
         sessions: pageResult.rows.map(mySessionRowToResponse),
+        total,
+      });
+    },
+  );
+
+  app.get(
+    '/api/sessions/public',
+    {
+      // No `preHandler: app.authenticate` — this is the first anonymous
+      // HTTP route in this file. It operates at the anonymous-public-read
+      // trust level ADR 0029 established for the audience surface,
+      // extended here from WS subscribe to an HTTP listing (D7). Any
+      // session cookie is ignored entirely: a signed-in caller gets the
+      // same result as a signed-out one.
+      schema: {
+        tags: ['sessions'],
+        summary: 'List public, already-started sessions (anonymous discovery surface)',
+        description:
+          'Returns the public, already-started sessions — exactly ' +
+          "`privacy = 'public' AND started_at IS NOT NULL` — so anyone, signed in or " +
+          'not, can browse what there is to watch or replay. This is the anonymous ' +
+          '"Public Sessions" surface; it requires NO authentication and ignores any ' +
+          'session cookie.\n\n' +
+          'The lobby-secrecy gate is load-bearing: a lobby (unstarted, ' +
+          '`started_at IS NULL`) public session — whose id is still the join secret — ' +
+          'never appears, and a private session never appears. Each row carries only the ' +
+          'listing fields `id, topic, startedAt, endedAt` — no host identity, no ' +
+          'privacy flag, no participant data (every row is public by construction).\n\n' +
+          'Both live and ended started public sessions are included (no `ended_at` ' +
+          'filter): a live one is a "join live" target (`endedAt = null`), an ended one ' +
+          'is a "see replay" target (`endedAt` set); the client keys the affordance on ' +
+          '`endedAt` (D6).\n\n' +
+          'Ordered `started_at DESC, created_at DESC` — most-recently-started first, ' +
+          'with `created_at DESC` as the deterministic tiebreak for stable pagination.\n\n' +
+          'Filters (all optional):\n' +
+          '  • `?topic=<substring>` — case-insensitive substring match (ILIKE).\n' +
+          '  • `?startedAfter=<iso>` / `?startedBefore=<iso>` — narrow by `started_at` ' +
+          'range.\n' +
+          '  • `?limit=<n>` (default 50, max 200) and `?offset=<n>` (default 0) drive ' +
+          'offset-based pagination.\n\n' +
+          'The response is `{ sessions: PublicSessionResponse[]; total: integer }` — ' +
+          '`total` is the count of matches AFTER filters but BEFORE limit/offset.\n\n' +
+          'Returns 400 `validation-failed` when the query string is malformed (a bad ' +
+          'date-time, out-of-range `limit`/`offset`, over/under-cap `topic`, or an ' +
+          'unknown query key). There is no 401 path — the endpoint is anonymous.',
+        querystring: publicListSessionsQuerystringSchema,
+        response: {
+          200: publicSessionListResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const query = request.query as {
+        topic?: string;
+        startedAfter?: string;
+        startedBefore?: string;
+        limit?: number;
+        offset?: number;
+      };
+      const limit = query.limit ?? 50;
+      const offset = query.offset ?? 0;
+
+      // Build the composed WHERE + parameter array incrementally. The
+      // gate is fixed (`privacy = 'public' AND started_at IS NOT NULL`)
+      // and uses no parameters — it is the exact predicate of the
+      // partial index `sessions_public_started_idx`, so the planner
+      // serves the gate + sort directly from it. Each filter appends a
+      // fragment AND a value via the positional `$N` counter `p`. ALL
+      // user-controlled values flow through placeholders — the topic
+      // substring is wrapped in `%...%` and passed as a value, so
+      // ILIKE's wildcards stay wildcards while the captured substring
+      // stays a value, not SQL.
+      const params: unknown[] = [];
+      let p = 0;
+      let where = `s.privacy = 'public' AND s.started_at IS NOT NULL`;
+
+      if (query.topic !== undefined) {
+        p += 1;
+        params.push(`%${query.topic}%`);
+        where += ` AND s.topic ILIKE $${String(p)}`;
+      }
+
+      // Date bounds key on `started_at`. No lobby-exclusion subtlety
+      // here — the gate already removed every NULL `started_at` row (D4).
+      if (query.startedAfter !== undefined) {
+        p += 1;
+        params.push(query.startedAfter);
+        where += ` AND s.started_at >= $${String(p)}`;
+      }
+      if (query.startedBefore !== undefined) {
+        p += 1;
+        params.push(query.startedBefore);
+        where += ` AND s.started_at < $${String(p)}`;
+      }
+
+      // Snapshot the params for the COUNT query BEFORE appending the
+      // pagination placeholders (D5 — same two-query shape as the
+      // sibling endpoints).
+      const countParams = params.slice();
+
+      p += 1;
+      params.push(limit);
+      const limitPlaceholder = p;
+      p += 1;
+      params.push(offset);
+      const offsetPlaceholder = p;
+
+      const pool = ensurePool();
+
+      // The page query. Selects only the listing columns (no host
+      // identity, no privacy, no role). `started_at DESC` rides the
+      // partial index's ordering directly; `created_at DESC` is the
+      // deterministic tiebreak for stable offset pagination (D5).
+      const pageResult = await pool.query<PublicSessionRow>(
+        `SELECT s.id, s.topic, s.started_at, s.ended_at
+         FROM sessions s
+         WHERE ${where}
+         ORDER BY s.started_at DESC, s.created_at DESC
+         LIMIT $${String(limitPlaceholder)} OFFSET $${String(offsetPlaceholder)}`,
+        params,
+      );
+
+      const countResult = await pool.query<{ total: number | string }>(
+        `SELECT COUNT(*)::int AS total
+         FROM sessions s
+         WHERE ${where}`,
+        countParams,
+      );
+
+      // `COUNT(*)::int` returns an integer; coerce defensively (a
+      // string-typed bigint would surface here if the cast were
+      // removed) — same defensive pattern as the sibling endpoints.
+      const rawTotal = countResult.rows[0]?.total ?? 0;
+      const total = typeof rawTotal === 'string' ? Number.parseInt(rawTotal, 10) : rawTotal;
+
+      return reply.code(200).send({
+        sessions: pageResult.rows.map(publicSessionRowToResponse),
         total,
       });
     },
