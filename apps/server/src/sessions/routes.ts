@@ -219,7 +219,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
 import { ApiError } from '../errors.js';
@@ -2165,10 +2165,33 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
     },
   );
 
+  const mineSessionsRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+  const mineSessionsRateLimitWindowMs = 60_000;
+  const mineSessionsRateLimitMax = 60;
+  const rateLimitMineSessions = async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
+    const now = Date.now();
+    const key = request.authUser?.id ?? request.ip;
+    const current = mineSessionsRateLimitStore.get(key);
+
+    if (current === undefined || now >= current.resetAt) {
+      mineSessionsRateLimitStore.set(key, {
+        count: 1,
+        resetAt: now + mineSessionsRateLimitWindowMs,
+      });
+      return;
+    }
+
+    if (current.count >= mineSessionsRateLimitMax) {
+      throw new ApiError(429, 'too-many-requests', 'Too many requests');
+    }
+
+    current.count += 1;
+  };
+
   app.get(
     '/api/sessions/mine',
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, rateLimitMineSessions],
       schema: {
         tags: ['sessions'],
         summary: "List the authenticated caller's own sessions (role-annotated)",
